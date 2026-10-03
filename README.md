@@ -32,6 +32,25 @@ connection loss; reload the conversation before retrying to check for a saved tu
 
 ## Development checkpoint
 
+### Explicit long-term memories
+
+Start a message with `Remember:` or `Remember that` to save its remaining text
+verbatim as a user-provided semantic memory. For example:
+`Remember: My favorite color is turquoise.` Ordinary chat does not automatically
+create memories. A successful command gets a database-backed acknowledgement
+without a model call. Active memories are available across conversations and
+visible in the Memories tab (refresh the list after saving).
+
+Sequential identical commands reuse an existing memory. Previously deleted
+identical memories are not automatically restored; use the Memories tab to add
+one again. Paraphrases are not deduplicated, and simultaneous requests can still
+create duplicates. Memory retrieval currently includes the 12 highest-ranked
+active memories, rather than semantic search. Stored facts represent user
+statements, not independently verified facts. If chat persistence fails after
+a memory write, the memory can remain saved; check Memories before retrying.
+
+Backend checks: `cd backend && python -m unittest discover -s tests -v`.
+
 - Working branch: `feat/lumen-v0.1-baseline`.
 - Backend baseline: `ca455dbe709c2420a23c97fabe455a6a3a16d6b0`.
 - Expo now uses the cognition API; live integration verification is next.

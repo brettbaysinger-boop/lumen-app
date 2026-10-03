@@ -70,6 +70,27 @@ class SupabaseRepository:
         )
         return rows[0]
 
+    async def remember(self, companion_id: str, conversation_id: str, content: str):
+        # Include inactive rows: deleting a memory should not allow a repeated
+        # identical instruction to silently resurrect it.
+        existing = await self._request(
+            "GET", "memories",
+            params={"companion_id": f"eq.{companion_id}",
+                    "content": f"eq.{content}", "limit": "1"},
+        )
+        if existing:
+            return "existing" if existing[0]["is_active"] else "deleted"
+        await self._request(
+            "POST", "memories",
+            headers={"Prefer": "return=minimal"},
+            json={"companion_id": companion_id,
+                  "conversation_id": conversation_id,
+                  "type": "semantic", "content": content,
+                  "importance": 0.9, "confidence": 1.0,
+                  "source": "explicit_user_request", "tags": ["user_requested"]},
+        )
+        return "saved"
+
     async def create_message(self, payload: dict):
         rows = await self._request(
             "POST", "messages",
