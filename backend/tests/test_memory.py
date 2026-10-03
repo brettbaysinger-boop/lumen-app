@@ -14,6 +14,22 @@ class MemoryCommands(unittest.TestCase):
         self.assertEqual(requested_memory("Please remember that I like coffee"), "I like coffee")
         self.assertEqual(requested_memory("REMEMBER: I like coffee"), "I like coffee")
 
+    def test_natural_requests_and_spoken_address(self):
+        for text in (
+            "Remember my favorite color is turquoise",
+            "Lumen remember, my favorite color is turquoise",
+            "Lumen, remember that my favorite color is turquoise",
+            "Please Lumen remember my favorite color is turquoise",
+            "Lumen please remember my favorite color is turquoise",
+        ):
+            self.assertEqual(requested_memory(text), "my favorite color is turquoise")
+        self.assertEqual(requested_memory("Nova, remember I like coffee", "Nova"), "I like coffee")
+
+    def test_recall_and_reminder_requests_are_not_saved(self):
+        for text in ("Remember when we talked?", "Remember to call me tomorrow",
+                     "Lumen, do you remember my favorite color?", "I remember my dog"):
+            self.assertIsNone(requested_memory(text))
+
 
 class MemoryFlow(unittest.IsolatedAsyncioTestCase):
     def runtime(self):

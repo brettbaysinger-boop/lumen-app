@@ -34,9 +34,15 @@ connection loss; reload the conversation before retrying to check for a saved tu
 
 ### Explicit long-term memories
 
-Start a message with `Remember:` or `Remember that` to save its remaining text
+Start a message with `Remember` to save its remaining text
 verbatim as a user-provided semantic memory. For example:
-`Remember: My favorite color is turquoise.` Ordinary chat does not automatically
+`Remember: My favorite color is turquoise.`
+Commands also accept natural phrasing like `Remember my favorite color is turquoise`
+and `Lumen, remember that my favorite color is turquoise`. Colons are optional;
+the companion's configured name and `please` are accepted before `remember`.
+Recall questions and reminder requests such as `Remember to call me tomorrow`
+are not stored by this command (there is no reminder scheduler).
+Ordinary chat does not automatically
 create memories. A successful command gets a database-backed acknowledgement
 without a model call. Active memories are available across conversations and
 visible in the Memories tab (refresh the list after saving).
