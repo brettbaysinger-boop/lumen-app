@@ -13,11 +13,12 @@ class SupabaseRepository:
         }
 
     async def _request(self, method: str, table: str, **kwargs):
+        headers = {**self.headers, **kwargs.pop("headers", {})}
         async with httpx.AsyncClient(timeout=20) as client:
             response = await client.request(
                 method,
                 f"{self.base_url}/{table}",
-                headers=self.headers,
+                headers=headers,
                 **kwargs,
             )
             response.raise_for_status()

@@ -24,7 +24,7 @@ async def health():
     ollama_ok = await runtime.provider.health_check()
     database_ok = True
     try:
-        await runtime.db.get_companion("")
+        await runtime.db.get_companion("00000000-0000-0000-0000-000000000000")
     except Exception:
         database_ok = False
 
