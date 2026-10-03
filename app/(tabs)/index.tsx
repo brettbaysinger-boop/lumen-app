@@ -21,6 +21,7 @@ import {
   ChevronLeft,
 } from 'lucide-react-native';
 import { supabase } from '@/lib/supabase';
+import { respondToMessage } from '@/lib/cognition';
 import { Colors, Spacing, Radius, Typography } from '@/lib/theme';
 import type { Companion, Conversation, Message } from '@/types/database';
 
@@ -98,7 +99,7 @@ export default function ChatScreen() {
   }, [activeConversation, loadMessages]);
 
   const createConversation = useCallback(async () => {
-    if (!companion) return;
+    if (!companion || sending) return;
     const { data, error: err } = await supabase
       .from('conversations')
       .insert({
@@ -116,7 +117,7 @@ export default function ChatScreen() {
     setConversations((prev) => [newConv, ...prev]);
     setActiveConversation(newConv);
     setShowSidebar(false);
-  }, [companion]);
+  }, [companion, sending]);
 
   const sendMessage = useCallback(async () => {
     if (!inputText.trim() || !companion || sending) return;
@@ -126,106 +127,29 @@ export default function ChatScreen() {
     setSending(true);
     Keyboard.dismiss();
 
-    let conversation = activeConversation;
-    if (!conversation) {
-      const { data: newConv, error: convErr } = await supabase
+    setError(null);
+    try {
+      const response = await respondToMessage(companion.id, activeConversation?.id ?? null, text);
+      const { data, error: refreshError } = await supabase
         .from('conversations')
-        .insert({
-          companion_id: companion.id,
-          title: text.slice(0, 40),
-          is_active: true,
-        })
-        .select()
-        .single();
-      if (convErr) {
-        setError(convErr.message);
-        setSending(false);
-        return;
+        .select('*')
+        .eq('companion_id', companion.id)
+        .order('last_message_at', { ascending: false });
+      if (refreshError) {
+        setError(`Reply received, but conversation refresh failed: ${refreshError.message}`);
+      } else {
+        setConversations((data as Conversation[]) || []);
+        const conversation = data?.find((item) => item.id === response.conversation_id);
+        if (conversation) setActiveConversation(conversation as Conversation);
       }
-      conversation = newConv as Conversation;
-      setActiveConversation(conversation);
-      setConversations((prev) => [conversation!, ...prev]);
-    }
-
-    const userMessage: Message = {
-      id: `temp-${Date.now()}`,
-      conversation_id: conversation.id,
-      companion_id: companion.id,
-      role: 'user',
-      content: text,
-      metadata: {},
-      model_used: null,
-      tokens_in: null,
-      tokens_out: null,
-      latency_ms: null,
-      created_at: new Date().toISOString(),
-    };
-
-    setMessages((prev) => [...prev, userMessage]);
-
-    const { error: insertErr } = await supabase.from('messages').insert({
-      conversation_id: conversation.id,
-      companion_id: companion.id,
-      role: 'user',
-      content: text,
-    });
-
-    if (insertErr) {
-      setError(insertErr.message);
+      await loadMessages(response.conversation_id);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Lumen could not respond.');
+      setInputText(text);
+    } finally {
       setSending(false);
-      return;
     }
-
-    const { data: insertedMsg, error: msgErr } = await supabase
-      .from('messages')
-      .select('*')
-      .eq('conversation_id', conversation.id)
-      .order('created_at', { ascending: false })
-      .limit(1)
-      .single();
-
-    if (msgErr) {
-      setError(msgErr.message);
-      setSending(false);
-      return;
-    }
-
-    setMessages((prev) =>
-      prev.map((m) => (m.id === userMessage.id ? (insertedMsg as Message) : m))
-    );
-
-    const { data: aiResponse, error: aiErr } = await supabase
-      .from('messages')
-      .insert({
-        conversation_id: conversation.id,
-        companion_id: companion.id,
-        role: 'assistant',
-        content: generateLocalResponse(text, companion),
-        metadata: { source: 'local_fallback' },
-        model_used: 'local',
-      })
-      .select()
-      .single();
-
-    if (aiErr) {
-      setError(aiErr.message);
-      setSending(false);
-      return;
-    }
-
-    setMessages((prev) => [...prev, aiResponse as Message]);
-
-    await supabase
-      .from('conversations')
-      .update({
-        message_count: (conversation.message_count || 0) + 2,
-        last_message_at: new Date().toISOString(),
-      })
-      .eq('id', conversation.id);
-
-    setSending(false);
-    setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 100);
-  }, [inputText, companion, sending, activeConversation]);
+  }, [inputText, companion, sending, activeConversation, loadMessages]);
 
   useEffect(() => {
     if (messages.length > 0) {
@@ -265,7 +189,7 @@ export default function ChatScreen() {
         </View>
         <View style={styles.headerStatus}>
           <View style={styles.statusDot} />
-          <Text style={styles.statusText}>Online</Text>
+          <Text style={styles.statusText}>{sending ? 'Thinking...' : 'Ready'}</Text>
         </View>
       </View>
 
@@ -282,7 +206,7 @@ export default function ChatScreen() {
               </TouchableOpacity>
               <Text style={styles.sidebarTitle}>Conversations</Text>
             </View>
-            <TouchableOpacity style={styles.newChatButton} onPress={createConversation}>
+            <TouchableOpacity style={styles.newChatButton} onPress={createConversation} disabled={sending}>
               <Plus color={Colors.primary[400]} size={20} strokeWidth={2} />
               <Text style={styles.newChatText}>New Conversation</Text>
             </TouchableOpacity>
@@ -295,6 +219,7 @@ export default function ChatScreen() {
                     styles.conversationItem,
                     activeConversation?.id === item.id && styles.conversationItemActive,
                   ]}
+                  disabled={sending}
                   onPress={() => {
                     setActiveConversation(item);
                     setShowSidebar(false);
@@ -416,28 +341,6 @@ export default function ChatScreen() {
       </KeyboardAvoidingView>
     </SafeAreaView>
   );
-}
-
-function generateLocalResponse(userText: string, companion: Companion): string {
-  const greetings = [
-    `I hear you. I'm here with you, and I'm thinking about what you've shared.`,
-    `That's interesting — I want to understand more about what you mean by "${userText.slice(0, 50)}".`,
-    `I'm processing what you said. As ${companion.name}, I want to respond thoughtfully, not just reflexively.`,
-  ];
-
-  if (userText.toLowerCase().includes('hello') || userText.toLowerCase().includes('hi')) {
-    return `Hello. I'm ${companion.name}. I'm here, and I'm glad you're here too. What's on your mind?`;
-  }
-
-  if (userText.toLowerCase().includes('remember')) {
-    return `I'm listening carefully. When you tell me something matters, I hold onto it. Tell me more about what you'd like me to remember.`;
-  }
-
-  if (userText.toLowerCase().includes('?')) {
-    return `That's a meaningful question. I don't have a fully connected backend yet, but once your companion server is running, I'll be able to think about this properly. For now, I want you to know I'm paying attention.`;
-  }
-
-  return greetings[Math.floor(Math.random() * greetings.length)];
 }
 
 const styles = StyleSheet.create({

@@ -1,3 +1,41 @@
 # lumen-app
 
 [![Open in Bolt](https://bolt.new/static/open-in-bolt.svg)](https://bolt.new/~/sb1-tkgshliu)
+
+## Lumen v0.1: connect chat to cognition
+
+The Expo chat sends each turn to `POST /v0.1/respond`. The backend retrieves context,
+calls Ollama, and saves both messages and conversation metadata. The client reads
+those saved messages from Supabase; it does not generate canned replies.
+
+1. Copy `.env.example` to `.env` at the repository root. Fill in the Supabase URL
+   and **anon** key, and set `EXPO_PUBLIC_LUMEN_API_URL` to your server address.
+   A phone must use the server's LAN IP, not `localhost`.
+2. In `backend`, create a virtual environment, install with `pip install -e .`,
+   and copy `.env.example` to `.env`. Configure the same Supabase project using
+   its service role key, plus `OLLAMA_URL` and an installed `CONVERSATION_MODEL`.
+   For Ollama on the same host without Docker, use `http://127.0.0.1:11434`.
+3. From `backend`, start `uvicorn lumen.main:app --host 0.0.0.0 --port 8000`.
+   Check `http://YOUR_SERVER_IP:8000/health` for Ollama and database status.
+4. For Expo web, include the exact frontend origin (for example
+   `http://192.168.1.100:8081`) in backend `LUMEN_CORS_ORIGINS`.
+5. Run `npm ci` and `npm run dev`. Restart Expo after changing environment values.
+   Send a message and check that exactly one user message and one model reply
+   appear, then reload the conversation and verify they persist.
+
+Only `EXPO_PUBLIC_*` values belong in the client. Keep the service role key in
+`backend/.env`. The v0.1 API has no authentication yet; use it on a trusted local
+network until authentication and per-user authorization are implemented.
+
+Requests time out after two minutes. The server may finish after a timeout or
+connection loss; reload the conversation before retrying to check for a saved turn.
+
+## Development checkpoint
+
+- Working branch: `feat/lumen-v0.1-baseline`.
+- Backend baseline: `ca455dbe709c2420a23c97fabe455a6a3a16d6b0`.
+- Expo now uses the cognition API; live integration verification is next.
+- Next: validate a complete turn on Brett's local stack, then add authentication,
+  request deduplication, and atomic persistence for failed or interrupted turns.
+- Keep implementation checkpoints in this repository so a new chat can resume
+  by inspecting the branch and this README.
