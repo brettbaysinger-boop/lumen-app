@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useMemo } from 'react';
 import {
   View,
   Text,
@@ -23,7 +23,8 @@ import {
   TrendingUp,
 } from 'lucide-react-native';
 import { useCompanion } from '@/hooks/useCompanion';
-import { Colors, Spacing, Radius, Typography } from '@/lib/theme';
+import { useTheme } from '@/lib/theme-context';
+import { Spacing, Radius, Typography, type ThemeColors } from '@/lib/theme';
 import type { CompanionState } from '@/types/database';
 
 const STATE_VARIABLES: Array<{
@@ -42,6 +43,7 @@ const STATE_VARIABLES: Array<{
 ];
 
 export default function CompanionScreen() {
+  const { colors: c } = useTheme();
   const {
     companion,
     state,
@@ -49,13 +51,14 @@ export default function CompanionScreen() {
     loading,
     error,
     updateCompanion,
-    updateSelfModel,
   } = useCompanion();
 
   const [editingPersona, setEditingPersona] = useState(false);
   const [personaText, setPersonaText] = useState('');
   const [editingName, setEditingName] = useState(false);
   const [nameText, setNameText] = useState('');
+
+  const styles = useMemo(() => createStyles(c), [c]);
 
   const savePersona = useCallback(async () => {
     try {
@@ -79,7 +82,7 @@ export default function CompanionScreen() {
   if (loading) {
     return (
       <SafeAreaView style={styles.loadingContainer} edges={['top']}>
-        <ActivityIndicator size="large" color={Colors.primary[400]} />
+        <ActivityIndicator size="large" color={c.primary[400]} />
       </SafeAreaView>
     );
   }
@@ -103,7 +106,7 @@ export default function CompanionScreen() {
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
         <View style={styles.heroSection}>
           <View style={styles.avatarCircle}>
-            <Sparkles color={Colors.primary[400]} size={36} strokeWidth={1.5} />
+            <Sparkles color={c.primary[400]} size={36} strokeWidth={1.5} />
           </View>
           {editingName ? (
             <View style={styles.nameEditRow}>
@@ -113,13 +116,13 @@ export default function CompanionScreen() {
                 onChangeText={setNameText}
                 autoFocus
                 placeholder="Companion name"
-                placeholderTextColor={Colors.neutral[500]}
+                placeholderTextColor={c.neutral[500]}
               />
               <TouchableOpacity style={styles.saveSmallButton} onPress={saveName}>
                 <Text style={styles.saveSmallText}>Save</Text>
               </TouchableOpacity>
               <TouchableOpacity onPress={() => setEditingName(false)}>
-                <X color={Colors.neutral[400]} size={20} strokeWidth={2} />
+                <X color={c.neutral[400]} size={20} strokeWidth={2} />
               </TouchableOpacity>
             </View>
           ) : (
@@ -131,7 +134,7 @@ export default function CompanionScreen() {
               }}
             >
               <Text style={styles.companionName}>{companion?.name || 'Companion'}</Text>
-              <Pencil color={Colors.neutral[500]} size={16} strokeWidth={2} />
+              <Pencil color={c.neutral[500]} size={16} strokeWidth={2} />
             </TouchableOpacity>
           )}
           <Text style={styles.companionDescription}>
@@ -167,7 +170,7 @@ export default function CompanionScreen() {
                 return (
                   <View key={sv.key} style={styles.stateCard}>
                     <View style={styles.stateCardHeader}>
-                      <Icon color={Colors.primary[300]} size={16} strokeWidth={2} />
+                      <Icon color={c.primary[300]} size={16} strokeWidth={2} />
                       <Text style={styles.stateLabel}>{sv.label}</Text>
                     </View>
                     <Text style={styles.stateValue}>{Math.round(value * 100)}%</Text>
@@ -179,10 +182,10 @@ export default function CompanionScreen() {
                             width: `${value * 100}%`,
                             backgroundColor:
                               value > 0.7
-                                ? Colors.success[400]
+                                ? c.success[400]
                                 : value > 0.4
-                                ? Colors.primary[400]
-                                : Colors.warning[400],
+                                ? c.primary[400]
+                                : c.warning[400],
                           },
                         ]}
                       />
@@ -195,7 +198,7 @@ export default function CompanionScreen() {
 
         <View style={styles.section}>
           <View style={styles.sectionHeaderRow}>
-            <Target color={Colors.accent[400]} size={18} strokeWidth={2} />
+            <Target color={c.accent[400]} size={18} strokeWidth={2} />
             <Text style={styles.sectionTitle}>Goals</Text>
           </View>
           {goals.length > 0 ? (
@@ -219,7 +222,7 @@ export default function CompanionScreen() {
 
         <View style={styles.section}>
           <View style={styles.sectionHeaderRow}>
-            <Heart color={Colors.secondary[400]} size={18} strokeWidth={2} />
+            <Heart color={c.secondary[400]} size={18} strokeWidth={2} />
             <Text style={styles.sectionTitle}>Values</Text>
           </View>
           {values.length > 0 ? (
@@ -236,7 +239,7 @@ export default function CompanionScreen() {
 
         <View style={styles.section}>
           <View style={styles.sectionHeaderRow}>
-            <Sparkles color={Colors.warning[400]} size={18} strokeWidth={2} />
+            <Sparkles color={c.warning[400]} size={18} strokeWidth={2} />
             <Text style={styles.sectionTitle}>Beliefs</Text>
           </View>
           {beliefs.length > 0 ? (
@@ -258,7 +261,7 @@ export default function CompanionScreen() {
 
         <View style={styles.section}>
           <View style={styles.sectionHeaderRow}>
-            <Zap color={Colors.success[400]} size={18} strokeWidth={2} />
+            <Zap color={c.success[400]} size={18} strokeWidth={2} />
             <Text style={styles.sectionTitle}>Capabilities</Text>
           </View>
           {capabilities.length > 0 ? (
@@ -276,14 +279,14 @@ export default function CompanionScreen() {
 
         <View style={styles.section}>
           <View style={styles.sectionHeaderRow}>
-            <AlertCircle color={Colors.error[400]} size={18} strokeWidth={2} />
+            <AlertCircle color={c.error[400]} size={18} strokeWidth={2} />
             <Text style={styles.sectionTitle}>Limitations</Text>
           </View>
           {limitations.length > 0 ? (
             <View style={styles.tagWrap}>
               {limitations.map((lim, i) => (
-                <View key={i} style={[styles.tag, { backgroundColor: Colors.error[900] }]}>
-                  <Text style={[styles.tagText, { color: Colors.error[300] }]}>{lim}</Text>
+                <View key={i} style={[styles.tag, { backgroundColor: c.error[900] }]}>
+                  <Text style={[styles.tagText, { color: c.error[300] }]}>{lim}</Text>
                 </View>
               ))}
             </View>
@@ -301,7 +304,7 @@ export default function CompanionScreen() {
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>Edit Persona</Text>
               <TouchableOpacity onPress={() => setEditingPersona(false)}>
-                <X color={Colors.neutral[400]} size={22} strokeWidth={2} />
+                <X color={c.neutral[400]} size={22} strokeWidth={2} />
               </TouchableOpacity>
             </View>
             <TextInput
@@ -309,7 +312,7 @@ export default function CompanionScreen() {
               value={personaText}
               onChangeText={setPersonaText}
               placeholder="Describe your companion's personality..."
-              placeholderTextColor={Colors.neutral[500]}
+              placeholderTextColor={c.neutral[500]}
               multiline
               autoFocus
             />
@@ -323,252 +326,67 @@ export default function CompanionScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: Colors.neutral[950],
-  },
-  loadingContainer: {
-    flex: 1,
-    backgroundColor: Colors.neutral[950],
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  errorText: {
-    ...Typography.body,
-    color: Colors.error[400],
-    textAlign: 'center',
-    padding: Spacing.lg,
-  },
-  scrollContent: {
-    padding: Spacing.md,
-    paddingBottom: Spacing.xxl,
-  },
-  heroSection: {
-    alignItems: 'center',
-    paddingVertical: Spacing.xl,
-    gap: Spacing.sm,
-  },
-  avatarCircle: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
-    backgroundColor: Colors.neutral[900],
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: Spacing.sm,
-    borderWidth: 1,
-    borderColor: Colors.neutral[800],
-  },
-  nameRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: Spacing.sm,
-  },
-  companionName: {
-    ...Typography.heading,
-    color: Colors.neutral[100],
-  },
-  nameEditRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: Spacing.sm,
-  },
-  nameInput: {
-    ...Typography.heading,
-    color: Colors.neutral[100],
-    backgroundColor: Colors.neutral[800],
-    borderRadius: Radius.md,
-    paddingHorizontal: Spacing.md,
-    paddingVertical: Spacing.xs,
-    minWidth: 150,
-  },
-  saveSmallButton: {
-    backgroundColor: Colors.primary[600],
-    borderRadius: Radius.sm,
-    paddingHorizontal: Spacing.sm,
-    paddingVertical: Spacing.xs + 2,
-  },
-  saveSmallText: {
-    ...Typography.caption,
-    color: Colors.neutral[0],
-    fontFamily: 'Inter-SemiBold',
-  },
-  companionDescription: {
-    ...Typography.body,
-    color: Colors.neutral[400],
-    textAlign: 'center',
-  },
-  section: {
-    backgroundColor: Colors.neutral[900],
-    borderRadius: Radius.lg,
-    padding: Spacing.md,
-    marginTop: Spacing.sm,
-    gap: Spacing.sm,
-  },
-  sectionHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  sectionHeaderRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: Spacing.sm,
-  },
-  sectionTitle: {
-    ...Typography.subheading,
-    color: Colors.neutral[100],
-  },
-  sectionSubtitle: {
-    ...Typography.caption,
-    color: Colors.neutral[500],
-  },
-  sectionAction: {
-    ...Typography.caption,
-    color: Colors.primary[400],
-    fontFamily: 'Inter-SemiBold',
-  },
-  personaText: {
-    ...Typography.body,
-    color: Colors.neutral[300],
-    lineHeight: 22,
-  },
-  stateGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: Spacing.sm,
-  },
-  stateCard: {
-    width: '48%',
-    backgroundColor: Colors.neutral[800],
-    borderRadius: Radius.md,
-    padding: Spacing.sm + 2,
-    gap: Spacing.xs,
-  },
-  stateCardHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: Spacing.xs,
-  },
-  stateLabel: {
-    ...Typography.caption,
-    color: Colors.neutral[300],
-    fontFamily: 'Inter-Medium',
-  },
-  stateValue: {
-    ...Typography.subheading,
-    color: Colors.neutral[100],
-  },
-  stateBar: {
-    height: 4,
-    borderRadius: 2,
-    backgroundColor: Colors.neutral[800],
-    overflow: 'hidden',
-  },
-  stateBarFill: {
-    height: '100%',
-    borderRadius: 2,
-  },
-  listItem: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: Spacing.sm,
-  },
-  listItemDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-    backgroundColor: Colors.primary[500],
-    marginTop: 7,
-  },
-  listItemContent: {
-    flex: 1,
-    gap: Spacing.xs,
-  },
-  listItemText: {
-    ...Typography.body,
-    color: Colors.neutral[200],
-    flexShrink: 1,
-  },
-  listItemMeta: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: Spacing.xs,
-  },
-  listItemMetaText: {
-    ...Typography.small,
-    color: Colors.neutral[500],
-  },
-  listItemMetaSeparator: {
-    ...Typography.small,
-    color: Colors.neutral[700],
-  },
-  emptyText: {
-    ...Typography.caption,
-    color: Colors.neutral[600],
-  },
-  tagWrap: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: Spacing.xs,
-  },
-  tag: {
-    backgroundColor: Colors.neutral[800],
-    borderRadius: Radius.pill,
-    paddingHorizontal: Spacing.sm + 2,
-    paddingVertical: Spacing.xs + 2,
-  },
-  tagText: {
-    ...Typography.small,
-    color: Colors.neutral[300],
-    fontFamily: 'Inter-Medium',
-  },
-  footer: {
-    height: Spacing.xl,
-  },
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.6)',
-    justifyContent: 'center',
-    padding: Spacing.lg,
-  },
-  modalContent: {
-    backgroundColor: Colors.neutral[900],
-    borderRadius: Radius.xl,
-    padding: Spacing.lg,
-    gap: Spacing.sm,
-  },
-  modalHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: Spacing.sm,
-  },
-  modalTitle: {
-    ...Typography.subheading,
-    color: Colors.neutral[100],
-  },
-  modalInput: {
-    ...Typography.body,
-    color: Colors.neutral[100],
-    backgroundColor: Colors.neutral[800],
-    borderRadius: Radius.md,
-    paddingHorizontal: Spacing.md,
-    paddingVertical: Spacing.md,
-    minHeight: 120,
-    maxHeight: 240,
-  },
-  modalSaveButton: {
-    backgroundColor: Colors.primary[600],
-    borderRadius: Radius.md,
-    paddingVertical: Spacing.md,
-    alignItems: 'center',
-    marginTop: Spacing.sm,
-  },
-  modalSaveText: {
-    ...Typography.bodyMedium,
-    color: Colors.neutral[0],
-    fontFamily: 'Inter-SemiBold',
-  },
-});
+function createStyles(c: ThemeColors) {
+  return StyleSheet.create({
+    container: { flex: 1, backgroundColor: c.neutral[950] },
+    loadingContainer: { flex: 1, backgroundColor: c.neutral[950], alignItems: 'center', justifyContent: 'center' },
+    errorText: { ...Typography.body, color: c.error[400], textAlign: 'center', padding: Spacing.lg },
+    scrollContent: { padding: Spacing.md, paddingBottom: Spacing.xxl },
+    heroSection: { alignItems: 'center', paddingVertical: Spacing.xl, gap: Spacing.sm },
+    avatarCircle: {
+      width: 80, height: 80, borderRadius: 40,
+      backgroundColor: c.neutral[900], alignItems: 'center', justifyContent: 'center',
+      marginBottom: Spacing.sm, borderWidth: 1, borderColor: c.neutral[800],
+    },
+    nameRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm },
+    companionName: { ...Typography.heading, color: c.neutral[100] },
+    nameEditRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm },
+    nameInput: {
+      ...Typography.heading, color: c.neutral[100], backgroundColor: c.neutral[800],
+      borderRadius: Radius.md, paddingHorizontal: Spacing.md, paddingVertical: Spacing.xs, minWidth: 150,
+    },
+    saveSmallButton: { backgroundColor: c.primary[600], borderRadius: Radius.sm, paddingHorizontal: Spacing.sm, paddingVertical: Spacing.xs + 2 },
+    saveSmallText: { ...Typography.caption, color: c.neutral[0], fontFamily: 'Inter-SemiBold' },
+    companionDescription: { ...Typography.body, color: c.neutral[400], textAlign: 'center' },
+    section: {
+      backgroundColor: c.neutral[900], borderRadius: Radius.lg,
+      padding: Spacing.md, marginTop: Spacing.sm, gap: Spacing.sm,
+    },
+    sectionHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+    sectionHeaderRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm },
+    sectionTitle: { ...Typography.subheading, color: c.neutral[100] },
+    sectionSubtitle: { ...Typography.caption, color: c.neutral[500] },
+    sectionAction: { ...Typography.caption, color: c.primary[400], fontFamily: 'Inter-SemiBold' },
+    personaText: { ...Typography.body, color: c.neutral[300], lineHeight: 22 },
+    stateGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.sm },
+    stateCard: { width: '48%', backgroundColor: c.neutral[800], borderRadius: Radius.md, padding: Spacing.sm + 2, gap: Spacing.xs },
+    stateCardHeader: { flexDirection: 'row', alignItems: 'center', gap: Spacing.xs },
+    stateLabel: { ...Typography.caption, color: c.neutral[300], fontFamily: 'Inter-Medium' },
+    stateValue: { ...Typography.subheading, color: c.neutral[100] },
+    stateBar: { height: 4, borderRadius: 2, backgroundColor: c.neutral[800], overflow: 'hidden' },
+    stateBarFill: { height: '100%', borderRadius: 2 },
+    listItem: { flexDirection: 'row', alignItems: 'flex-start', gap: Spacing.sm },
+    listItemDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: c.primary[500], marginTop: 7 },
+    listItemContent: { flex: 1, gap: Spacing.xs },
+    listItemText: { ...Typography.body, color: c.neutral[200], flexShrink: 1 },
+    listItemMeta: { flexDirection: 'row', alignItems: 'center', gap: Spacing.xs },
+    listItemMetaText: { ...Typography.small, color: c.neutral[500] },
+    listItemMetaSeparator: { ...Typography.small, color: c.neutral[700] },
+    emptyText: { ...Typography.caption, color: c.neutral[600] },
+    tagWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.xs },
+    tag: { backgroundColor: c.neutral[800], borderRadius: Radius.pill, paddingHorizontal: Spacing.sm + 2, paddingVertical: Spacing.xs + 2 },
+    tagText: { ...Typography.small, color: c.neutral[300], fontFamily: 'Inter-Medium' },
+    footer: { height: Spacing.xl },
+    modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'center', padding: Spacing.lg },
+    modalContent: { backgroundColor: c.neutral[900], borderRadius: Radius.xl, padding: Spacing.lg, gap: Spacing.sm },
+    modalHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: Spacing.sm },
+    modalTitle: { ...Typography.subheading, color: c.neutral[100] },
+    modalInput: {
+      ...Typography.body, color: c.neutral[100], backgroundColor: c.neutral[800],
+      borderRadius: Radius.md, paddingHorizontal: Spacing.md, paddingVertical: Spacing.md, minHeight: 120, maxHeight: 240,
+    },
+    modalSaveButton: { backgroundColor: c.primary[600], borderRadius: Radius.md, paddingVertical: Spacing.md, alignItems: 'center', marginTop: Spacing.sm },
+    modalSaveText: { ...Typography.bodyMedium, color: c.neutral[0], fontFamily: 'Inter-SemiBold' },
+  });
+}
+

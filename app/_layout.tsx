@@ -10,9 +10,22 @@ import {
   Inter_700Bold,
 } from '@expo-google-fonts/inter';
 import { AuthProvider } from '@/lib/auth';
+import { ThemeProvider, useTheme } from '@/lib/theme-context';
 import { useFrameworkReady } from '@/hooks/useFrameworkReady';
 
 SplashScreen.preventAutoHideAsync();
+
+function AppContent() {
+  const { mode } = useTheme();
+  return (
+    <>
+      <Stack screenOptions={{ headerShown: false }}>
+        <Stack.Screen name="+not-found" />
+      </Stack>
+      <StatusBar style={mode === 'dark' ? 'light' : 'dark'} />
+    </>
+  );
+}
 
 export default function RootLayout() {
   useFrameworkReady();
@@ -35,11 +48,10 @@ export default function RootLayout() {
   }
 
   return (
-    <AuthProvider>
-      <Stack screenOptions={{ headerShown: false }}>
-        <Stack.Screen name="+not-found" />
-      </Stack>
-      <StatusBar style="light" />
-    </AuthProvider>
+    <ThemeProvider>
+      <AuthProvider>
+        <AppContent />
+      </AuthProvider>
+    </ThemeProvider>
   );
 }

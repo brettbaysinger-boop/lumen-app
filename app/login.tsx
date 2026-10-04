@@ -1,12 +1,14 @@
 import { useState } from 'react';
-import { View, Text, TextInput, TouchableOpacity, ActivityIndicator, StyleSheet, ScrollView } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, ActivityIndicator, ScrollView } from 'react-native';
 import { Redirect } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth';
-import { Colors } from '@/lib/theme';
+import { useTheme } from '@/lib/theme-context';
+import { Radius } from '@/lib/theme';
 
 export default function Login() {
+  const { colors: c } = useTheme();
   const { session, loading, error: setupError, retry } = useAuth();
   const [signup, setSignup] = useState(false);
   const [email, setEmail] = useState('');
@@ -14,7 +16,7 @@ export default function Login() {
   const [name, setName] = useState('');
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState('');
-  if (loading) return <View style={styles.page}><ActivityIndicator color={Colors.primary[400]} /></View>;
+  if (loading) return <View style={{ flex: 1, backgroundColor: c.neutral[950], justifyContent: 'center' }}><ActivityIndicator color={c.primary[400]} /></View>;
   if (session && !setupError) return <Redirect href="/" />;
   const submit = async () => {
     setBusy(true); setNotice('');
@@ -32,29 +34,22 @@ export default function Login() {
     } catch (error) { setNotice(error instanceof Error ? error.message : 'Could not sign in.'); }
     finally { setBusy(false); }
   };
-  return <SafeAreaView style={styles.page}><ScrollView contentContainerStyle={styles.form} keyboardShouldPersistTaps="handled">
-    <Text style={styles.title}>Lumen</Text>
-    <Text style={styles.text}>{signup ? 'Create your account and meet your companion.' : 'Sign in to your companion.'}</Text>
-    {setupError && <><Text style={styles.text}>{setupError}</Text><TouchableOpacity onPress={retry}><Text style={styles.link}>Retry account setup</Text></TouchableOpacity>
-      <TouchableOpacity onPress={() => supabase.auth.signOut()}><Text style={styles.link}>Sign out</Text></TouchableOpacity></>}
-    {!session && <>
-      {signup && <TextInput style={styles.input} placeholder="Your name" placeholderTextColor="#9ca3af" value={name} onChangeText={setName} maxLength={100} accessibilityLabel="Your name" />}
-      <TextInput style={styles.input} placeholder="Email" placeholderTextColor="#9ca3af" value={email} onChangeText={setEmail} autoCapitalize="none" keyboardType="email-address" autoComplete="email" accessibilityLabel="Email" />
-      <TextInput style={styles.input} placeholder="Password (at least 8 characters)" placeholderTextColor="#9ca3af" value={password} onChangeText={setPassword} secureTextEntry autoComplete={signup ? 'new-password' : 'current-password'} accessibilityLabel="Password" />
-      <TouchableOpacity style={styles.button} onPress={submit} disabled={busy || !email.trim() || (signup ? password.length < 8 : !password)}>
-        <Text style={styles.text}>{busy ? 'Please wait…' : signup ? 'Create account' : 'Sign in'}</Text>
-      </TouchableOpacity>
-      <TouchableOpacity onPress={() => { setSignup(!signup); setNotice(''); }} disabled={busy}><Text style={styles.link}>{signup ? 'Already have an account? Sign in' : 'Create an account'}</Text></TouchableOpacity>
-    </>}
-    {!!notice && <Text accessibilityRole="alert" style={styles.text}>{notice}</Text>}
-  </ScrollView></SafeAreaView>;
+  return <SafeAreaView style={{ flex: 1, backgroundColor: c.neutral[950], justifyContent: 'center' }}>
+    <ScrollView contentContainerStyle={{ width: '100%', maxWidth: 440, alignSelf: 'center', padding: 28, gap: 18, flexGrow: 1, justifyContent: 'center' }} keyboardShouldPersistTaps="handled">
+      <Text style={{ color: c.primary[400], fontSize: 36, fontWeight: '700', fontFamily: 'Inter-Bold' }}>Lumen</Text>
+      <Text style={{ color: c.neutral[100], fontSize: 16, lineHeight: 24, fontFamily: 'Inter-Regular' }}>{signup ? 'Create your account and meet your companion.' : 'Sign in to your companion.'}</Text>
+      {setupError && <><Text style={{ color: c.neutral[100], fontSize: 16, fontFamily: 'Inter-Regular' }}>{setupError}</Text><TouchableOpacity onPress={retry}><Text style={{ color: c.primary[300], fontSize: 15, paddingVertical: 8, fontFamily: 'Inter-Regular' }}>Retry account setup</Text></TouchableOpacity>
+        <TouchableOpacity onPress={() => supabase.auth.signOut()}><Text style={{ color: c.primary[300], fontSize: 15, paddingVertical: 8, fontFamily: 'Inter-Regular' }}>Sign out</Text></TouchableOpacity></>}
+      {!session && <>
+        {signup && <TextInput style={{ backgroundColor: c.neutral[800], color: c.neutral[100], padding: 14, borderRadius: Radius.md, fontSize: 16, fontFamily: 'Inter-Regular' }} placeholder="Your name" placeholderTextColor={c.neutral[500]} value={name} onChangeText={setName} maxLength={100} accessibilityLabel="Your name" />}
+        <TextInput style={{ backgroundColor: c.neutral[800], color: c.neutral[100], padding: 14, borderRadius: Radius.md, fontSize: 16, fontFamily: 'Inter-Regular' }} placeholder="Email" placeholderTextColor={c.neutral[500]} value={email} onChangeText={setEmail} autoCapitalize="none" keyboardType="email-address" autoComplete="email" accessibilityLabel="Email" />
+        <TextInput style={{ backgroundColor: c.neutral[800], color: c.neutral[100], padding: 14, borderRadius: Radius.md, fontSize: 16, fontFamily: 'Inter-Regular' }} placeholder="Password (at least 8 characters)" placeholderTextColor={c.neutral[500]} value={password} onChangeText={setPassword} secureTextEntry autoComplete={signup ? 'new-password' : 'current-password'} accessibilityLabel="Password" />
+        <TouchableOpacity style={{ backgroundColor: c.primary[700], padding: 16, borderRadius: Radius.md, alignItems: 'center' }} onPress={submit} disabled={busy || !email.trim() || (signup ? password.length < 8 : !password)}>
+          <Text style={{ color: c.neutral[0], fontSize: 16, fontFamily: 'Inter-SemiBold' }}>{busy ? 'Please wait…' : signup ? 'Create account' : 'Sign in'}</Text>
+        </TouchableOpacity>
+        <TouchableOpacity onPress={() => { setSignup(!signup); setNotice(''); }} disabled={busy}><Text style={{ color: c.primary[300], fontSize: 15, paddingVertical: 8, fontFamily: 'Inter-Regular' }}>{signup ? 'Already have an account? Sign in' : 'Create an account'}</Text></TouchableOpacity>
+      </>}
+      {!!notice && <Text accessibilityRole="alert" style={{ color: c.neutral[100], fontSize: 16, fontFamily: 'Inter-Regular' }}>{notice}</Text>}
+    </ScrollView>
+  </SafeAreaView>;
 }
-const styles = StyleSheet.create({
-  page: { flex: 1, backgroundColor: Colors.neutral[950], justifyContent: 'center' },
-  form: { width: '100%', maxWidth: 440, alignSelf: 'center', padding: 28, gap: 18, flexGrow: 1, justifyContent: 'center' },
-  title: { color: Colors.primary[400], fontSize: 36, fontWeight: '700' },
-  text: { color: Colors.neutral[100], fontSize: 16, lineHeight: 24 },
-  input: { backgroundColor: Colors.neutral[800], color: Colors.neutral[100], padding: 14, borderRadius: 10, fontSize: 16 },
-  button: { backgroundColor: Colors.primary[700], padding: 16, borderRadius: 10, alignItems: 'center' },
-  link: { color: Colors.primary[300], fontSize: 15, paddingVertical: 8 },
-});
