@@ -19,6 +19,10 @@ class Settings(BaseSettings):
     reflection_model: str = "llama3.1:8b"
     memory_model: str = "llama3.1:8b"
     embedding_model: str = "nomic-embed-text"
+    speech_url: str = ""
+    transcription_model: str = "Systran/faster-distil-whisper-small.en"
+    speech_model: str = "speaches-ai/Kokoro-82M-v1.0-ONNX"
+    speech_voice: str = "af_heart"
 
     lumen_cors_origins: str = "http://localhost:8081,http://localhost:19006"
 

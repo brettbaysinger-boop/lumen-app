@@ -5,11 +5,13 @@ from .config import get_settings
 from .ollama import OllamaProvider
 from .runtime import CognitionRuntime
 from .schemas import HealthResponse, RespondRequest, RespondResponse
+from .voice import router as voice_router
 
 settings = get_settings()
 runtime = CognitionRuntime(settings)
 
 app = FastAPI(title="Lumen Cognition API", version="0.1.0")
+app.include_router(voice_router)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origins,

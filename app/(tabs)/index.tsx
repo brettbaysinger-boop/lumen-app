@@ -19,9 +19,12 @@ import {
   Image as ImageIcon,
   Plus,
   ChevronLeft,
+  Volume2,
+  Square,
 } from 'lucide-react-native';
 import { supabase } from '@/lib/supabase';
 import { respondToMessage } from '@/lib/cognition';
+import { recordMicrophone, transcribeRecording, playReply, type RecordingHandle } from '@/lib/voice';
 import { Colors, Spacing, Radius, Typography } from '@/lib/theme';
 import type { Companion, Conversation, Message } from '@/types/database';
 
@@ -36,6 +39,99 @@ export default function ChatScreen() {
   const [error, setError] = useState<string | null>(null);
   const [showSidebar, setShowSidebar] = useState(false);
   const flatListRef = useRef<FlatList<Message>>(null);
+  const [voicePhase, setVoicePhase] = useState<'idle' | 'starting' | 'recording' | 'transcribing'>('idle');
+  const [playingId, setPlayingId] = useState<string | null>(null);
+  const voicePhaseRef = useRef(voicePhase);
+  const recordingRef = useRef<RecordingHandle | null>(null);
+  const voiceRequestRef = useRef<AbortController | null>(null);
+  const playbackRef = useRef<AbortController | null>(null);
+  const mountedRef = useRef(true);
+  const draftRef = useRef(inputText);
+  draftRef.current = inputText;
+  const voiceBusy = voicePhase !== 'idle';
+  const changeVoicePhase = useCallback((phase: typeof voicePhase) => {
+    voicePhaseRef.current = phase;
+    setVoicePhase(phase);
+  }, []);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      recordingRef.current?.cancel();
+      voiceRequestRef.current?.abort();
+      playbackRef.current?.abort();
+    };
+  }, []);
+
+  useEffect(() => { playbackRef.current?.abort(); }, [activeConversation?.id]);
+
+  const toggleRecording = useCallback(async () => {
+    if (voicePhaseRef.current === 'recording') {
+      recordingRef.current?.stop();
+      return;
+    }
+    if (voicePhaseRef.current !== 'idle' || sending) return;
+    playbackRef.current?.abort();
+    setError(null);
+    changeVoicePhase('starting');
+    try {
+      const handle = await recordMicrophone(async (blob) => {
+        if (!mountedRef.current) return;
+        recordingRef.current = null;
+        changeVoicePhase('transcribing');
+        const controller = new AbortController();
+        voiceRequestRef.current = controller;
+        try {
+          const text = await transcribeRecording(blob, controller.signal);
+          if (mountedRef.current && !controller.signal.aborted) {
+            const draft = [draftRef.current.trim(), text].filter(Boolean).join(' ');
+            if (draft.length > 4000) throw new Error('The draft is too long. Shorten it and record again.');
+            setInputText(draft);
+          }
+        } catch (err) {
+          if (mountedRef.current && !controller.signal.aborted) {
+            setError(err instanceof Error ? err.message : 'Transcription failed.');
+          }
+        } finally {
+          if (mountedRef.current) changeVoicePhase('idle');
+          voiceRequestRef.current = null;
+        }
+      }, (err) => {
+        if (mountedRef.current) { setError(err.message); changeVoicePhase('idle'); }
+      });
+      if (!mountedRef.current) { handle.cancel(); return; }
+      recordingRef.current = handle;
+      changeVoicePhase('recording');
+    } catch (err) {
+      if (mountedRef.current) {
+        setError(err instanceof Error ? err.message : 'Could not access the microphone.');
+        changeVoicePhase('idle');
+      }
+    }
+  }, [sending, changeVoicePhase]);
+
+  const togglePlayback = useCallback(async (message: Message) => {
+    const stopping = playingId === message.id;
+    playbackRef.current?.abort();
+    if (stopping) { setPlayingId(null); return; }
+    if (voicePhaseRef.current !== 'idle') return;
+    const controller = new AbortController();
+    playbackRef.current = controller;
+    setPlayingId(message.id);
+    setError(null);
+    const finished = () => {
+      if (mountedRef.current && playbackRef.current === controller) setPlayingId(null);
+    };
+    try {
+      await playReply(message.content, controller.signal, finished);
+    } catch (err) {
+      if (mountedRef.current && !controller.signal.aborted) {
+        setError(err instanceof Error ? err.message : 'Playback failed.');
+        finished();
+      }
+    }
+  }, [playingId]);
 
   const loadCompanion = useCallback(async () => {
     const { data, error: err } = await supabase
@@ -99,7 +195,7 @@ export default function ChatScreen() {
   }, [activeConversation, loadMessages]);
 
   const createConversation = useCallback(async () => {
-    if (!companion || sending) return;
+    if (!companion || sending || voicePhaseRef.current !== 'idle') return;
     const { data, error: err } = await supabase
       .from('conversations')
       .insert({
@@ -120,7 +216,8 @@ export default function ChatScreen() {
   }, [companion, sending]);
 
   const sendMessage = useCallback(async () => {
-    if (!inputText.trim() || !companion || sending) return;
+    if (!inputText.trim() || !companion || sending || voicePhaseRef.current !== 'idle') return;
+    playbackRef.current?.abort();
 
     const text = inputText.trim();
     setInputText('');
@@ -206,7 +303,7 @@ export default function ChatScreen() {
               </TouchableOpacity>
               <Text style={styles.sidebarTitle}>Conversations</Text>
             </View>
-            <TouchableOpacity style={styles.newChatButton} onPress={createConversation} disabled={sending}>
+            <TouchableOpacity style={styles.newChatButton} onPress={createConversation} disabled={sending || voiceBusy}>
               <Plus color={Colors.primary[400]} size={20} strokeWidth={2} />
               <Text style={styles.newChatText}>New Conversation</Text>
             </TouchableOpacity>
@@ -219,7 +316,7 @@ export default function ChatScreen() {
                     styles.conversationItem,
                     activeConversation?.id === item.id && styles.conversationItemActive,
                   ]}
-                  disabled={sending}
+                  disabled={sending || voiceBusy}
                   onPress={() => {
                     setActiveConversation(item);
                     setShowSidebar(false);
@@ -278,6 +375,21 @@ export default function ChatScreen() {
               >
                 {item.content}
               </Text>
+              {item.role === 'assistant' && Platform.OS === 'web' && (
+                <TouchableOpacity
+                  style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 10 }}
+                  onPress={() => togglePlayback(item)}
+                  disabled={voiceBusy}
+                  accessibilityLabel={playingId === item.id ? 'Stop reply audio' : 'Play reply audio'}
+                >
+                  {playingId === item.id
+                    ? <Square color={Colors.primary[300]} size={16} />
+                    : <Volume2 color={Colors.primary[300]} size={16} />}
+                  <Text style={{ color: Colors.primary[300], fontSize: 12 }}>
+                    {playingId === item.id ? 'Stop audio' : 'Play reply'}
+                  </Text>
+                </TouchableOpacity>
+              )}
             </View>
           </View>
         )}
@@ -301,6 +413,15 @@ export default function ChatScreen() {
           <Text style={styles.errorBannerText}>{error}</Text>
         </View>
       )}
+      {voiceBusy && (
+        <View style={styles.errorBanner}>
+          <Text style={styles.errorBannerText}>
+            {voicePhase === 'recording' ? 'Recording — tap Stop when finished (60 seconds maximum).'
+              : voicePhase === 'transcribing' ? 'Transcribing on Helios…'
+              : 'Waiting for microphone permission…'}
+          </Text>
+        </View>
+      )}
 
       <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
@@ -318,18 +439,25 @@ export default function ChatScreen() {
             placeholderTextColor={Colors.neutral[500]}
             multiline
             maxLength={4000}
-            editable={!sending}
+            editable={!sending && !voiceBusy}
           />
-          <TouchableOpacity style={styles.inputButton} disabled>
-            <Mic color={Colors.neutral[500]} size={22} strokeWidth={2} />
+          <TouchableOpacity
+            style={styles.inputButton}
+            onPress={toggleRecording}
+            disabled={Platform.OS !== 'web' || sending || voicePhase === 'starting' || voicePhase === 'transcribing'}
+            accessibilityLabel={voicePhase === 'recording' ? 'Stop recording' : 'Record voice message'}
+          >
+            {voicePhase === 'recording'
+              ? <Square color={Colors.primary[400]} size={22} />
+              : <Mic color={Platform.OS === 'web' && !sending ? Colors.primary[400] : Colors.neutral[500]} size={22} strokeWidth={2} />}
           </TouchableOpacity>
           <TouchableOpacity
             style={[
               styles.sendButton,
-              (!inputText.trim() || sending) && styles.sendButtonDisabled,
+              (!inputText.trim() || sending || voiceBusy) && styles.sendButtonDisabled,
             ]}
             onPress={sendMessage}
-            disabled={!inputText.trim() || sending}
+            disabled={!inputText.trim() || sending || voiceBusy}
           >
             {sending ? (
               <ActivityIndicator size="small" color={Colors.neutral[0]} />
