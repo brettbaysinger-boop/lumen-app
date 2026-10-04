@@ -1,7 +1,7 @@
 import unittest
 from unittest.mock import AsyncMock, Mock
 
-from lumen.memory import requested_memory
+from lumen.memory import requested_memory, memory_request, has_save_claim
 from lumen.runtime import CognitionRuntime
 from lumen.db import SupabaseRepository
 
@@ -31,6 +31,36 @@ class MemoryCommands(unittest.TestCase):
             self.assertIsNone(requested_memory(text))
 
 
+    def test_extended_requests(self):
+        for text in (
+            "you should remember that my favorite color is turquoise",
+            "Lumen, you should really remember that my favorite color is turquoise",
+            "save this to memory: my favorite color is turquoise",
+            "Please put in your memory my favorite color is turquoise",
+            "store this in long-term memory, my favorite color is turquoise",
+        ):
+            self.assertEqual(memory_request(text), (True, "my favorite color is turquoise"))
+
+    def test_sentence_after_reference_is_not_saved(self):
+        self.assertEqual(memory_request("you should remember that. i will remember it as wll"), (True, None))
+        self.assertEqual(memory_request("Remember that my favorite season is summer."),
+                         (True, "my favorite season is summer."))
+
+    def test_unresolved_references(self):
+        for text in ("Remember that", "Remember!", "put that in your memory.",
+                     "you should really put that in your memory.", "save this to memory"):
+            self.assertEqual(memory_request(text), (True, None))
+        for text in ("Remembering my dog", "Don't save this to memory", "Can you remember my name?"):
+            self.assertEqual(memory_request(text), (False, None))
+
+    def test_generated_save_claims_are_corrected(self):
+        for text in ("I've noted that today is your birthday.", "I'll remember your birthday!",
+                     "I have saved your name.", "I’ve stored it in memory."):
+            self.assertTrue(has_save_claim(text))
+        for text in ("Your favorite color is turquoise.", "The memory says you like coffee.", "I remember your favorite color is turquoise."):
+            self.assertFalse(has_save_claim(text))
+
+
 class MemoryFlow(unittest.IsolatedAsyncioTestCase):
     def runtime(self):
         runtime = CognitionRuntime.__new__(CognitionRuntime)
@@ -39,6 +69,7 @@ class MemoryFlow(unittest.IsolatedAsyncioTestCase):
         runtime.provider.name = "ollama"
         runtime.db = Mock(
             get_companion=AsyncMock(return_value={"name": "Lumen"}),
+            get_conversation=AsyncMock(return_value={"id": "chat"}),
             create_conversation=AsyncMock(return_value={"id": "new-chat"}),
             get_state=AsyncMock(return_value={}),
             get_relevant_memories=AsyncMock(return_value=[]),
@@ -52,8 +83,11 @@ class MemoryFlow(unittest.IsolatedAsyncioTestCase):
     async def test_save_then_recall_in_another_conversation(self):
         r = self.runtime()
         reply = await r.respond("companion", None, "Remember: I like coffee")
-        r.db.remember.assert_awaited_once_with("companion", "new-chat", "I like coffee")
+        r.db.remember.assert_awaited_once_with("companion", "new-chat", "I like coffee", "user")
         self.assertIn("Saved", reply.content)
+        self.assertEqual(reply.memory_status, "saved")
+        metadata = r.db.create_message.call_args.args[0]["metadata"]
+        self.assertEqual(metadata["memory_status"], "saved")
         r.provider.generate.assert_not_awaited()
         r.db.get_relevant_memories.return_value = [{"type": "semantic", "content": "I like coffee"}]
         r.provider.generate.return_value = dict(content="Coffee", model="test-model",
@@ -69,6 +103,71 @@ class MemoryFlow(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(RuntimeError):
             await r.respond("companion", "chat", "Remember: I like coffee")
         r.db.create_message.assert_not_awaited()
+
+    async def test_ambiguous_request_does_not_guess_or_generate(self):
+        r = self.runtime()
+        r.db.get_recent_messages.return_value = [{"role": "assistant", "content": "Your birthday is today"}]
+        reply = await r.respond("companion", "chat", "you should really put that in your memory.")
+        self.assertEqual(reply.memory_status, "clarification_needed")
+        self.assertIn("exact fact", reply.content)
+        r.db.remember.assert_not_awaited()
+        r.provider.generate.assert_not_awaited()
+
+    async def test_ordinary_chat_cannot_set_saved_status(self):
+        r = self.runtime()
+        r.provider.generate.side_effect = [
+            dict(content="I've noted your birthday.", model="test-model", latency_ms=1, tokens_in=1, tokens_out=1),
+            dict(content="That refers to you, Brett.", model="test-model", latency_ms=2, tokens_in=2, tokens_out=2),
+        ]
+        reply = await r.respond("companion", "chat", "Lumen, whose name is Brett?")
+        self.assertEqual(reply.memory_status, "none")
+        self.assertEqual(reply.content, "That refers to you, Brett.")
+        self.assertEqual(reply.latency_ms, 3)
+        self.assertEqual(r.provider.generate.await_count, 2)
+        r.db.remember.assert_not_awaited()
+
+    async def test_repeated_bad_claim_falls_back_to_saved_facts(self):
+        r = self.runtime()
+        r.db.get_relevant_memories.return_value = [{"content": "my favorite color is turquoise", "type": "semantic"}]
+        r.provider.generate.side_effect = [dict(content="I've saved your color.", model="test-model",
+            latency_ms=1, tokens_in=1, tokens_out=1) for _ in range(2)]
+        reply = await r.respond("companion", "chat", "Whose favorite color is turquoise?")
+        self.assertIn("my favorite color is turquoise", reply.content)
+        self.assertFalse(has_save_claim(reply.content))
+        self.assertEqual(reply.memory_status, "none")
+        self.assertEqual(r.provider.generate.await_count, 2)
+        r.db.remember.assert_not_awaited()
+
+    async def test_normal_fact_answers_are_not_replaced(self):
+        for question, answer in (
+            ("lumen, whos favorite time of year is summer?", "Yours, Brett. Your favorite season is summer."),
+            ("lumen, whos name is brett?", "Your name is Brett."),
+            ("lumen, whos favorite color is turquoise?", "Your favorite color is turquoise."),
+        ):
+            r = self.runtime()
+            r.provider.generate.return_value = dict(content=answer, model="test-model",
+                latency_ms=1, tokens_in=1, tokens_out=1)
+            reply = await r.respond("companion", "chat", question)
+            self.assertEqual(reply.content, answer)
+            self.assertEqual(r.provider.generate.await_count, 1)
+            r.db.remember.assert_not_awaited()
+
+    async def test_recall_lists_database_facts_without_model_claims(self):
+        r = self.runtime()
+        r.db.get_relevant_memories.return_value = [{"content": "My favorite season is summer", "type": "semantic"}]
+        reply = await r.respond("companion", "chat", "what do you remember?")
+        self.assertIn("My favorite season is summer", reply.content)
+        self.assertEqual(reply.memory_status, "none")
+        r.provider.generate.assert_not_awaited()
+        r.db.remember.assert_not_awaited()
+
+    async def test_existing_and_deleted_statuses(self):
+        for outcome in ("existing", "deleted"):
+            r = self.runtime()
+            r.db.remember.return_value = outcome
+            reply = await r.respond("companion", "chat", "You should remember that I like coffee")
+            self.assertEqual(reply.memory_status, outcome)
+            self.assertNotIn("Saved to", reply.content)
 
     async def test_deleted_memory_is_not_resurrected(self):
         db = SupabaseRepository.__new__(SupabaseRepository)

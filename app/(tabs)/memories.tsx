@@ -27,7 +27,7 @@ import {
 } from 'lucide-react-native';
 import { supabase } from '@/lib/supabase';
 import { Colors, Spacing, Radius, Typography } from '@/lib/theme';
-import type { Companion, Memory, MemoryType } from '@/types/database';
+import type { Companion, Memory, MemoryType, MemorySubject } from '@/types/database';
 
 const MEMORY_TYPE_CONFIG: Record<
   MemoryType,
@@ -41,6 +41,10 @@ const MEMORY_TYPE_CONFIG: Record<
   procedural: { label: 'Procedural', icon: Zap, color: Colors.neutral[300] },
 };
 
+function subjectLabel(subject: MemorySubject, name?: string) {
+  return { user: 'You', companion: name || 'Companion', shared: 'Both of you', unknown: 'Unassigned' }[subject] || 'Unassigned';
+}
+
 export default function MemoriesScreen() {
   const [companion, setCompanion] = useState<Companion | null>(null);
   const [memories, setMemories] = useState<Memory[]>([]);
@@ -51,6 +55,7 @@ export default function MemoriesScreen() {
   const [searchQuery, setSearchQuery] = useState('');
   const [showAddModal, setShowAddModal] = useState(false);
   const [newMemoryContent, setNewMemoryContent] = useState('');
+  const [newMemorySubject, setNewMemorySubject] = useState<MemorySubject>('user');
   const [newMemoryType, setNewMemoryType] = useState<MemoryType>('semantic');
   const [newMemoryImportance, setNewMemoryImportance] = useState('0.5');
 
@@ -58,6 +63,8 @@ export default function MemoriesScreen() {
     const { data, error: err } = await supabase
       .from('companions')
       .select('*')
+      .order('created_at', { ascending: true })
+      .order('id', { ascending: true })
       .limit(1)
       .maybeSingle();
     if (err) {
@@ -131,6 +138,7 @@ export default function MemoriesScreen() {
         content: newMemoryContent.trim(),
         importance: Math.max(0, Math.min(1, importance)),
         source: 'manual',
+        subject: newMemorySubject,
       })
       .select()
       .single();
@@ -142,7 +150,7 @@ export default function MemoriesScreen() {
     setNewMemoryContent('');
     setNewMemoryImportance('0.5');
     setShowAddModal(false);
-  }, [companion, newMemoryContent, newMemoryType, newMemoryImportance]);
+  }, [companion, newMemoryContent, newMemoryType, newMemoryImportance, newMemorySubject]);
 
   if (loading) {
     return (
@@ -244,7 +252,19 @@ export default function MemoriesScreen() {
                   <Trash2 color={Colors.neutral[600]} size={16} strokeWidth={2} />
                 </TouchableOpacity>
               </View>
+              <Text style={styles.memoryDate}>About: {subjectLabel(item.subject, companion?.name)}</Text>
               <Text style={styles.memoryContent}>{item.content}</Text>
+              <View style={styles.typeSelector}>
+                {(['user', 'companion', 'shared', 'unknown'] as MemorySubject[]).map(subject => (
+                  <TouchableOpacity key={subject} style={styles.typeChip} onPress={async () => {
+                    const { data, error: err } = await supabase.from('memories').update({ subject }).eq('id', item.id).select().single();
+                    if (err) setError(err.message);
+                    else setMemories(previous => previous.map(memory => memory.id === item.id ? data as Memory : memory));
+                  }} accessibilityLabel={`Set memory subject to ${subjectLabel(subject, companion?.name)}`}>
+                    <Text style={[styles.typeChipText, { color: item.subject === subject ? Colors.primary[300] : Colors.neutral[400] }]}>{subjectLabel(subject, companion?.name)}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
               <View style={styles.memoryFooter}>
                 <View style={styles.importanceBar}>
                   <View
@@ -291,6 +311,14 @@ export default function MemoriesScreen() {
               multiline
               autoFocus
             />
+            <Text style={styles.modalLabel}>Who is this memory about?</Text>
+            <View style={styles.typeSelector}>
+              {(['user', 'companion', 'shared', 'unknown'] as MemorySubject[]).map(subject => (
+                <TouchableOpacity key={subject} style={[styles.typeChip, newMemorySubject === subject && { backgroundColor: Colors.neutral[700] }]} onPress={() => setNewMemorySubject(subject)}>
+                  <Text style={styles.typeChipText}>{subjectLabel(subject, companion?.name)}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
             <Text style={styles.modalLabel}>Type</Text>
             <View style={styles.typeSelector}>
               {(Object.keys(MEMORY_TYPE_CONFIG) as MemoryType[]).map((type) => {

@@ -21,7 +21,9 @@ class RespondResponse(BaseModel):
     model: str
     provider: str
     latency_ms: int
+    memory_subject: Literal["user", "companion", "shared", "unknown"] | None = None
     memory_count: int
+    memory_status: Literal["none", "saved", "existing", "deleted", "clarification_needed"] = "none"
 
 
 class HealthResponse(BaseModel):

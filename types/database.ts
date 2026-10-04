@@ -10,6 +10,7 @@ export type MessageRole = 'user' | 'assistant' | 'system';
 
 export interface Companion {
   id: string;
+  owner_user_id: string | null;
   name: string;
   description: string | null;
   persona: string;
@@ -46,8 +47,14 @@ export interface Message {
   created_at: string;
 }
 
+export type MemorySubject = 'user' | 'companion' | 'shared' | 'unknown';
+
 export interface Memory {
   id: string;
+  subject: MemorySubject;
+  subject_user_id: string | null;
+  reported_by_user_id: string | null;
+  occurred_at: string | null;
   companion_id: string;
   conversation_id: string | null;
   type: MemoryType;

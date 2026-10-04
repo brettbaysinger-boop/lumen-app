@@ -35,7 +35,8 @@ class BackupChecks(unittest.TestCase):
                 if args[0] == 'git': return b'code-commit'
                 return b'archive readable'
             def pg_dump(args, **kwargs):
-                self.assertIn('--data-only', args)
+                self.assertNotIn('--data-only', args)
+                self.assertIn('--schema=auth', args)
                 kwargs['stdout'].write(b'PGDMP test snapshot')
                 return subprocess.CompletedProcess(args, 0)
             with patch.object(backup, 'run', side_effect=command), patch.object(
@@ -48,7 +49,9 @@ class BackupChecks(unittest.TestCase):
             self.assertEqual(files[0].stat().st_mode & 0o777, 0o600)
             restored = Path(folder) / 'extracted'
             restored.mkdir()
-            backup.extract_checked(files[0], restored)
+            manifest = backup.extract_checked(files[0], restored)
+            self.assertEqual(manifest['version'], 2)
+            self.assertIn('auth_tables', manifest)
             self.assertEqual((restored / 'backend.env').read_text(), 'private-test-key')
             self.assertEqual((restored / 'database.dump').read_bytes(), b'PGDMP test snapshot')
 
@@ -89,10 +92,10 @@ class BackupChecks(unittest.TestCase):
             self.assertFalse((directory / 'lumen-new.tar.gz').exists())
             self.assertFalse(list(directory.glob('*.partial')))
 
-    def archive(self, directory):
+    def archive(self, directory, version=1):
         dump = b'PGDMP test data'
         migration = b'CREATE TABLE public.messages(id int);'
-        manifest = {'database_sha256': hashlib.sha256(dump).hexdigest(),
+        manifest = {'version': version, 'database_sha256': hashlib.sha256(dump).hexdigest(),
                     'migration_sha256': {'001.sql': hashlib.sha256(migration).hexdigest()},
                     'tables': ['messages']}
         archive = Path(directory) / 'backup.tar.gz'
@@ -133,6 +136,25 @@ class BackupChecks(unittest.TestCase):
                                 for db, sql in calls if db == 'postgres'))
             self.assertTrue(all(db.startswith('lumen_restore_check_')
                                 for db, sql in calls if sql.startswith('TRUNCATE')))
+
+    def test_full_restore_uses_admin_and_preserves_role_privileges(self):
+        with tempfile.TemporaryDirectory() as folder:
+            archive = self.archive(folder, version=2)
+            commands = []
+            def psql(cfg, db, sql):
+                self.assertEqual(cfg['database_user'], 'supabase_admin')
+                if db == 'postgres':
+                    self.assertTrue(sql.startswith(('CREATE DATABASE ', 'DROP DATABASE ')))
+                return b'1'
+            def run(args, **kwargs):
+                commands.append(args)
+                return b''
+            with patch.object(backup, 'psql', side_effect=psql), patch.object(backup, 'run', side_effect=run), redirect_stdout(io.StringIO()):
+                backup.drill({'container': 'test'}, archive)
+            restore = commands[0]
+            self.assertEqual(restore[restore.index('-U') + 1], 'supabase_admin')
+            self.assertNotIn('--no-privileges', restore)
+            self.assertNotIn('--no-owner', restore)
 
     def test_retention_only_removes_own_archive_files(self):
         with tempfile.TemporaryDirectory() as folder:

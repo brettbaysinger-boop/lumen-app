@@ -57,7 +57,7 @@ def ssh(cfg):
 
 def psql(cfg, database, sql):
     return run(['docker', 'exec', '-i', cfg['container'], 'psql', '-X', '-q', '-A', '-t',
-                '-v', 'ON_ERROR_STOP=1', '-U', 'postgres', '-d', database], input=sql.encode())
+                '-v', 'ON_ERROR_STOP=1', '-U', cfg.get('database_user', 'postgres'), '-d', database], input=sql.encode())
 
 
 def identifier(name):
@@ -115,7 +115,9 @@ def backup(cfg):
         dump = work / 'database.dump'
         with dump.open('wb') as output:
             subprocess.run(['docker', 'exec', cfg['container'], 'pg_dump', '-U', 'postgres',
-                            '-d', 'postgres', '--format=custom', '--data-only', '--schema=public'],
+                            '-d', 'postgres', '--format=custom', '--no-owner',
+                            '--schema=public', '--schema=auth', '--schema=extensions',
+                            '--extension=vector', '--extension=pgcrypto', '--extension=uuid-ossp'],
                            stdout=output, stderr=subprocess.PIPE, check=True)
         # Verify the archive is readable before sending or pruning anything.
         with dump.open('rb') as stream:
@@ -129,10 +131,13 @@ def backup(cfg):
         migrations = sorted((project / 'supabase/migrations').glob('*.sql'))
         if not migrations:
             raise RuntimeError('No migrations found; backup not published.')
-        manifest = {'version': 1, 'created_utc': stamp, 'source': cfg['source'],
+        auth_tables = json.loads(psql(cfg, 'postgres',
+            "SELECT coalesce(json_agg(tablename ORDER BY tablename),'[]'::json) "
+            "FROM pg_tables WHERE schemaname='auth';"))
+        manifest = {'version': 2, 'auth_tables': auth_tables, 'created_utc': stamp, 'source': cfg['source'],
                     'git_commit': version, 'database_sha256': digest(dump), 'tables': tables,
                     'migration_sha256': {p.name: digest(p) for p in migrations},
-                    'scope': 'public schema data; Supabase auth/storage and model files excluded'}
+                    'scope': 'public and auth schema/data plus extensions; storage and model files excluded'}
         (work / 'manifest.json').write_text(json.dumps(manifest, indent=2))
         partial = work / name
         with tarfile.open(partial, 'w:gz', dereference=True) as archive:
@@ -182,6 +187,9 @@ def extract_checked(archive, directory):
 
 def drill(cfg, archive):
     """Restore into a unique disposable database, never the live postgres DB."""
+    # Local Supabase's postgres role cannot change other internal roles' defaults.
+    # The container's bootstrap administrator can restore owners and all grants.
+    cfg = {**cfg, 'database_user': 'supabase_admin'}
     database = 'lumen_restore_check_' + uuid.uuid4().hex
     created = False
     with tempfile.TemporaryDirectory(prefix='lumen-restore-') as directory:
@@ -190,22 +198,33 @@ def drill(cfg, archive):
         try:
             psql(cfg, 'postgres', f'CREATE DATABASE {database};')
             created = True
-            for name in sorted(manifest['migration_sha256']):
-                psql(cfg, database, (directory / 'migrations' / name).read_text())
             tables = manifest['tables']
             if not tables or any(not isinstance(t, str) for t in tables):
                 raise ValueError('Invalid table list in backup.')
-            # Remove only the seed rows in the newly created test database.
-            psql(cfg, database, 'TRUNCATE ' + ', '.join('public.' + identifier(t) for t in tables) + ' CASCADE;')
+            full_restore = manifest.get('version', 1) >= 2
+            if full_restore:
+                # The full archive creates its own schemas; only the disposable DB
+                # is modified. Auth identities and application data share one dump snapshot.
+                psql(cfg, database, 'DROP SCHEMA public CASCADE;')
+            else:
+                for name in sorted(manifest['migration_sha256']):
+                    psql(cfg, database, (directory / 'migrations' / name).read_text())
+                psql(cfg, database, 'TRUNCATE ' + ', '.join('public.' + identifier(t) for t in tables) + ' CASCADE;')
             with (directory / 'database.dump').open('rb') as stream:
-                run(['docker', 'exec', '-i', cfg['container'], 'pg_restore', '-U', 'postgres',
-                     '-d', database, '--data-only', '--no-owner', '--no-privileges',
-                     '--single-transaction', '--exit-on-error'], stdin=stream)
+                command = ['docker', 'exec', '-i', cfg['container'], 'pg_restore', '-U', cfg['database_user'],
+                     '-d', database,
+                     '--single-transaction', '--exit-on-error']
+                if not full_restore:
+                    command.extend(['--data-only', '--no-owner', '--no-privileges'])
+                run(command, stdin=stream)
             total = 0
             for table in tables:
                 count = int(psql(cfg, database, 'SELECT count(*) FROM public.' + identifier(table) + ';'))
                 total += count
                 print(f'{table}: {count} restored rows')
+            for table in manifest.get('auth_tables', []):
+                count = int(psql(cfg, database, 'SELECT count(*) FROM auth.' + identifier(table) + ';'))
+                print(f'auth.{table}: {count} restored rows')
             print(f'Restore check passed: {len(tables)} tables, {total} rows. Live data unchanged.')
         finally:
             if created:

@@ -1,3 +1,5 @@
+import { authHeaders } from './auth';
+
 // Browser audio is used only on Expo web; native clients get an explicit message.
 export interface RecordingHandle { stop(): void; cancel(): void }
 
@@ -16,7 +18,7 @@ async function voiceRequest(path: string, init: RequestInit, signal?: AbortSigna
   if (signal?.aborted) controller.abort();
   const timer = setTimeout(abort, 130_000);
   try {
-    const response = await fetch(`${url}/v0.1/voice/${path}`, { ...init, signal: controller.signal });
+    const response = await fetch(`${url}/v0.1/voice/${path}`, { ...init, headers: { ...init.headers, ...await authHeaders() }, signal: controller.signal });
     if (!response.ok) {
       const body = await response.json().catch(() => null);
       throw new Error(typeof body?.detail === 'string' ? body.detail : `Voice request failed (${response.status}).`);

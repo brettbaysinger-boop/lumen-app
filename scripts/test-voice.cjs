@@ -27,14 +27,15 @@ class Audio {
   removeAttribute() {}
 }
 const sandbox = {
+  require: name => { assert.equal(name, './auth'); return { authHeaders: async () => ({ Authorization: 'Bearer test-token' }) }; },
   exports: {}, window: {}, navigator: { mediaDevices: { getUserMedia: async () => fakeStream } },
   MediaRecorder: Recorder, Blob, FormData, AbortController, Audio,
   URL: { createObjectURL: () => 'blob:test', revokeObjectURL: () => { revoked++; } },
   setTimeout, clearTimeout, process: { env: { EXPO_PUBLIC_LUMEN_API_URL: 'http://lumen:8001' } },
-  fetch: async (url, init) => ({ ok: true,
+  fetch: async (url, init) => { assert.equal(init.headers.Authorization, 'Bearer test-token'); return ({ ok: true,
     json: async () => ({ text: 'Remember my favorite color is turquoise' }),
     blob: async () => new Blob(['RIFFaudio'], { type: 'audio/wav' }),
-  }),
+  }); },
 };
 vm.runInNewContext(compiled, sandbox);
 const voice = sandbox.exports;

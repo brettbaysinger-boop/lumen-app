@@ -1,11 +1,12 @@
 import httpx
-from fastapi import APIRouter, File, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from fastapi.responses import Response
 from pydantic import BaseModel, Field
 
+from .auth import require_user
 from .config import get_settings
 
-router = APIRouter(prefix="/v0.1/voice", tags=["voice"])
+router = APIRouter(prefix="/v0.1/voice", tags=["voice"], dependencies=[Depends(require_user)])
 MAX_AUDIO_BYTES = 10 * 1024 * 1024
 
 

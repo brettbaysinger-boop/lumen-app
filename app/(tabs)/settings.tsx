@@ -23,6 +23,7 @@ import {
   Eye,
   Zap,
 } from 'lucide-react-native';
+import { useAuth } from '@/lib/auth';
 import { supabase } from '@/lib/supabase';
 import { Colors, Spacing, Radius, Typography } from '@/lib/theme';
 import type { Companion, ModelRun } from '@/types/database';
@@ -59,6 +60,8 @@ const INFRA_NODES = [
 ];
 
 export default function SettingsScreen() {
+  const { session } = useAuth();
+  const [accountError, setAccountError] = useState<string | null>(null);
   const [companion, setCompanion] = useState<Companion | null>(null);
   const [modelRuns, setModelRuns] = useState<ModelRun[]>([]);
   const [loading, setLoading] = useState(true);
@@ -69,6 +72,8 @@ export default function SettingsScreen() {
     const { data: comp } = await supabase
       .from('companions')
       .select('*')
+      .order('created_at', { ascending: true })
+      .order('id', { ascending: true })
       .limit(1)
       .maybeSingle();
     if (comp) setCompanion(comp as Companion);
@@ -122,6 +127,14 @@ export default function SettingsScreen() {
         </View>
 
         <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Account</Text>
+          <Text style={styles.configLabel}>{session?.user.user_metadata?.display_name || 'User'}</Text>
+          <Text style={styles.configSubtext}>{session?.user.email}</Text>
+          <TouchableOpacity onPress={async () => {
+            const { error } = await supabase.auth.signOut();
+            setAccountError(error?.message || null);
+          }}><Text style={{ color: Colors.primary[300], paddingVertical: 16 }}>Sign out</Text></TouchableOpacity>
+          {!!accountError && <Text style={styles.configSubtext}>{accountError}</Text>}
           <Text style={styles.sectionTitle}>Companion Configuration</Text>
           <View style={styles.configRow}>
             <View style={styles.configLeft}>

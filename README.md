@@ -20,12 +20,13 @@ those saved messages from Supabase; it does not generate canned replies.
 4. For Expo web, include the exact frontend origin (for example
    `http://192.168.1.100:8081`) in backend `LUMEN_CORS_ORIGINS`.
 5. Run `npm ci` and `npm run dev`. Restart Expo after changing environment values.
-   Send a message and check that exactly one user message and one model reply
+   Create an account or sign in, then send a message and check that exactly one user message and one model reply
    appear, then reload the conversation and verify they persist.
 
 Only `EXPO_PUBLIC_*` values belong in the client. Keep the service role key in
-`backend/.env`. The v0.1 API has no authentication yet; use it on a trusted local
-network until authentication and per-user authorization are implemented.
+`backend/.env`. Chat and voice require a verified Supabase Auth session. The
+backend forwards the user token to PostgREST so database policies enforce
+account isolation. See [ACCOUNTS.md](ACCOUNTS.md) for setup and existing-data migration.
 
 Requests time out after two minutes. The server may finish after a timeout or
 connection loss; reload the conversation before retrying to check for a saved turn.
@@ -56,33 +57,50 @@ in `python -m unittest discover -s backend/tests -v`.
 
 ### Explicit long-term memories
 
-Start a message with `Remember` to save its remaining text
-verbatim as a user-provided semantic memory. For example:
-`Remember: My favorite color is turquoise.`
-Commands also accept natural phrasing like `Remember my favorite color is turquoise`
-and `Lumen, remember that my favorite color is turquoise`. Colons are optional;
-the companion's configured name and `please` are accepted before `remember`.
-Recall questions and reminder requests such as `Remember to call me tomorrow`
-are not stored by this command (there is no reminder scheduler).
-Ordinary chat does not automatically
-create memories. A successful command gets a database-backed acknowledgement
-without a model call. Active memories are available across conversations and
-visible in the Memories tab (refresh the list after saving).
+Ask directly to save a fact, with optional punctuation, `please`, or Lumen's name:
+
+- `Remember my favorite color is turquoise`
+- `You should remember that my favorite color is turquoise`
+- `Lumen, you should really remember that my name is Brett`
+- `Save this to memory: my favorite color is turquoise`
+- `Put in your memory my favorite color is turquoise`
+
+The fact is saved verbatim as a user-provided semantic memory. Use explicit names
+and dates for facts such as birthdays, so they stay clear in later conversations.
+Requests such as `put that in your memory` ask for the exact fact instead of
+guessing what “that” means. Recall questions and reminders such as
+`Remember to call me tomorrow` do not create memories.
+
+Successful writes receive a deterministic acknowledgement and a **Memory saved**
+label. Existing facts display **Memory already saved**. These labels come from
+backend results stored with the reply and persist when the conversation reloads.
+Failed writes never receive a success label. Ordinary model replies cannot set
+these labels; a response guard requests one rewrite for common unsupported save claims.
+If the rewrite still claims a save, it lists the available saved facts instead. This guard covers common wording, not every possible
+model paraphrase; the label is the authoritative save confirmation. Unrecognized
+phrasing and ordinary conversation do not automatically save facts.
+Active memories are available across conversations and visible in the Memories
+tab (refresh the list after saving).
 
 Sequential identical commands reuse an existing memory. Previously deleted
 identical memories are not automatically restored; use the Memories tab to add
 one again. Paraphrases are not deduplicated, and simultaneous requests can still
 create duplicates. Memory retrieval currently includes the 12 highest-ranked
-active memories, rather than semantic search. Stored facts represent user
-statements, not independently verified facts. If chat persistence fails after
+active memories, rather than semantic search. Each memory has a subject:
+`user`, `companion`, `shared`, or `unknown`; a user UUID when applicable; the
+reporting user's UUID; and an optional event timestamp. First-person `my`/`I`
+requests describe the user, `your`/`you` or the companion's possessive name describe
+the companion, and `our`/`we` describe both. Other wording stays unassigned.
+The Memories tab supports setting or correcting the subject. Stored facts
+represent reported statements, not independently verified experiences. If chat persistence fails after
 a memory write, the memory can remain saved; check Memories before retrying.
 
 Backend checks: `cd backend && python -m unittest discover -s tests -v`.
 
 - Working branch: `feat/lumen-v0.1-baseline`.
 - Backend baseline: `ca455dbe709c2420a23c97fabe455a6a3a16d6b0`.
-- Expo now uses the cognition API; live integration verification is next.
-- Next: validate a complete turn on Brett's local stack, then add authentication,
-  request deduplication, and atomic persistence for failed or interrupted turns.
+- Login, account isolation, and memory subjects are implemented; verify on the local stack using ACCOUNTS.md.
+- Next: reviewed memory extraction, semantic retrieval, request deduplication,
+  and atomic persistence for failed or interrupted turns.
 - Keep implementation checkpoints in this repository so a new chat can resume
   by inspecting the branch and this README.

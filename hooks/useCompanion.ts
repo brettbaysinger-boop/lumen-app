@@ -15,6 +15,8 @@ export function useCompanion() {
       const { data: comp, error: compErr } = await supabase
         .from('companions')
         .select('*')
+        .order('created_at', { ascending: true })
+        .order('id', { ascending: true })
         .limit(1)
         .maybeSingle();
 

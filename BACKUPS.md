@@ -10,14 +10,16 @@ Schedule: daily at 03:00 America/Phoenix, with up to five minutes of jitter.
 A missed run is caught up when the timer starts. Failed runs retry after ten
 minutes. Helios must be powered on, reachable, and have Python 3 available.
 
-Each archive contains a consistent PostgreSQL custom-format dump of public
-schema data, all SQL migration files, root and backend `.env` settings,
-Supabase config, and a manifest with the code commit and checksums. It covers
-conversations, messages, memories, companion identity/state, self-model,
-reflections, and model runs. Supabase auth/storage schemas, storage files,
-Ollama models, and Helios speech models are not included. Schema definitions
-come from the saved migrations; commit schema changes as migrations before
-depending on these backups.
+New archives (manifest version 2) contain one consistent PostgreSQL custom-format
+dump of **schema and data** for `public`, `auth`, and `extensions`, plus SQL migration
+files, root/backend `.env` settings, Supabase config, and checksums. This includes
+profiles, companion ownership, memories, conversations, and Auth accounts,
+password hashes, identities, sessions, access grants, and row policies. Application data and account UUIDs
+share the same snapshot. Storage files, Ollama models, and speech models are excluded.
+
+Older version 1 archives contain public data only and use saved migrations for
+schema restoration. They cannot recover login accounts. Take and check a new
+backup after creating your account and claiming existing data.
 
 Copies are stored at:
 
@@ -40,7 +42,8 @@ sudo journalctl -u lumen-backup -n 30 --no-pager
 ```
 
 The check restores the newest local backup to a unique disposable database
-in the current Supabase container, using its saved migrations and data dump.
+in the current Supabase container. Version 2 restores the full dump; version 1
+uses saved migrations and its data-only dump.
 It reports restored row counts and removes the test database afterward.
 It never truncates or replaces the live `postgres` database. This is a real
 restore test; the first installation should be followed by a successful check.
@@ -63,11 +66,13 @@ Stop a failed backup's retry loop: `sudo systemctl stop lumen-backup.service`.
    and regenerating local Supabase keys if the new stack uses different keys.
 5. Run `check --archive /absolute/path/ARCHIVE.tar.gz` against the new stack
    to verify restoration before changing its live data.
-6. Only on the replacement database, restore the saved data after removing
-   the migration seed rows. Use an explicit, reviewed restore command for
-   that target. The `check` routine demonstrates the migration, truncate,
-   and `pg_restore` steps in isolation; it is deliberately not a live-data
-   overwrite command. Stop the API during the actual restore.
+6. Only on the replacement database, restore the archive using the procedure
+   for its manifest version. Version 2 replaces the included schemas and data;
+   version 1 recreates migrations and removes seed rows before its data restore.
+   Keep the original Auth account UUIDs: creating a new account with the same
+   email gives a different identity. Use a reviewed restore command for that
+   exact target and stop the API during the actual restore. `check` demonstrates
+   the version-specific steps only in a disposable database.
 7. Verify health, conversations, memories, and voice; re-enable startup and
    backups on the replacement machine. Keep the original archive until the
    recovered system is verified.

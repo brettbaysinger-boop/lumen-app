@@ -4,11 +4,11 @@ from .config import Settings
 
 
 class SupabaseRepository:
-    def __init__(self, settings: Settings):
+    def __init__(self, settings: Settings, access_token: str | None = None):
         self.base_url = settings.supabase_url.rstrip("/") + "/rest/v1"
         self.headers = {
             "apikey": settings.supabase_service_role_key,
-            "Authorization": f"Bearer {settings.supabase_service_role_key}",
+            "Authorization": f"Bearer {access_token or settings.supabase_service_role_key}",
             "Content-Type": "application/json",
         }
 
@@ -31,6 +31,15 @@ class SupabaseRepository:
             "GET", "companions",
             params={"id": f"eq.{companion_id}", "limit": "1"},
         )
+        return rows[0] if rows else None
+
+    async def get_conversation(self, conversation_id: str, companion_id: str):
+        rows = await self._request("GET", "conversations", params={
+            "id": f"eq.{conversation_id}", "companion_id": f"eq.{companion_id}", "limit": "1"})
+        return rows[0] if rows else None
+
+    async def get_profile(self, user_id: str):
+        rows = await self._request("GET", "profiles", params={"id": f"eq.{user_id}", "limit": "1"})
         return rows[0] if rows else None
 
     async def get_state(self, companion_id: str):
@@ -70,13 +79,13 @@ class SupabaseRepository:
         )
         return rows[0]
 
-    async def remember(self, companion_id: str, conversation_id: str, content: str):
+    async def remember(self, companion_id: str, conversation_id: str, content: str, subject: str = "user"):
         # Include inactive rows: deleting a memory should not allow a repeated
         # identical instruction to silently resurrect it.
         existing = await self._request(
             "GET", "memories",
             params={"companion_id": f"eq.{companion_id}",
-                    "content": f"eq.{content}", "limit": "1"},
+                    "content": f"eq.{content}", "subject": f"eq.{subject}", "limit": "1"},
         )
         if existing:
             return "existing" if existing[0]["is_active"] else "deleted"
@@ -85,7 +94,7 @@ class SupabaseRepository:
             headers={"Prefer": "return=minimal"},
             json={"companion_id": companion_id,
                   "conversation_id": conversation_id,
-                  "type": "semantic", "content": content,
+                  "type": "semantic", "content": content, "subject": subject,
                   "importance": 0.9, "confidence": 1.0,
                   "source": "explicit_user_request", "tags": ["user_requested"]},
         )

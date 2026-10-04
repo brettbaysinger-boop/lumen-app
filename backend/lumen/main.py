@@ -1,6 +1,7 @@
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
 
+from .auth import AuthUser, require_user
 from .config import get_settings
 from .ollama import OllamaProvider
 from .runtime import CognitionRuntime
@@ -38,9 +39,9 @@ async def health():
 
 
 @app.post("/v0.1/respond", response_model=RespondResponse)
-async def respond(request: RespondRequest):
+async def respond(request: RespondRequest, user: AuthUser = Depends(require_user)):
     try:
-        return await runtime.respond(
+        return await CognitionRuntime(settings, user.token, user.id).respond(
             request.companion_id,
             request.conversation_id,
             request.message,
@@ -48,4 +49,4 @@ async def respond(request: RespondRequest):
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except Exception as exc:
-        raise HTTPException(status_code=502, detail=str(exc)) from exc
+        raise HTTPException(status_code=502, detail="Lumen could not complete this request. Check the API logs.") from exc

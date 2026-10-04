@@ -137,6 +137,8 @@ export default function ChatScreen() {
     const { data, error: err } = await supabase
       .from('companions')
       .select('*')
+      .order('created_at', { ascending: true })
+      .order('id', { ascending: true })
       .limit(1)
       .maybeSingle();
     if (err) {
@@ -375,6 +377,16 @@ export default function ChatScreen() {
               >
                 {item.content}
               </Text>
+              {item.role === 'assistant' &&
+                (item.metadata?.memory_status === 'saved' || item.metadata?.memory_status === 'existing') && (
+                  <Text style={{ color: Colors.primary[300], fontSize: 12, marginTop: 8 }}>
+                    {item.metadata.memory_status === 'saved' ? 'Memory saved' : 'Memory already saved'}
+                    {item.metadata.memory_subject === 'user' ? ' · About you' :
+                      item.metadata.memory_subject === 'companion' ? ` · About ${companion?.name || 'your companion'}` :
+                      item.metadata.memory_subject === 'shared' ? ' · Shared experience' :
+                      item.metadata.memory_subject === 'unknown' ? ' · Subject unassigned' : ''}
+                  </Text>
+                )}
               {item.role === 'assistant' && Platform.OS === 'web' && (
                 <TouchableOpacity
                   style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 10 }}

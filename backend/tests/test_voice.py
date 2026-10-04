@@ -5,6 +5,7 @@ import httpx
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+from lumen.auth import require_user, AuthUser
 from lumen.config import Settings
 from lumen.voice import router, MAX_AUDIO_BYTES
 
@@ -13,6 +14,7 @@ class VoiceRoutes(unittest.TestCase):
     def setUp(self):
         app = FastAPI()
         app.include_router(router)
+        app.dependency_overrides[require_user] = lambda: AuthUser("test-user", "test-token")
         self.client = TestClient(app)
         self.settings = Settings(supabase_url="http://db", supabase_service_role_key="test",
                                  speech_url="http://helios:8000")

@@ -1,3 +1,5 @@
+import { authHeaders } from './auth';
+
 export interface RespondResponse {
   conversation_id: string;
   message_id: string;
@@ -6,6 +8,8 @@ export interface RespondResponse {
   provider: string;
   latency_ms: number;
   memory_count: number;
+  memory_subject?: 'user' | 'companion' | 'shared' | 'unknown' | null;
+  memory_status?: 'none' | 'saved' | 'existing' | 'deleted' | 'clarification_needed';
 }
 
 export async function respondToMessage(
@@ -22,7 +26,7 @@ export async function respondToMessage(
   try {
     const response = await fetch(`${baseUrl}/v0.1/respond`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', ...await authHeaders() },
       body: JSON.stringify({ companion_id: companionId, conversation_id: conversationId, message }),
       signal: controller.signal,
     });

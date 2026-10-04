@@ -1,4 +1,6 @@
-import { Tabs } from 'expo-router';
+import { View, ActivityIndicator } from 'react-native';
+import { useAuth } from '@/lib/auth';
+import { Tabs, Redirect } from 'expo-router';
 import type { LucideIcon } from 'lucide-react-native';
 import { MessageCircle, Brain, User, Settings } from 'lucide-react-native';
 import { Colors } from '@/lib/theme';
@@ -12,8 +14,11 @@ function makeIcon(Icon: LucideIcon) {
 }
 
 export default function TabLayout() {
+  const { session, loading, error } = useAuth();
+  if (loading) return <View style={{ flex: 1, backgroundColor: Colors.neutral[950], justifyContent: 'center' }}><ActivityIndicator color={Colors.primary[400]} /></View>;
+  if (!session || error) return <Redirect href="/login" />;
   return (
-    <Tabs
+    <Tabs key={session.user.id}
       screenOptions={{
         headerShown: false,
         tabBarActiveTintColor: Colors.primary[400],
