@@ -39,6 +39,7 @@ Description=Lumen local Supabase
 Requires=docker.service
 After=docker.service network-online.target
 Wants=network-online.target
+StartLimitIntervalSec=0
 
 [Service]
 Type=oneshot
@@ -46,14 +47,15 @@ RemainAfterExit=yes
 {common}ExecStart={quote(tools + '/node_modules/.bin/supabase')} start
 StandardOutput=null
 TimeoutStartSec=600
+Restart=on-failure
+RestartSec=10
 
 [Install]
 WantedBy=multi-user.target
 ''',
     'lumen-api': f'''[Unit]
 Description=Lumen cognition API
-Requires=lumen-database.service
-Wants=ollama.service
+Wants=lumen-database.service ollama.service
 After=lumen-database.service ollama.service
 
 [Service]
