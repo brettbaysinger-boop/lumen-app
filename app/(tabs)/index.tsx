@@ -263,7 +263,7 @@ export default function ChatScreen() {
     const text = inputText.trim();
     setPendingQuestion(text);
     setLiveReply('');
-    setActivity('Lumen is thinking…');
+    setActivity(`${companion.name} thinking…`);
     setMemoryNotice(null);
     setMemoryQuestions([]);
     setInputText('');
@@ -273,8 +273,8 @@ export default function ChatScreen() {
     setError(null);
     try {
       const response = await respondToMessage(companion.id, activeConversation?.id ?? null, text, (event) => {
-        if (event.type === 'activity') setActivity(event.text);
-        if (event.type === 'delta') { setActivity('Writing reply…'); setLiveReply(reply => reply + event.text); }
+        if (event.type === 'activity') setActivity(`${companion.name} thinking…`);
+        if (event.type === 'delta') { setActivity(`${companion.name} thinking…`); setLiveReply(reply => reply + event.text); }
         if (event.type === 'reset') setLiveReply('');
       });
       const { data, error: refreshError } = await supabase
@@ -345,7 +345,7 @@ export default function ChatScreen() {
         </View>
         <View style={styles.headerStatus}>
           <View style={[styles.statusDot, { backgroundColor: colors.success[400] }]} />
-          <Text style={styles.statusText}>{sending ? 'Thinking...' : 'Ready'}</Text>
+          <Text style={styles.statusText}>{sending ? `${companion?.name || 'Companion'} thinking…` : 'Ready'}</Text>
         </View>
       </View>
 
