@@ -8,10 +8,16 @@ class ChatMessage(BaseModel):
     content: str
 
 
+class Attachment(BaseModel):
+    path: str = Field(min_length=1, max_length=300, pattern=r"^[0-9a-f-]{36}/[A-Za-z0-9._-]+$")
+    mime_type: Literal["image/jpeg", "image/png", "image/webp", "image/gif"]
+
+
 class RespondRequest(BaseModel):
     companion_id: str
     conversation_id: str | None = None
     message: str = Field(min_length=1, max_length=16000)
+    attachments: list[Attachment] = Field(default_factory=list, max_length=4)
 
 
 class RespondResponse(BaseModel):

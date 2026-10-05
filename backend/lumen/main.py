@@ -45,6 +45,7 @@ async def respond(request: RespondRequest, user: AuthUser = Depends(require_user
             request.companion_id,
             request.conversation_id,
             request.message,
+            request.attachments,
         )
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc

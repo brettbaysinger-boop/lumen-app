@@ -8,8 +8,9 @@ import {
 } from 'lucide-react-native';
 import { useAuth } from '@/lib/auth';
 import {
-  BUILT_IN_PORTRAITS, DEFAULT_PORTRAIT, PortraitUploadError, deleteUploadedPortrait, pickAndUploadPortrait,
+  BUILT_IN_PORTRAITS, DEFAULT_PORTRAIT, deleteUploadedPortrait, pickAndUploadPortrait,
 } from '@/lib/portraits';
+import { MediaError } from '@/lib/media';
 import { useCompanion } from '@/hooks/useCompanion';
 import { useTheme } from '@/lib/theme-context';
 import { Spacing, Radius, Typography, type ExtendedThemeColors } from '@/lib/theme';
@@ -61,7 +62,7 @@ export default function CompanionScreen() {
     } catch (err) {
       if (newPath && newPath !== previous) await deleteUploadedPortrait(newPath);
       console.error('portrait change failed', err);
-      setPortraitError(err instanceof PortraitUploadError ? err.message : 'Could not update the portrait. Please try again.');
+      setPortraitError(err instanceof MediaError ? err.message : 'Could not update the portrait. Please try again.');
     } finally {
       setPortraitSaving(false);
     }
