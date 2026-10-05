@@ -105,10 +105,29 @@ async function scalar(sql, args = []) { return Object.values((await db.query(sql
     const removed = await scalar("SELECT propose_memory($1,'The user likes summer.','Summer','user','preference')",[source]);
     await db.query("INSERT INTO memories(companion_id,type,content,subject,is_active) VALUES($1,'preference','The user likes summer.','user',false)",[companionA]);
     assert.equal(await scalar("SELECT review_memory_suggestion($1,'approve')",[removed]), 'deleted', 'deleted fact not resurrected');
+    const autoSource = await scalar("INSERT INTO messages(companion_id,conversation_id,role,content) VALUES($1,$2,'user','My favorite color is turquoise.') RETURNING id", [companionA,conversationA]);
+    const auto = await scalar("SELECT propose_memory($1,'The user favors turquoise.','My favorite color is turquoise.','user','preference')",[autoSource]);
+    await as('authenticated', B);
+    await assert.rejects(db.query("SELECT auto_save_memory_suggestion($1,'favorite_color')",[auto]), /not available/);
+    await as('anon');
+    await assert.rejects(db.query("SELECT auto_save_memory_suggestion($1,'favorite_color')",[auto]), /permission denied/);
+    await as('authenticated', A);
+    await db.query('UPDATE companions SET auto_memory_enabled=false WHERE id=$1',[companionA]);
+    assert.equal(await scalar("SELECT auto_save_memory_suggestion($1,'favorite_color')",[auto]), 'review');
+    await db.query('UPDATE companions SET auto_memory_enabled=true WHERE id=$1',[companionA]);
+    assert.equal(await scalar("SELECT auto_save_memory_suggestion($1,'favorite_color')",[auto]), 'approved');
+    assert.equal(await scalar("SELECT source FROM memories WHERE content='The user favors turquoise.'"), 'automatic_observation');
+    assert.equal(await scalar("SELECT auto_save_memory_suggestion($1,'favorite_color')",[auto]), 'review');
+    const conflicting = await scalar("SELECT propose_memory($1,'The user favors blue.','My favorite color is turquoise.','user','preference')",[autoSource]);
+    assert.equal(await scalar("SELECT auto_save_memory_suggestion($1,'favorite_color')",[conflicting]), 'review');
+    await db.query("UPDATE memories SET is_active=false WHERE content='The user favors turquoise.'");
+    assert.equal(await scalar("SELECT auto_save_memory_suggestion($1,'favorite_color')",[conflicting]), 'review', 'deleted topic not silently replaced');
+    console.log('Automatic memory toggle, owner isolation, successful writes, repeat calls and conflicts passed.');
     console.log('Memory proposal evidence, leases, edits, dismissal, deletion, account isolation and idempotent approval passed.');
     await as('postgres');
     await db.exec('CREATE SCHEMA extensions; CREATE TABLE auth.users(id uuid PRIMARY KEY, email text, encrypted_password text);');
     await db.query("INSERT INTO auth.users VALUES($1,'alice@example.test','test-password-hash')", [A]);
+    const memoryCount = await scalar('SELECT count(*) FROM public.memories');
     const dump = await pgDump({ pg: db, args: ['--no-owner',
       '--schema=public','--schema=auth','--schema=extensions',
       '--extension=vector','--extension=pgcrypto','--extension=uuid-ossp'] });
@@ -117,7 +136,7 @@ async function scalar(sql, args = []) { return Object.values((await db.query(sql
       await restored.exec('CREATE ROLE anon; CREATE ROLE authenticated; CREATE ROLE service_role BYPASSRLS; DROP SCHEMA public CASCADE;');
       const sql = (await dump.text()).replace(/^\\(?:un)?restrict.*$/gm, '');
       await restored.exec(sql);
-      assert.equal((await restored.query('SELECT count(*) AS n FROM public.memories')).rows[0].n, 5);
+      assert.equal((await restored.query('SELECT count(*) AS n FROM public.memories')).rows[0].n, memoryCount);
       assert.equal((await restored.query('SELECT id FROM auth.users')).rows[0].id, A);
       assert.equal((await restored.query('SELECT encrypted_password FROM auth.users')).rows[0].encrypted_password, 'test-password-hash');
       await restored.query("SELECT set_config('request.jwt.claim.sub', $1, false)", [B]);

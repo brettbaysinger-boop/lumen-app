@@ -1,5 +1,7 @@
 # Natural memory: v0.2 first step
 
+> This document describes the original proposal-only pipeline. The current automatic-save behavior and rollout are documented in [chat-and-natural-memory.md](docs/chat-and-natural-memory.md).
+
 Lumen notices possible memories in ordinary conversation without command keywords.
 Chat replies arrive before a second local Ollama call examines the user's statement.
 In **Memories → Noticed in conversation**, approve, edit the wording/ownership, or

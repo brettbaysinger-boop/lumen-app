@@ -192,6 +192,20 @@ export default function SettingsScreen() {
           <Text style={styles.sectionTitle}>Companion Configuration</Text>
           {companion && <ModelPicker companionId={companion.id} />}
           <View style={styles.configRow}>
+            <View style={styles.configLeft}><View>
+              <Text style={styles.configLabel}>Automatic remembering</Text>
+              <Text style={styles.configSubtext}>Save clear facts; review sensitive or uncertain details.</Text>
+            </View></View>
+            <ToggleSwitch colors={c} value={companion?.auto_memory_enabled ?? true} onToggle={async () => {
+              if (!companion) return;
+              const next = !(companion.auto_memory_enabled ?? true);
+              const { data, error } = await supabase.from('companions').update({ auto_memory_enabled: next })
+                .eq('id', companion.id).select('*').single();
+              if (error) setAccountError('Could not change automatic remembering.');
+              else { setCompanion(data as Companion); setAccountError(null); }
+            }} />
+          </View>
+          <View style={styles.configRow}>
             <View style={styles.configLeft}>
               <Volume2 color={c.neutral[400]} size={20} strokeWidth={2} />
               <View>

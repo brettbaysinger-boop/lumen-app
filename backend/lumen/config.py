@@ -1,5 +1,6 @@
 from functools import lru_cache
 
+from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -18,6 +19,8 @@ class Settings(BaseSettings):
     conversation_model: str = "llama3.1:8b"
     reflection_model: str = "llama3.1:8b"
     memory_model: str = "llama3.1:8b"
+    chat_context_length: int = Field(default=8192, ge=1024, le=32768)
+    ollama_keep_alive: str = "15m"
     memory_observations_enabled: bool = True
     memory_observation_model: str = ""
     embedding_model: str = "nomic-embed-text"

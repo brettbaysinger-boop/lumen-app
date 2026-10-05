@@ -1,3 +1,4 @@
+import { shouldSendOnEnter } from '@/lib/chat-input';
 import { ModelPicker } from '@/components/ModelPicker';
 import { useEffect, useState, useCallback, useRef, useMemo } from 'react';
 import {
@@ -41,6 +42,14 @@ export default function ChatScreen() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [inputText, setInputText] = useState('');
   const [sending, setSending] = useState(false);
+  const sendBusyRef = useRef(false);
+  const memoryWindowRef = useRef<string | null>(null);
+  const [activity, setActivity] = useState('');
+  const [expandedActivity, setExpandedActivity] = useState<string | null>(null);
+  const [memoryQuestions, setMemoryQuestions] = useState<{id: string; content: string; subject: string}[]>([]);
+  const [liveReply, setLiveReply] = useState('');
+  const [pendingQuestion, setPendingQuestion] = useState('');
+  const [memoryNotice, setMemoryNotice] = useState<{id: string; content: string} | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [showSidebar, setShowSidebar] = useState(false);
@@ -73,6 +82,26 @@ export default function ChatScreen() {
   }, []);
 
   useEffect(() => { playbackRef.current?.abort(); }, [activeConversation?.id]);
+
+  useEffect(() => {
+    if (!companion || !activeConversation || sending) return;
+    let active = true;
+    const since = memoryWindowRef.current || new Date().toISOString();
+    const timer = setInterval(async () => {
+      const { data, error } = await supabase.from('memories').select('id,content')
+        .eq('companion_id', companion.id).eq('conversation_id', activeConversation.id)
+        .eq('source', 'automatic_observation').eq('is_active', true).gte('created_at', since)
+        .order('created_at', { ascending: false }).limit(1);
+      if (active && !error && data?.[0]) setMemoryNotice(data[0]);
+      const { data: questions } = await supabase.from('memory_suggestions')
+        .select('id,content,subject,messages!inner(conversation_id)')
+        .eq('companion_id', companion.id).eq('messages.conversation_id', activeConversation.id)
+        .eq('status', 'pending').gte('created_at', since).order('created_at', { ascending: false }).limit(3);
+      if (active && questions) setMemoryQuestions(questions);
+
+    }, 2500);
+    return () => { active = false; clearInterval(timer); };
+  }, [companion?.id, activeConversation?.id, sending]);
 
   const toggleRecording = useCallback(async () => {
     if (voicePhaseRef.current === 'recording') {
@@ -226,17 +255,28 @@ export default function ChatScreen() {
   }, [companion, sending]);
 
   const sendMessage = useCallback(async () => {
-    if (!inputText.trim() || !companion || sending || voicePhaseRef.current !== 'idle') return;
+    if (!inputText.trim() || !companion || sendBusyRef.current || sending || voicePhaseRef.current !== 'idle') return;
     playbackRef.current?.abort();
 
+    sendBusyRef.current = true;
+    memoryWindowRef.current = new Date().toISOString();
     const text = inputText.trim();
+    setPendingQuestion(text);
+    setLiveReply('');
+    setActivity('Lumen is thinking…');
+    setMemoryNotice(null);
+    setMemoryQuestions([]);
     setInputText('');
     setSending(true);
     Keyboard.dismiss();
 
     setError(null);
     try {
-      const response = await respondToMessage(companion.id, activeConversation?.id ?? null, text);
+      const response = await respondToMessage(companion.id, activeConversation?.id ?? null, text, (event) => {
+        if (event.type === 'activity') setActivity(event.text);
+        if (event.type === 'delta') { setActivity('Writing reply…'); setLiveReply(reply => reply + event.text); }
+        if (event.type === 'reset') setLiveReply('');
+      });
       const { data, error: refreshError } = await supabase
         .from('conversations')
         .select('*')
@@ -254,7 +294,11 @@ export default function ChatScreen() {
       setError(err instanceof Error ? err.message : 'Lumen could not respond.');
       setInputText(text);
     } finally {
+      sendBusyRef.current = false;
       setSending(false);
+      setPendingQuestion('');
+      setLiveReply('');
+      setActivity('');
     }
   }, [inputText, companion, sending, activeConversation, loadMessages]);
 
@@ -262,7 +306,7 @@ export default function ChatScreen() {
     if (messages.length > 0) {
       setTimeout(() => flatListRef.current?.scrollToEnd({ animated: false }), 50);
     }
-  }, [messages]);
+  }, [messages, liveReply, pendingQuestion]);
 
   if (loading) {
     return (
@@ -288,6 +332,7 @@ export default function ChatScreen() {
       <View style={styles.header}>
         <TouchableOpacity
           style={styles.menuButton}
+          disabled={sending}
           onPress={() => setShowSidebar(true)}
         >
           <Plus color={colors.neutral[200]} size={22} strokeWidth={2} />
@@ -361,6 +406,11 @@ export default function ChatScreen() {
       <FlatList
         ref={flatListRef}
         data={messages}
+        ListFooterComponent={sending ? <View style={{ gap: 12, padding: 16 }}>
+          <Text style={{ color: colors.neutral[100], textAlign: 'right' }}>{pendingQuestion}</Text>
+          <Text accessibilityLiveRegion="polite" style={{ color: colors.primary[300] }}>{activity}</Text>
+          {!!liveReply && <Text style={{ color: colors.neutral[100] }}>{liveReply}</Text>}
+        </View> : null}
         keyExtractor={(item) => item.id}
         contentContainerStyle={styles.messagesList}
         renderItem={({ item }) => (
@@ -389,6 +439,19 @@ export default function ChatScreen() {
               >
                 {item.content}
               </Text>
+              {item.role === 'assistant' && item.metadata?.timings_ms != null && (
+                <View>
+                  <TouchableOpacity onPress={() => setExpandedActivity(expandedActivity === item.id ? null : item.id)}>
+                    <Text style={{ color: colors.primary[300], fontSize: 12, marginTop: 8 }}>Activity details {expandedActivity === item.id ? '▾' : '▸'}</Text>
+                  </TouchableOpacity>
+                  {expandedActivity === item.id && <Text style={{ color: colors.neutral[400], fontSize: 12, marginTop: 8 }}>
+                    Model: {item.model_used || 'local'}{'\n'}
+                    {Object.entries(item.metadata.timings_ms as Record<string, number>).map(([key, value]) =>
+                      `${key.replace(/_/g, ' ')}: ${(value / 1000).toFixed(2)}s`).join('\n')}
+                    {'\n'}Request: {((item.latency_ms || 0) / 1000).toFixed(2)}s{'\n'}Activity timings, not a private thought transcript.
+                  </Text>}
+                </View>
+              )}
               {item.role === 'assistant' &&
                 (item.metadata?.memory_status === 'saved' || item.metadata?.memory_status === 'existing') && (
                   <Text style={{ color: colors.primary[300], fontSize: 12, marginTop: 8 }}>
@@ -437,6 +500,25 @@ export default function ChatScreen() {
           <Text style={styles.errorBannerText}>{error}</Text>
         </View>
       )}
+      {memoryQuestions.map(question => <View key={question.id} style={styles.errorBanner}>
+        <Text style={styles.errorBannerText}>Should I remember this? {question.content} (About: {question.subject})</Text>
+        <Text style={styles.errorBannerText}>You can edit the wording and ownership in Memories.</Text>
+        <View style={{ flexDirection: 'row', gap: 20 }}>
+          {(['approve', 'dismiss'] as const).map(action => <TouchableOpacity key={action} onPress={async () => {
+            const { error } = await supabase.rpc('review_memory_suggestion', { p_id: question.id, p_action: action });
+            if (error) setError('Could not review this memory. Try again in Memories.');
+            else setMemoryQuestions(items => items.filter(item => item.id !== question.id));
+          }}><Text style={{ color: colors.primary[300] }}>{action === 'approve' ? 'Yes, remember' : 'Skip'}</Text></TouchableOpacity>)}
+        </View>
+      </View>)}
+      {memoryNotice && <View style={styles.errorBanner}>
+        <Text style={styles.errorBannerText}>Memory saved: {memoryNotice.content}</Text>
+        <TouchableOpacity onPress={async () => {
+          const { error } = await supabase.from('memories').update({ is_active: false }).eq('id', memoryNotice.id);
+          if (error) setError('Could not undo this memory. Try again in Memories.');
+          else setMemoryNotice(null);
+        }}><Text style={{ color: colors.primary[300] }}>Undo</Text></TouchableOpacity>
+      </View>}
       {voiceBusy && (
         <View style={styles.errorBanner}>
           <Text style={styles.errorBannerText}>
@@ -459,6 +541,12 @@ export default function ChatScreen() {
             placeholder="Message your companion..."
             placeholderTextColor={colors.neutral[500]}
             multiline
+            {...(Platform.OS === 'web' ? { onKeyPress: (event: any) => {
+              if (shouldSendOnEnter(event)) {
+                event.preventDefault();
+                void sendMessage();
+              }
+            } } : {})}
             maxLength={4000}
             editable={!sending && !voiceBusy}
           />

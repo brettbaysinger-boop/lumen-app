@@ -58,6 +58,9 @@ export default function MemoriesScreen() {
 
   const [companion, setCompanion] = useState<Companion | null>(null);
   const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
+  const [editingMemory, setEditingMemory] = useState<string | null>(null);
+  const [memoryDraft, setMemoryDraft] = useState('');
+  const [savingMemory, setSavingMemory] = useState(false);
   const [reviewing, setReviewing] = useState<string | null>(null);
   const [reviewContent, setReviewContent] = useState('');
   const [reviewSubject, setReviewSubject] = useState<MemorySubject>('user');
@@ -256,7 +259,7 @@ export default function MemoriesScreen() {
         ListHeaderComponent={
           <View style={{ gap: Spacing.sm, marginBottom: Spacing.md }}>
             <Text style={styles.emptyTitle}>Noticed in conversation · {suggestions.length} to review</Text>
-            <Text style={styles.memoryContent}>Lumen looks for things that matter while you chat. These proposals become long-term memories only when you approve them.</Text>
+            <Text style={styles.memoryContent}>Clear facts can be remembered automatically. These uncertain, sensitive or conflicting suggestions need your confirmation. Edit ownership or wording before approving.</Text>
             <TouchableOpacity onPress={retryObservations}><Text style={{ color: c.primary[300] }}>Retry unfinished memory checks</Text></TouchableOpacity>
             {!!retryNotice && <Text style={styles.memoryDate}>{retryNotice}</Text>}
             {suggestions.map(item => (
@@ -302,7 +305,21 @@ export default function MemoriesScreen() {
                 </TouchableOpacity>
               </View>
               <Text style={styles.memoryDate}>About: {subjectLabel(item.subject, companion?.name)}</Text>
-              <Text style={styles.memoryContent}>{item.content}</Text>
+              {editingMemory === item.id ? <View style={{ gap: 8 }}>
+                <TextInput style={styles.modalInput} multiline maxLength={500} value={memoryDraft} onChangeText={setMemoryDraft} accessibilityLabel="Correct saved memory" />
+                <TouchableOpacity disabled={savingMemory || !memoryDraft.trim()} onPress={async () => {
+                  setSavingMemory(true);
+                  const { data, error: err } = await supabase.from('memories')
+                    .update({ content: memoryDraft.trim(), source: 'user_corrected' }).eq('id', item.id).select().single();
+                  setSavingMemory(false);
+                  if (err) setError(err.message);
+                  else { setMemories(items => items.map(memory => memory.id === item.id ? data as Memory : memory)); setEditingMemory(null); }
+                }}><Text style={{ color: c.primary[300] }}>{savingMemory ? 'Saving…' : 'Save correction'}</Text></TouchableOpacity>
+                <TouchableOpacity disabled={savingMemory} onPress={() => setEditingMemory(null)}><Text style={{ color: c.neutral[400] }}>Cancel</Text></TouchableOpacity>
+              </View> : <View style={{ gap: 8 }}>
+                <Text style={styles.memoryContent}>{item.content}</Text>
+                <TouchableOpacity onPress={() => { setEditingMemory(item.id); setMemoryDraft(item.content); }}><Text style={{ color: c.primary[300] }}>Edit memory</Text></TouchableOpacity>
+              </View>}
               <View style={styles.typeSelector}>
                 {(['user', 'companion', 'shared', 'unknown'] as MemorySubject[]).map(subject => (
                   <TouchableOpacity key={subject} style={styles.typeChip} onPress={async () => {

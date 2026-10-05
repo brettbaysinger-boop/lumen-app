@@ -23,6 +23,7 @@ class RespondResponse(BaseModel):
     latency_ms: int
     memory_subject: Literal["user", "companion", "shared", "unknown"] | None = None
     observation_message_id: str | None = None
+    timings_ms: dict[str, int] = {}
     memory_count: int
     memory_status: Literal["none", "saved", "existing", "deleted", "clarification_needed"] = "none"
 

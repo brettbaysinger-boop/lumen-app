@@ -1,3 +1,8 @@
+import asyncio
+import json
+from fastapi.responses import StreamingResponse
+from .ollama import model_lock, prioritize_chat
+
 from fastapi import FastAPI, HTTPException, Depends, BackgroundTasks
 from .observations import observe
 from .db import SupabaseRepository
@@ -43,11 +48,13 @@ async def health():
 @app.post("/v0.1/respond", response_model=RespondResponse)
 async def respond(request: RespondRequest, background_tasks: BackgroundTasks, user: AuthUser = Depends(require_user)):
     try:
-        response = await CognitionRuntime(settings, user.token, user.id).respond(
-            request.companion_id,
-            request.conversation_id,
-            request.message,
-        )
+        await prioritize_chat()
+        async with model_lock:
+            response = await CognitionRuntime(settings, user.token, user.id).respond(
+                request.companion_id,
+                request.conversation_id,
+                request.message,
+            )
         if response.observation_message_id:
             background_tasks.add_task(observe, settings, user.token, response.observation_message_id)
         return response
@@ -80,7 +87,7 @@ async def companion_models(companion_id: str, user: AuthUser = Depends(require_u
     return {"models": models, "selected": companion.get("conversation_model"),
             "effective": companion.get("conversation_model") or settings.conversation_model,
             "default": settings.conversation_model,
-            "memory_model": settings.memory_observation_model or settings.conversation_model}
+            "memory_model": settings.memory_observation_model or companion.get("conversation_model") or settings.conversation_model}
 
 
 @app.put("/v0.2/companions/{companion_id}/model")
@@ -100,3 +107,41 @@ async def select_model(companion_id: str, request: ModelSelection, user: AuthUse
     if not rows:
         raise HTTPException(status_code=404, detail="Companion not found")
     return {"selected": request.model, "effective": request.model or settings.conversation_model}
+
+
+@app.post("/v0.2/respond/stream")
+async def respond_stream(request: RespondRequest, background_tasks: BackgroundTasks,
+                         user: AuthUser = Depends(require_user)):
+    instance = CognitionRuntime(settings, user.token, user.id)
+    if not await instance.db.get_companion(request.companion_id):
+        raise HTTPException(status_code=404, detail="Companion not found")
+    if request.conversation_id and not await instance.db.get_conversation(request.conversation_id, request.companion_id):
+        raise HTTPException(status_code=404, detail="Conversation not found")
+
+    async def events():
+        queue = asyncio.Queue(maxsize=64)
+        async def work():
+            try:
+                await queue.put({"type": "activity", "text": "Lumen is thinking…"})
+                await prioritize_chat()
+                async with model_lock:
+                    result = await instance.respond(request.companion_id, request.conversation_id,
+                                                    request.message, emit=queue.put)
+                if result.observation_message_id:
+                    background_tasks.add_task(observe, settings, user.token, result.observation_message_id)
+                await queue.put({"type": "done", "response": result.model_dump()})
+            except Exception:
+                await queue.put({"type": "error", "text": "Lumen could not finish this reply. Reload before retrying."})
+        task = asyncio.create_task(work())
+        try:
+            while True:
+                event = await queue.get()
+                yield json.dumps(event) + "\n"
+                if event["type"] in ("done", "error"):
+                    break
+        finally:
+            if not task.done():
+                task.cancel()
+            await asyncio.gather(task, return_exceptions=True)
+    return StreamingResponse(events(), media_type="application/x-ndjson",
+                             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})

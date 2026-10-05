@@ -1,4 +1,19 @@
+import logging
 import time
+import json
+import asyncio
+
+# Shared within one API process: background extraction never overlaps generation.
+model_lock = asyncio.Lock()
+observation_tasks: set[asyncio.Task] = set()
+
+async def prioritize_chat():
+    # Cancel only extraction tasks. Other foreground replies keep their queue order.
+    tasks = list(observation_tasks)
+    for task in tasks:
+        task.cancel()
+    if tasks:
+        await asyncio.gather(*tasks, return_exceptions=True)
 
 import httpx
 
@@ -10,6 +25,8 @@ class OllamaProvider:
 
     def __init__(self, settings: Settings):
         self.base_url = settings.ollama_url.rstrip("/")
+        self.context_length = getattr(settings, "chat_context_length", 8192)
+        self.keep_alive = getattr(settings, "ollama_keep_alive", "15m")
 
     async def health_check(self) -> bool:
         try:
@@ -30,7 +47,8 @@ class OllamaProvider:
         async with httpx.AsyncClient(timeout=60) as client:
             response = await client.post(f"{self.base_url}/api/chat", json={
                 "model": model, "messages": messages, "stream": False, "format": schema,
-                "options": {"temperature": 0, "num_predict": 1000},
+                "keep_alive": self.keep_alive,
+                "options": {"temperature": 0, "num_predict": 1000, "num_ctx": self.context_length},
             })
             response.raise_for_status()
             return response.json()["message"]["content"]
@@ -44,7 +62,8 @@ class OllamaProvider:
                     "model": model,
                     "messages": messages,
                     "stream": False,
-                    "options": {"temperature": temperature},
+                    "keep_alive": self.keep_alive,
+                    "options": {"temperature": temperature, "num_ctx": self.context_length},
                 },
             )
             response.raise_for_status()
@@ -57,3 +76,37 @@ class OllamaProvider:
             "tokens_in": data.get("prompt_eval_count"),
             "tokens_out": data.get("eval_count"),
         }
+
+    async def generate_stream(self, model, messages, emit):
+        started = time.perf_counter()
+        content = ""
+        final = None
+        async with httpx.AsyncClient(timeout=180) as client:
+            async with client.stream("POST", f"{self.base_url}/api/chat", json={
+                "model": model, "messages": messages, "stream": True,
+                "keep_alive": self.keep_alive,
+                "options": {"temperature": 0.7, "num_ctx": self.context_length},
+            }) as response:
+                response.raise_for_status()
+                async for line in response.aiter_lines():
+                    if not line.strip():
+                        continue
+                    data = json.loads(line)
+                    if data.get("error"):
+                        raise RuntimeError("Ollama generation failed")
+                    # Activity is shown separately; do not manufacture or expose hidden reasoning.
+                    delta = data.get("message", {}).get("content", "")
+                    if delta:
+                        content += delta
+                        await emit({"type": "delta", "text": delta})
+                    if data.get("done"):
+                        final = data
+        if final is None:
+            raise RuntimeError("Incomplete Ollama stream")
+        timings = {key: round(final.get(key, 0) / 1_000_000) for key in
+                   ("load_duration", "prompt_eval_duration", "eval_duration")}
+        logging.getLogger(__name__).info("Chat timing model=%s context=%s timings_ms=%s", model, self.context_length, timings)
+        return {"content": content, "model": final.get("model", model),
+                "latency_ms": round((time.perf_counter() - started) * 1000),
+                "tokens_in": final.get("prompt_eval_count"), "tokens_out": final.get("eval_count"),
+                "timings_ms": timings}

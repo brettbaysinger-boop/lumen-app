@@ -9,6 +9,7 @@ export type MemoryType =
 export type MessageRole = 'user' | 'assistant' | 'system';
 
 export interface Companion {
+  auto_memory_enabled?: boolean;
   conversation_model?: string | null;
   id: string;
   owner_user_id: string | null;

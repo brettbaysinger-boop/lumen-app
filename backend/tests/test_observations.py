@@ -26,8 +26,25 @@ class ObservationTests(unittest.IsolatedAsyncioTestCase):
         proposals = [c for c in self.calls if c[1] == "rpc/propose_memory"]
         self.assertEqual(len(proposals), 1)
         self.assertEqual(proposals[0][2]["json"]["p_message"], "source")
-        self.assertFalse(any(c[1] == "memories" for c in self.calls))
+        self.assertFalse(any(c[0] != "GET" and c[1] == "memories" for c in self.calls))
         self.assertEqual(self.calls[-1][2]["json"]["status"], "done")
+
+    async def test_clear_fact_is_saved_via_owner_rpc_using_selected_chat_model(self):
+        import json
+        self.setup_worker(json.dumps({"candidates":[{
+            "content":"The user prefers summer.","evidence":"Summer is my favorite season.",
+            "subject":"user","type":"preference","direct_assertion":True,
+            "sensitive":False,"conflicting":False,"topic":"preferred_season"}]}))
+        self.db.get_companion.return_value={"name":"Nova","conversation_model":"selected-chat"}
+        original = self.db._request.side_effect
+        async def request(method, table, **kwargs):
+            result = await original(method, table, **kwargs)
+            return "suggestion-id" if table == "rpc/propose_memory" else result
+        self.db._request.side_effect = request
+        await self.run_worker()
+        self.assertEqual(self.provider.structured.call_args.args[0], "selected-chat")
+        writes=[c for c in self.calls if c[1] == "rpc/auto_save_memory_suggestion"]
+        self.assertEqual(writes[0][2]["json"], {"p_id":"suggestion-id", "p_topic":"preferred_season"})
 
     async def test_invented_evidence_never_proposed(self):
         self.setup_worker('{"candidates":[{"content":"User loves winter.","evidence":"winter","subject":"user","type":"preference"}]}')
@@ -88,7 +105,7 @@ class ObservationTests(unittest.IsolatedAsyncioTestCase):
             import json
             payload = json.loads(request.content)
             self.assertEqual(payload["format"], Candidates.model_json_schema())
-            self.assertEqual(payload["options"], {"temperature":0,"num_predict":1000})
+            self.assertEqual(payload["options"], {"temperature":0,"num_predict":1000,"num_ctx":8192})
             self.assertFalse(payload["stream"])
             return httpx.Response(200,json={"message":{"content":'{"candidates":[]}'}})
         original = httpx.AsyncClient
