@@ -1,24 +1,24 @@
 import { createContext, useContext, useEffect, useState, useCallback, useMemo } from 'react';
 import { Platform } from 'react-native';
 import type { ReactNode } from 'react';
-import { getThemeColors, type SchemeId, type ThemeColors } from './theme';
+import { getThemeColors, type SchemeId, type ExtendedThemeColors } from './theme';
 
 interface ThemeContextValue {
-  colors: ThemeColors;
+  colors: ExtendedThemeColors;
   schemeId: SchemeId;
   setSchemeId: (id: SchemeId) => void;
   mode: 'dark' | 'light';
 }
 
 const ThemeContext = createContext<ThemeContextValue>({
-  colors: getThemeColors('ocean-dark'),
-  schemeId: 'ocean-dark',
+  colors: getThemeColors('lumen-dark'),
+  schemeId: 'lumen-dark',
   setSchemeId: () => {},
   mode: 'dark',
 });
 
 export function ThemeProvider({ children }: { children: ReactNode }) {
-  const [schemeId, setSchemeIdState] = useState<SchemeId>('ocean-dark');
+  const [schemeId, setSchemeIdState] = useState<SchemeId>('lumen-dark');
 
   useEffect(() => {
     if (Platform.OS === 'web') {

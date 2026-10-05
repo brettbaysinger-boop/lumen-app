@@ -26,7 +26,9 @@ import { supabase } from '@/lib/supabase';
 import { respondToMessage } from '@/lib/cognition';
 import { recordMicrophone, transcribeRecording, playReply, type RecordingHandle } from '@/lib/voice';
 import { useTheme } from '@/lib/theme-context';
-import { Spacing, Radius, Typography, type ThemeColors } from '@/lib/theme';
+import { Spacing, Radius, Typography, type ExtendedThemeColors } from '@/lib/theme';
+import { StateGlow } from '@/components/StateGlow';
+import { useCompanionState } from '@/hooks/useCompanionState';
 import type { Companion, Conversation, Message } from '@/types/database';
 
 export default function ChatScreen() {
@@ -35,6 +37,7 @@ export default function ChatScreen() {
   const isMobile = screenWidth < 480;
 
   const [companion, setCompanion] = useState<Companion | null>(null);
+  const { state: companionState } = useCompanionState(companion?.id);
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [activeConversation, setActiveConversation] = useState<Conversation | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
@@ -292,11 +295,10 @@ export default function ChatScreen() {
           <Plus color={colors.neutral[200]} size={22} strokeWidth={2} />
         </TouchableOpacity>
         <View style={styles.headerInfo}>
-          <View style={[styles.avatarDot, { backgroundColor: colors.primary[400] }]} />
+          <StateGlow colors={colors} state={companionState} size={10} />
           <Text style={styles.headerName} numberOfLines={1}>{companion?.name || 'Companion'}</Text>
         </View>
         <View style={styles.headerStatus}>
-          <View style={[styles.statusDot, { backgroundColor: colors.success[400] }]} />
           <Text style={styles.statusText}>{sending ? 'Thinking...' : 'Ready'}</Text>
         </View>
       </View>
@@ -489,7 +491,7 @@ export default function ChatScreen() {
   );
 }
 
-function useMemoStyles(c: ThemeColors, isMobile: boolean) {
+function useMemoStyles(c: ExtendedThemeColors, isMobile: boolean) {
   return useMemo(() => StyleSheet.create({
     container: {
       flex: 1,

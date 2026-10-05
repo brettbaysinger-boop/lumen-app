@@ -115,6 +115,23 @@ export interface Reflection {
   created_at: string;
 }
 
+export type GalleryCategory = 'moment' | 'user_showed' | 'companion_sent';
+export type GallerySource = 'user' | 'companion';
+export type GalleryMediaType = 'image' | 'video';
+
+export interface GalleryItem {
+  id: string;
+  companion_id: string;
+  conversation_id: string | null;
+  source: GallerySource;
+  category: GalleryCategory;
+  media_type: GalleryMediaType;
+  url: string;
+  caption: string | null;
+  metadata: Record<string, unknown>;
+  created_at: string;
+}
+
 export interface ModelRun {
   id: string;
   companion_id: string | null;
