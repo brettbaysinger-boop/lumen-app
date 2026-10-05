@@ -250,7 +250,7 @@ export default function GalleryScreen() {
 
 function createStyles(c: ExtendedThemeColors) {
   return StyleSheet.create({
-    container: { flex: 1, backgroundColor: c.neutral[950] },
+    container: { flex: 1, backgroundColor: c.neutral[950], overflow: 'hidden' },
     loadingContainer: { flex: 1, backgroundColor: c.neutral[950], alignItems: 'center', justifyContent: 'center' },
     header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: Spacing.md, paddingVertical: Spacing.md, maxWidth: 720, alignSelf: 'center', width: '100%' },
     headerTitleRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm },

@@ -391,7 +391,7 @@ function ToggleSwitch({ value, onToggle, colors: c }: { value: boolean; onToggle
 
 function createStyles(c: ExtendedThemeColors) {
   return StyleSheet.create({
-    container: { flex: 1, backgroundColor: c.neutral[950] },
+    container: { flex: 1, backgroundColor: c.neutral[950], overflow: 'hidden' },
     loadingContainer: { flex: 1, backgroundColor: c.neutral[950], alignItems: 'center', justifyContent: 'center' },
     scrollContent: { padding: Spacing.md, paddingBottom: Spacing.xxl, maxWidth: 640, alignSelf: 'center', width: '100%' },
     header: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, paddingVertical: Spacing.md },

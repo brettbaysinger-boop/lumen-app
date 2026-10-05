@@ -496,6 +496,7 @@ function useMemoStyles(c: ExtendedThemeColors, isMobile: boolean) {
     container: {
       flex: 1,
       backgroundColor: c.neutral[950],
+      overflow: 'hidden',
     },
     loadingContainer: {
       flex: 1,

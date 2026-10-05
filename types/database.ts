@@ -17,6 +17,7 @@ export interface Companion {
   system_prompt: string | null;
   voice_enabled: boolean;
   vision_enabled: boolean;
+  portrait_url: string;
   created_at: string;
   updated_at: string;
 }

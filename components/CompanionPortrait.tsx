@@ -1,17 +1,24 @@
 import { useMemo } from 'react';
-import { View, StyleSheet } from 'react-native';
-import { Image } from 'react-native';
+import { View, StyleSheet, Image, type ImageSourcePropType } from 'react-native';
 import type { ExtendedThemeColors } from '@/lib/theme';
 import type { Mood } from '@/hooks/useCompanionState';
+
+const PORTRAIT_ASSETS: Record<string, ImageSourcePropType> = {
+  '/lumen-portrait.webp': require('../public/lumen-portrait.webp'),
+  '/lumen-portrait-solar.webp': require('../public/lumen-portrait-solar.webp'),
+  '/lumen-portrait-tide.webp': require('../public/lumen-portrait-tide.webp'),
+  '/lumen-portrait-ember.webp': require('../public/lumen-portrait-ember.webp'),
+};
 
 interface CompanionPortraitProps {
   colors: ExtendedThemeColors;
   size: number;
   mood?: Mood;
   glowIntensity?: number;
+  portraitUrl?: string | null;
 }
 
-export function CompanionPortrait({ colors: c, size, mood = 'idle', glowIntensity }: CompanionPortraitProps) {
+export function CompanionPortrait({ colors: c, size, mood = 'idle', glowIntensity, portraitUrl }: CompanionPortraitProps) {
   const intensity = useMemo(() => {
     if (glowIntensity !== undefined) return Math.max(0.15, Math.min(1, glowIntensity));
     const moodIntensities: Record<Mood, number> = {
@@ -55,13 +62,13 @@ export function CompanionPortrait({ colors: c, size, mood = 'idle', glowIntensit
           borderColor: c.gold[600], borderWidth: 1,
         }]}>
           <Image
-            source={{ uri: '/lumen-portrait.webp' }}
+            source={PORTRAIT_ASSETS[portraitUrl || '/lumen-portrait.webp'] || PORTRAIT_ASSETS['/lumen-portrait.webp']}
             style={[styles.image, {
               width: innerSize - 2, height: innerSize - 2,
               borderRadius: (innerSize - 2) / 2,
             }]}
             resizeMode="cover"
-            accessibilityLabel="Portrait of Lumen"
+            accessibilityLabel="Companion portrait"
           />
         </View>
       </View>

@@ -1,4 +1,5 @@
 import { View, ActivityIndicator } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '@/lib/auth';
 import { useTheme } from '@/lib/theme-context';
 import { Tabs, Redirect } from 'expo-router';
@@ -16,6 +17,7 @@ function makeIcon(Icon: LucideIcon) {
 export default function TabLayout() {
   const { session, loading, error } = useAuth();
   const { colors } = useTheme();
+  const insets = useSafeAreaInsets();
   if (loading) return <View style={{ flex: 1, backgroundColor: colors.neutral[950], justifyContent: 'center' }}><ActivityIndicator color={colors.primary[400]} /></View>;
   if (!session || error) return <Redirect href="/login" />;
   return (
@@ -28,9 +30,10 @@ export default function TabLayout() {
           backgroundColor: colors.neutral[950],
           borderTopColor: colors.neutral[800],
           borderTopWidth: 1,
-          height: 60,
-          paddingBottom: 8,
+          height: 64 + insets.bottom,
+          paddingBottom: 8 + insets.bottom,
           paddingTop: 8,
+          minHeight: 64 + insets.bottom,
         },
         tabBarLabelStyle: {
           fontFamily: 'Inter-Medium',

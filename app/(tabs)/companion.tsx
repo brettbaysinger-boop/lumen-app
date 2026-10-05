@@ -1,6 +1,6 @@
 import { useState, useCallback, useMemo } from 'react';
 import {
-  View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, Modal, TextInput,
+  View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, Modal, TextInput, Image,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import {
@@ -13,6 +13,13 @@ import { CompanionPortrait } from '@/components/CompanionPortrait';
 import { StateGlow } from '@/components/StateGlow';
 import { useCompanionState, getMoodFromState, getMoodLabel } from '@/hooks/useCompanionState';
 import type { CompanionState } from '@/types/database';
+
+const PORTRAITS = [
+  { label: 'Original', url: '/lumen-portrait.webp' },
+  { label: 'Solar', url: '/lumen-portrait-solar.webp' },
+  { label: 'Tide', url: '/lumen-portrait-tide.webp' },
+  { label: 'Ember', url: '/lumen-portrait-ember.webp' },
+] as const;
 
 const STATE_VARIABLES: Array<{ key: keyof CompanionState; label: string; icon: typeof Sparkles }> = [
   { key: 'attention', label: 'Attention', icon: Eye },
@@ -38,6 +45,8 @@ export default function CompanionScreen() {
   const [personaText, setPersonaText] = useState('');
   const [editingName, setEditingName] = useState(false);
   const [nameText, setNameText] = useState('');
+  const [showPortraitPicker, setShowPortraitPicker] = useState(false);
+  const [portraitSaving, setPortraitSaving] = useState(false);
 
   const savePersona = useCallback(async () => {
     try { await updateCompanion({ persona: personaText.trim() }); setEditingPersona(false); } catch {}
@@ -73,8 +82,13 @@ export default function CompanionScreen() {
     <SafeAreaView style={styles.container} edges={['top']}>
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
         <View style={styles.heroSection}>
-          <CompanionPortrait colors={c} size={120} mood={mood}
-            glowIntensity={displayState ? (displayState.energy + displayState.curiosity) / 2 : undefined} />
+          <TouchableOpacity onPress={() => setShowPortraitPicker(true)} accessibilityLabel="Change companion portrait">
+            <CompanionPortrait colors={c} size={120} mood={mood} portraitUrl={companion?.portrait_url}
+              glowIntensity={displayState ? (displayState.energy + displayState.curiosity) / 2 : undefined} />
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.changePortraitButton} onPress={() => setShowPortraitPicker(true)}>
+            <Text style={styles.changePortraitText}>Change portrait</Text>
+          </TouchableOpacity>
           <View style={styles.moodRow}>
             <StateGlow colors={c} state={displayState} size={10} showLabel />
           </View>
@@ -215,6 +229,44 @@ export default function CompanionScreen() {
         <View style={styles.footer} />
       </ScrollView>
 
+      <Modal visible={showPortraitPicker} transparent animationType="fade" onRequestClose={() => setShowPortraitPicker(false)}>
+        <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={() => setShowPortraitPicker(false)}>
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Choose a portrait</Text>
+              <TouchableOpacity onPress={() => setShowPortraitPicker(false)}>
+                <X color={c.neutral[400]} size={22} strokeWidth={2} />
+              </TouchableOpacity>
+            </View>
+            <Text style={styles.modalDescription}>Pick the look that feels right for your companion.</Text>
+            <View style={styles.portraitGrid}>
+              {PORTRAITS.map((portrait) => {
+                const selected = (companion?.portrait_url || '/lumen-portrait.webp') === portrait.url;
+                return (
+                  <TouchableOpacity
+                    key={portrait.url}
+                    style={[styles.portraitOption, selected && styles.portraitOptionSelected]}
+                    disabled={portraitSaving}
+                    onPress={async () => {
+                      setPortraitSaving(true);
+                      try {
+                        await updateCompanion({ portrait_url: portrait.url });
+                        setShowPortraitPicker(false);
+                      } finally {
+                        setPortraitSaving(false);
+                      }
+                    }}
+                  >
+                    <Image source={{ uri: portrait.url }} style={styles.portraitThumbnail} />
+                    <Text style={[styles.portraitLabel, selected && styles.portraitLabelSelected]}>{portrait.label}</Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+          </View>
+        </TouchableOpacity>
+      </Modal>
+
       <Modal visible={editingPersona} transparent animationType="fade" onRequestClose={() => setEditingPersona(false)}>
         <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={() => setEditingPersona(false)}>
           <View style={styles.modalContent}>
@@ -239,12 +291,14 @@ export default function CompanionScreen() {
 
 function createStyles(c: ExtendedThemeColors) {
   return StyleSheet.create({
-    container: { flex: 1, backgroundColor: c.neutral[950] },
+    container: { flex: 1, backgroundColor: c.neutral[950], overflow: 'hidden' },
     loadingContainer: { flex: 1, backgroundColor: c.neutral[950], alignItems: 'center', justifyContent: 'center' },
     errorText: { ...Typography.body, color: c.error[400], textAlign: 'center', padding: Spacing.lg },
     scrollContent: { padding: Spacing.md, paddingBottom: Spacing.xxl, maxWidth: 640, alignSelf: 'center', width: '100%' },
     heroSection: { alignItems: 'center', paddingVertical: Spacing.xl, gap: Spacing.sm },
     moodRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center' },
+    changePortraitButton: { paddingHorizontal: Spacing.md, paddingVertical: Spacing.xs, borderRadius: Radius.pill, backgroundColor: c.neutral[800], borderWidth: 1, borderColor: c.neutral[700] },
+    changePortraitText: { ...Typography.caption, color: c.primary[300], fontFamily: 'Inter-SemiBold' },
     nameRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm },
     companionName: { ...Typography.heading, color: c.neutral[100] },
     nameEditRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm },
@@ -282,6 +336,13 @@ function createStyles(c: ExtendedThemeColors) {
     modalContent: { backgroundColor: c.neutral[900], borderRadius: Radius.xl, padding: Spacing.lg, gap: Spacing.sm, borderWidth: 1, borderColor: c.gold[800] },
     modalHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: Spacing.sm },
     modalTitle: { ...Typography.subheading, color: c.neutral[100] },
+    modalDescription: { ...Typography.caption, color: c.neutral[400], lineHeight: 20 },
+    portraitGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.sm },
+    portraitOption: { width: '47%', alignItems: 'center', gap: Spacing.xs, padding: Spacing.xs, borderRadius: Radius.md, borderWidth: 2, borderColor: 'transparent' },
+    portraitOptionSelected: { borderColor: c.primary[400], backgroundColor: c.neutral[800] },
+    portraitThumbnail: { width: 96, height: 96, borderRadius: 48 },
+    portraitLabel: { ...Typography.caption, color: c.neutral[400] },
+    portraitLabelSelected: { color: c.primary[300], fontFamily: 'Inter-SemiBold' },
     modalInput: { ...Typography.body, color: c.neutral[100], backgroundColor: c.neutral[800], borderRadius: Radius.md, paddingHorizontal: Spacing.md, paddingVertical: Spacing.md, minHeight: 120, maxHeight: 240 },
     modalSaveButton: { backgroundColor: c.primary[600], borderRadius: Radius.md, paddingVertical: Spacing.md, alignItems: 'center', marginTop: Spacing.sm },
     modalSaveText: { ...Typography.bodyMedium, color: c.neutral[0], fontFamily: 'Inter-SemiBold' },
