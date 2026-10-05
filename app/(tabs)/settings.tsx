@@ -393,7 +393,7 @@ function createStyles(c: ExtendedThemeColors) {
   return StyleSheet.create({
     container: { flex: 1, backgroundColor: c.neutral[950] },
     loadingContainer: { flex: 1, backgroundColor: c.neutral[950], alignItems: 'center', justifyContent: 'center' },
-    scrollContent: { padding: Spacing.md, paddingBottom: Spacing.xxl },
+    scrollContent: { padding: Spacing.md, paddingBottom: Spacing.xxl, maxWidth: 640, alignSelf: 'center', width: '100%' },
     header: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, paddingVertical: Spacing.md },
     headerTitle: { ...Typography.heading, color: c.neutral[100] },
     section: { backgroundColor: c.neutral[900], borderRadius: Radius.lg, padding: Spacing.md, marginTop: Spacing.sm, gap: Spacing.sm, borderWidth: 1, borderColor: c.neutral[800] },
@@ -428,7 +428,7 @@ function createStyles(c: ExtendedThemeColors) {
     routingDetail: { ...Typography.caption, color: c.neutral[400] },
     routingProvider: { ...Typography.small, color: c.neutral[600] },
     statsGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.sm },
-    statCard: { width: '48%', backgroundColor: c.neutral[800], borderRadius: Radius.md, padding: Spacing.md, gap: Spacing.xs },
+    statCard: { flex: 1, minWidth: 130, maxWidth: '48%', backgroundColor: c.neutral[800], borderRadius: Radius.md, padding: Spacing.md, gap: Spacing.xs },
     statValue: { ...Typography.heading, color: c.neutral[100] },
     statLabel: { ...Typography.caption, color: c.neutral[500] },
     recentRuns: { marginTop: Spacing.sm, gap: Spacing.xs },

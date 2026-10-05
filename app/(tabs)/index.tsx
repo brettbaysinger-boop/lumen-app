@@ -522,6 +522,9 @@ function useMemoStyles(c: ExtendedThemeColors, isMobile: boolean) {
       paddingVertical: Spacing.sm,
       borderBottomWidth: 1,
       borderBottomColor: c.neutral[800],
+      maxWidth: 800,
+      alignSelf: 'center',
+      width: '100%',
     },
     menuButton: {
       width: 36,
@@ -637,6 +640,9 @@ function useMemoStyles(c: ExtendedThemeColors, isMobile: boolean) {
       paddingVertical: Spacing.md,
       paddingHorizontal: isMobile ? Spacing.sm + 2 : Spacing.md,
       flexGrow: 1,
+      maxWidth: 800,
+      alignSelf: 'center',
+      width: '100%',
     },
     messageWrapper: {
       flexDirection: 'row',
@@ -733,6 +739,9 @@ function useMemoStyles(c: ExtendedThemeColors, isMobile: boolean) {
       backgroundColor: c.neutral[900],
       borderTopWidth: 1,
       borderTopColor: c.neutral[800],
+      maxWidth: 800,
+      alignSelf: 'center',
+      width: '100%',
     },
     inputButton: {
       width: 38,

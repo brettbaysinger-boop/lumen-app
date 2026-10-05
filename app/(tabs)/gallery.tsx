@@ -101,7 +101,8 @@ export default function GalleryScreen() {
     );
   }
 
-  const cardSize = (screenWidth - Spacing.md * (numColumns + 1)) / numColumns;
+  const effectiveWidth = Math.min(screenWidth, 720);
+  const cardSize = (effectiveWidth - Spacing.md * (numColumns + 1)) / numColumns;
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
@@ -251,17 +252,17 @@ function createStyles(c: ExtendedThemeColors) {
   return StyleSheet.create({
     container: { flex: 1, backgroundColor: c.neutral[950] },
     loadingContainer: { flex: 1, backgroundColor: c.neutral[950], alignItems: 'center', justifyContent: 'center' },
-    header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: Spacing.md, paddingVertical: Spacing.md },
+    header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: Spacing.md, paddingVertical: Spacing.md, maxWidth: 720, alignSelf: 'center', width: '100%' },
     headerTitleRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm },
     headerTitle: { ...Typography.heading, color: c.neutral[100] },
     addButton: { width: 44, height: 44, borderRadius: 22, backgroundColor: c.neutral[800], alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: c.gold[500] },
-    filterRow: { marginBottom: Spacing.sm },
-    filterContent: { paddingHorizontal: Spacing.md, gap: Spacing.sm },
+    filterRow: { marginBottom: Spacing.sm, maxWidth: 720, alignSelf: 'center', width: '100%' },
+    filterContent: { paddingHorizontal: Spacing.md, gap: Spacing.sm, maxWidth: 720, alignSelf: 'center', width: '100%' },
     filterChip: { paddingHorizontal: Spacing.md, paddingVertical: Spacing.sm, borderRadius: Radius.pill, backgroundColor: c.neutral[800], borderWidth: 1, borderColor: c.neutral[700] },
     filterChipText: { ...Typography.caption, fontFamily: 'Inter-Medium', color: c.neutral[400] },
     errorBanner: { marginHorizontal: Spacing.md, marginBottom: Spacing.sm, backgroundColor: c.error[900], paddingHorizontal: Spacing.md, paddingVertical: Spacing.sm, borderRadius: Radius.md },
     errorText: { ...Typography.caption, color: c.error[200] },
-    list: { padding: Spacing.md, paddingTop: 0 },
+    list: { padding: Spacing.md, paddingTop: 0, maxWidth: 720, alignSelf: 'center', width: '100%' },
     card: { borderRadius: Radius.md, marginBottom: Spacing.sm, overflow: 'hidden', backgroundColor: c.neutral[800], marginRight: Spacing.md, borderWidth: 1, borderColor: c.gold[800] },
     cardImage: { flex: 1, width: '100%' },
     cardOverlay: { position: 'absolute', bottom: 0, left: 0, right: 0, paddingHorizontal: Spacing.xs + 2, paddingVertical: Spacing.xs + 2, backgroundColor: 'rgba(15,20,32,0.7)' },
