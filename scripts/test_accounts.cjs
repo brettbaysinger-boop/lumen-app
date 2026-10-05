@@ -40,6 +40,11 @@ async function scalar(sql, args = []) { return Object.values((await db.query(sql
     const companionA = await scalar("SELECT ensure_my_companion('Alice')");
     assert.equal(await scalar("SELECT ensure_my_companion('Alice')"), companionA, 'idempotent provision');
     assert.equal(await scalar('SELECT count(*) FROM companions'), 1, 'unowned legacy hidden');
+    await db.query("UPDATE companions SET conversation_model='chat-a' WHERE id=$1", [companionA]);
+    await as('authenticated', B);
+    await db.query("UPDATE companions SET conversation_model='intruder' WHERE id=$1", [companionA]);
+    await as('authenticated', A);
+    assert.equal(await scalar('SELECT conversation_model FROM companions WHERE id=$1', [companionA]), 'chat-a', 'model selection owner isolation');
     const conversationA = await scalar('INSERT INTO conversations(companion_id) VALUES($1) RETURNING id', [companionA]);
     await db.query("INSERT INTO memories(companion_id,conversation_id,type,content,subject,subject_user_id,reported_by_user_id) VALUES($1,$2,'preference','my favorite color is turquoise','user',$3,$3)", [companionA,conversationA,B]);
     assert.equal(await scalar('SELECT subject_user_id FROM memories'), A, 'subject identity enforced');

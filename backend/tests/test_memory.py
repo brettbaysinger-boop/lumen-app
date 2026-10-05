@@ -80,6 +80,17 @@ class MemoryFlow(unittest.IsolatedAsyncioTestCase):
         )
         return runtime
 
+    async def test_selected_model_used_for_reply_and_rewrite(self):
+        r = self.runtime()
+        r.db.get_companion.return_value = {"name": "Lumen", "conversation_model": "chosen-chat"}
+        r.provider.generate.side_effect = [
+            dict(content="I've saved your preference.", model="chosen-chat", latency_ms=1, tokens_in=1, tokens_out=1),
+            dict(content="You like summer.", model="chosen-chat", latency_ms=1, tokens_in=1, tokens_out=1)]
+        result = await r.respond("companion", "chat", "I like summer.")
+        self.assertEqual(result.model, "chosen-chat")
+        self.assertEqual([call.args[0] for call in r.provider.generate.await_args_list], ["chosen-chat", "chosen-chat"])
+        self.assertEqual(r.settings.conversation_model, "test-model")
+
     async def test_background_observation_queued_after_chat_is_saved(self):
         r = self.runtime()
         r.settings.memory_observations_enabled = True

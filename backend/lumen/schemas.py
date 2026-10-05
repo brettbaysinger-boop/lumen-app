@@ -65,3 +65,7 @@ class Memory(BaseModel):
     source: str | None = None
     tags: list[str] = []
     metadata: dict[str, Any] = {}
+
+
+class ModelSelection(BaseModel):
+    model: str | None = Field(default=None, min_length=1, max_length=200)

@@ -1,3 +1,4 @@
+import { ModelPicker } from '@/components/ModelPicker';
 import { useState, useCallback, useEffect, useMemo } from 'react';
 import {
   View,
@@ -57,7 +58,7 @@ const DEFAULT_ROUTING: ModelRouting = {
 };
 
 const INFRA_NODES = [
-  { name: 'Main Desktop', role: 'API + ComfyUI + General AI', gpu: 'RTX 3080 10GB', status: 'online' },
+  { name: 'Main Desktop', role: 'API + ComfyUI + General AI', gpu: 'PNY RTX 5070 OC 12GB GDDR7', status: 'online' },
   { name: 'Cognition Node', role: 'Companion LLM + Reasoning', gpu: 'RTX 5060 Ti 16GB', status: 'pending' },
   { name: 'Helios', role: 'STT / TTS / Audio', gpu: 'GTX 1660 Ti', status: 'online' },
   { name: 'Raspberry Pi 5', role: 'Network + Watchdog', gpu: 'None', status: 'online' },
@@ -189,6 +190,7 @@ export default function SettingsScreen() {
           }}><Text style={{ color: c.primary[300], paddingVertical: 16, fontFamily: 'Inter-Regular' }}>Sign out</Text></TouchableOpacity>
           {!!accountError && <Text style={styles.configSubtext}>{accountError}</Text>}
           <Text style={styles.sectionTitle}>Companion Configuration</Text>
+          {companion && <ModelPicker companionId={companion.id} />}
           <View style={styles.configRow}>
             <View style={styles.configLeft}>
               <Volume2 color={c.neutral[400]} size={20} strokeWidth={2} />
@@ -278,9 +280,9 @@ export default function SettingsScreen() {
         <View style={styles.section}>
           <View style={styles.sectionHeaderRow}>
             <Cpu color={c.primary[400]} size={18} strokeWidth={2} />
-            <Text style={styles.sectionTitle}>Model Routing</Text>
+            <Text style={styles.sectionTitle}>Planned Model Routing</Text>
           </View>
-          <Text style={styles.sectionSubtitle}>Task-based routing across your LAN GPUs</Text>
+          <Text style={styles.sectionSubtitle}>Planning notes. Choose the actual conversation model above.</Text>
           {Object.entries(routing).map(([task, config]) => (
             <View key={task} style={styles.routingRow}>
               <View style={styles.routingLeft}>

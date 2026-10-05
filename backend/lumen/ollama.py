@@ -19,6 +19,13 @@ class OllamaProvider:
         except httpx.HTTPError:
             return False
 
+    async def list_models(self) -> list[str]:
+        async with httpx.AsyncClient(timeout=10) as client:
+            response = await client.get(f"{self.base_url}/api/tags")
+            response.raise_for_status()
+            return sorted({m["name"] for m in response.json().get("models", [])
+                           if isinstance(m.get("name"), str)})
+
     async def structured(self, model: str, messages: list[dict], schema: dict) -> str:
         async with httpx.AsyncClient(timeout=60) as client:
             response = await client.post(f"{self.base_url}/api/chat", json={

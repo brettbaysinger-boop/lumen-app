@@ -1,7 +1,8 @@
-import { createContext, useContext, useEffect, useState, useCallback, useMemo } from 'react';
+import { createContext, useContext, useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import { Platform } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import type { ReactNode } from 'react';
-import { getThemeColors, type SchemeId, type ThemeColors } from './theme';
+import { getThemeColors, SCHEMES, type SchemeId, type ThemeColors } from './theme';
 
 interface ThemeContextValue {
   colors: ThemeColors;
@@ -20,25 +21,29 @@ const ThemeContext = createContext<ThemeContextValue>({
 export function ThemeProvider({ children }: { children: ReactNode }) {
   const [schemeId, setSchemeIdState] = useState<SchemeId>('ocean-dark');
 
+  const chosen = useRef(false);
   useEffect(() => {
-    if (Platform.OS === 'web') {
+    let active = true;
+    const load = async () => {
       try {
-        const saved = localStorage.getItem('lumen-theme') as SchemeId | null;
-        if (saved) setSchemeIdState(saved);
-      } catch {
-        // localStorage might not be available
-      }
-    }
+        const saved = Platform.OS === 'web' ? localStorage.getItem('lumen-theme')
+          : await AsyncStorage.getItem('lumen-theme');
+        if (active && !chosen.current && SCHEMES.some(s => s.id === saved)) {
+          setSchemeIdState(saved as SchemeId);
+        }
+      } catch { /* Keep the default if storage is unavailable. */ }
+    };
+    void load();
+    return () => { active = false; };
   }, []);
 
   const setSchemeId = useCallback((id: SchemeId) => {
+    chosen.current = true;
     setSchemeIdState(id);
     if (Platform.OS === 'web') {
-      try {
-        localStorage.setItem('lumen-theme', id);
-      } catch {
-        // ignore
-      }
+      try { localStorage.setItem('lumen-theme', id); } catch { /* Keep in-session choice. */ }
+    } else {
+      void AsyncStorage.setItem('lumen-theme', id).catch(() => {});
     }
   }, []);
 

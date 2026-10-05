@@ -7,7 +7,7 @@ from .auth import AuthUser, require_user
 from .config import get_settings
 from .ollama import OllamaProvider
 from .runtime import CognitionRuntime
-from .schemas import HealthResponse, RespondRequest, RespondResponse
+from .schemas import HealthResponse, RespondRequest, RespondResponse, ModelSelection
 from .voice import router as voice_router
 
 settings = get_settings()
@@ -66,3 +66,37 @@ async def retry_observations(background_tasks: BackgroundTasks, user: AuthUser =
     for row in rows:
         background_tasks.add_task(observe, settings, user.token, row["source_message_id"])
     return {"queued": len(rows)}
+
+
+@app.get("/v0.2/companions/{companion_id}/models")
+async def companion_models(companion_id: str, user: AuthUser = Depends(require_user)):
+    companion = await SupabaseRepository(settings, user.token).get_companion(companion_id)
+    if not companion:
+        raise HTTPException(status_code=404, detail="Companion not found")
+    try:
+        models = await OllamaProvider(settings).list_models()
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail="Could not list Ollama models") from exc
+    return {"models": models, "selected": companion.get("conversation_model"),
+            "effective": companion.get("conversation_model") or settings.conversation_model,
+            "default": settings.conversation_model,
+            "memory_model": settings.memory_observation_model or settings.conversation_model}
+
+
+@app.put("/v0.2/companions/{companion_id}/model")
+async def select_model(companion_id: str, request: ModelSelection, user: AuthUser = Depends(require_user)):
+    db = SupabaseRepository(settings, user.token)
+    if not await db.get_companion(companion_id):
+        raise HTTPException(status_code=404, detail="Companion not found")
+    if request.model is not None:
+        try:
+            models = await OllamaProvider(settings).list_models()
+        except Exception as exc:
+            raise HTTPException(status_code=502, detail="Could not validate Ollama model") from exc
+        if request.model not in models:
+            raise HTTPException(status_code=400, detail="Choose an installed Ollama model")
+    rows = await db._request("PATCH", "companions", params={"id": f"eq.{companion_id}"},
+        headers={"Prefer": "return=representation"}, json={"conversation_model": request.model})
+    if not rows:
+        raise HTTPException(status_code=404, detail="Companion not found")
+    return {"selected": request.model, "effective": request.model or settings.conversation_model}

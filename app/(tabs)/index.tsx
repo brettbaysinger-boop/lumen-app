@@ -1,3 +1,4 @@
+import { ModelPicker } from '@/components/ModelPicker';
 import { useEffect, useState, useCallback, useRef, useMemo } from 'react';
 import {
   View,
@@ -293,7 +294,9 @@ export default function ChatScreen() {
         </TouchableOpacity>
         <View style={styles.headerInfo}>
           <View style={[styles.avatarDot, { backgroundColor: colors.primary[400] }]} />
-          <Text style={styles.headerName} numberOfLines={1}>{companion?.name || 'Companion'}</Text>
+          <View style={{ flexShrink: 1 }}><Text style={styles.headerName} numberOfLines={1}>{companion?.name || 'Companion'}</Text>
+            {companion && <ModelPicker companionId={companion.id} compact disabled={sending || voiceBusy} />}
+          </View>
         </View>
         <View style={styles.headerStatus}>
           <View style={[styles.statusDot, { backgroundColor: colors.success[400] }]} />

@@ -69,7 +69,7 @@ class CognitionRuntime:
                       "tokens_in": None, "tokens_out": None}
         else:
             result = await self.provider.generate(
-                self.settings.conversation_model,
+                (companion.get("conversation_model") or self.settings.conversation_model),
                 messages,
             )
 
@@ -84,7 +84,7 @@ class CognitionRuntime:
                     "'Your favorite color is turquoise' when answering a recall question. "
                     "Do not discuss saving unless the question asks about saving."}]
                 original = result
-                result = await self.provider.generate(self.settings.conversation_model, rewrite_messages)
+                result = await self.provider.generate((companion.get("conversation_model") or self.settings.conversation_model), rewrite_messages)
                 result["latency_ms"] += original["latency_ms"]
                 for key in ("tokens_in", "tokens_out"):
                     if result[key] is not None and original[key] is not None:
