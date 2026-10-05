@@ -25,6 +25,8 @@ import {
   Zap,
   X,
 } from 'lucide-react-native';
+import { useFocusEffect } from 'expo-router';
+import { authHeaders } from '@/lib/auth';
 import { supabase } from '@/lib/supabase';
 import { Colors, Spacing, Radius, Typography } from '@/lib/theme';
 import type { Companion, Memory, MemoryType, MemorySubject } from '@/types/database';
@@ -45,8 +47,18 @@ function subjectLabel(subject: MemorySubject, name?: string) {
   return { user: 'You', companion: name || 'Companion', shared: 'Both of you', unknown: 'Unassigned' }[subject] || 'Unassigned';
 }
 
+type Suggestion = {
+  id: string; content: string; evidence: string; subject: MemorySubject;
+};
+
 export default function MemoriesScreen() {
   const [companion, setCompanion] = useState<Companion | null>(null);
+  const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
+  const [reviewing, setReviewing] = useState<string | null>(null);
+  const [reviewContent, setReviewContent] = useState('');
+  const [reviewSubject, setReviewSubject] = useState<MemorySubject>('user');
+  const [reviewBusy, setReviewBusy] = useState(false);
+  const [retryNotice, setRetryNotice] = useState('');
   const [memories, setMemories] = useState<Memory[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -109,11 +121,60 @@ export default function MemoriesScreen() {
     if (companion) loadMemories();
   }, [companion, loadMemories]);
 
+  const loadSuggestions = useCallback(async () => {
+    if (!companion) return;
+    const { data, error: err } = await supabase.from('memory_suggestions').select('*')
+      .eq('companion_id', companion.id).eq('status', 'pending').order('created_at', { ascending: false });
+    if (err) setError(err.message);
+    else setSuggestions(data || []);
+  }, [companion]);
+
+  useFocusEffect(useCallback(() => {
+    if (!companion) return;
+    void loadSuggestions();
+    // Background extraction can finish while this tab is open.
+    const timer = setInterval(() => { void loadSuggestions(); }, 5000);
+    return () => clearInterval(timer);
+  }, [companion, loadSuggestions]));
+
+  const reviewSuggestion = async (item: Suggestion, action: 'approve' | 'dismiss') => {
+    if (reviewBusy) return;
+    setReviewBusy(true);
+    try {
+      const { data, error: err } = await supabase.rpc('review_memory_suggestion', {
+        p_id: item.id, p_action: action,
+        p_content: reviewing === item.id ? reviewContent.trim() : item.content,
+        p_subject: reviewing === item.id ? reviewSubject : item.subject,
+      });
+      if (err) throw err;
+      setSuggestions(previous => previous.filter(s => s.id !== item.id));
+      setReviewing(null);
+      if (data === 'deleted') setError('This matches a removed memory. It was not restored.');
+      else setError(null);
+      await loadMemories();
+    } catch (err) { setError(err instanceof Error ? err.message : String((err as { message?: string }).message || 'Review failed.')); }
+    finally { setReviewBusy(false); }
+  };
+
+  const retryObservations = async () => {
+    setRetryNotice('');
+    try {
+      const base = process.env.EXPO_PUBLIC_LUMEN_API_URL?.trim().replace(/\/+$/, '');
+      if (!base) throw new Error('Lumen API address is missing.');
+      const response = await fetch(`${base}/v0.2/memory-observations/retry`, {
+        method: 'POST', headers: await authHeaders(),
+      });
+      if (!response.ok) throw new Error('Could not retry memory checks.');
+      const result = await response.json();
+      setRetryNotice(result.queued ? 'Memory checks queued. Proposals will appear here when ready.' : 'No unfinished checks.');
+    } catch (err) { setError(err instanceof Error ? err.message : 'Retry failed.'); }
+  };
+
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
-    await loadMemories();
+    await Promise.all([loadMemories(), loadSuggestions()]);
     setRefreshing(false);
-  }, [loadMemories]);
+  }, [loadMemories, loadSuggestions]);
 
   const deleteMemory = useCallback(async (id: string) => {
     const { error: err } = await supabase
@@ -229,6 +290,36 @@ export default function MemoriesScreen() {
       )}
 
       <FlatList
+        ListHeaderComponent={
+          <View style={{ gap: Spacing.sm, marginBottom: Spacing.md }}>
+            <Text style={styles.emptyTitle}>Noticed in conversation · {suggestions.length} to review</Text>
+            <Text style={styles.memoryContent}>Lumen looks for things that matter while you chat. These proposals become long-term memories only when you approve them.</Text>
+            <TouchableOpacity onPress={retryObservations}><Text style={{ color: Colors.primary[300] }}>Retry unfinished memory checks</Text></TouchableOpacity>
+            {!!retryNotice && <Text style={styles.memoryDate}>{retryNotice}</Text>}
+            {suggestions.map(item => (
+              <View key={item.id} style={styles.memoryCard}>
+                <Text style={styles.memoryDate}>About: {subjectLabel(item.subject, companion?.name)}</Text>
+                {reviewing === item.id ? <>
+                  <TextInput style={styles.modalInput} value={reviewContent} onChangeText={setReviewContent} multiline maxLength={500} accessibilityLabel="Edit proposed memory" />
+                  <View style={styles.typeSelector}>
+                    {(['user','companion','shared','unknown'] as MemorySubject[]).map(subject => (
+                      <TouchableOpacity key={subject} style={styles.typeChip} onPress={() => setReviewSubject(subject)}>
+                        <Text style={[styles.typeChipText, { color: reviewSubject === subject ? Colors.primary[300] : Colors.neutral[400] }]}>{subjectLabel(subject, companion?.name)}</Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                </> : <Text style={styles.memoryContent}>{item.content}</Text>}
+                <Text style={styles.memoryDate}>You said: “{item.evidence}”</Text>
+                <View style={styles.typeSelector}>
+                  <TouchableOpacity style={styles.typeChip} disabled={reviewBusy || (reviewing === item.id && !reviewContent.trim())} onPress={() => reviewSuggestion(item, 'approve')}><Text style={{ color: Colors.primary[300] }}>Approve</Text></TouchableOpacity>
+                  <TouchableOpacity style={styles.typeChip} disabled={reviewBusy} onPress={() => { setReviewing(item.id); setReviewContent(item.content); setReviewSubject(item.subject); }}><Text style={styles.typeChipText}>Edit</Text></TouchableOpacity>
+                  <TouchableOpacity style={styles.typeChip} disabled={reviewBusy} onPress={() => reviewSuggestion(item, 'dismiss')}><Text style={styles.typeChipText}>Dismiss</Text></TouchableOpacity>
+                </View>
+              </View>
+            ))}
+            <Text style={styles.emptyTitle}>Saved memories</Text>
+          </View>
+        }
         data={filteredMemories}
         keyExtractor={(item) => item.id}
         contentContainerStyle={styles.list}

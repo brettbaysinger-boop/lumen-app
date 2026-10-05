@@ -80,6 +80,22 @@ class MemoryFlow(unittest.IsolatedAsyncioTestCase):
         )
         return runtime
 
+    async def test_background_observation_queued_after_chat_is_saved(self):
+        r = self.runtime()
+        r.settings.memory_observations_enabled = True
+        r.db._request = AsyncMock()
+        r.provider.generate.return_value = dict(content="Summer sounds lovely.", model="test-model", latency_ms=1, tokens_in=1, tokens_out=1)
+        reply = await r.respond("companion", "chat", "Summer is my favorite season.")
+        self.assertEqual(reply.observation_message_id, "message")
+        self.assertEqual(reply.memory_status, "none")
+        r.db.remember.assert_not_awaited()
+        r.db._request.assert_awaited_once()
+        self.assertEqual(r.db.create_message.await_count, 2)
+        r.db._request.side_effect = RuntimeError("offline")
+        reply = await r.respond("companion", "chat", "I like summer.")
+        self.assertIsNone(reply.observation_message_id)
+        self.assertEqual(reply.content, "Summer sounds lovely.")
+
     async def test_save_then_recall_in_another_conversation(self):
         r = self.runtime()
         reply = await r.respond("companion", None, "Remember: I like coffee")

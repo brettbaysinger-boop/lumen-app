@@ -18,6 +18,8 @@ class Settings(BaseSettings):
     conversation_model: str = "llama3.1:8b"
     reflection_model: str = "llama3.1:8b"
     memory_model: str = "llama3.1:8b"
+    memory_observations_enabled: bool = True
+    memory_observation_model: str = ""
     embedding_model: str = "nomic-embed-text"
     speech_url: str = ""
     transcription_model: str = "Systran/faster-distil-whisper-small.en"

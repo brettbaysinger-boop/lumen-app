@@ -22,6 +22,7 @@ class RespondResponse(BaseModel):
     provider: str
     latency_ms: int
     memory_subject: Literal["user", "companion", "shared", "unknown"] | None = None
+    observation_message_id: str | None = None
     memory_count: int
     memory_status: Literal["none", "saved", "existing", "deleted", "clarification_needed"] = "none"
 

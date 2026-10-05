@@ -1,4 +1,6 @@
-from fastapi import FastAPI, HTTPException, Depends
+from fastapi import FastAPI, HTTPException, Depends, BackgroundTasks
+from .observations import observe
+from .db import SupabaseRepository
 from fastapi.middleware.cors import CORSMiddleware
 
 from .auth import AuthUser, require_user
@@ -39,14 +41,28 @@ async def health():
 
 
 @app.post("/v0.1/respond", response_model=RespondResponse)
-async def respond(request: RespondRequest, user: AuthUser = Depends(require_user)):
+async def respond(request: RespondRequest, background_tasks: BackgroundTasks, user: AuthUser = Depends(require_user)):
     try:
-        return await CognitionRuntime(settings, user.token, user.id).respond(
+        response = await CognitionRuntime(settings, user.token, user.id).respond(
             request.companion_id,
             request.conversation_id,
             request.message,
         )
+        if response.observation_message_id:
+            background_tasks.add_task(observe, settings, user.token, response.observation_message_id)
+        return response
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except Exception as exc:
         raise HTTPException(status_code=502, detail="Lumen could not complete this request. Check the API logs.") from exc
+
+
+@app.post("/v0.2/memory-observations/retry")
+async def retry_observations(background_tasks: BackgroundTasks, user: AuthUser = Depends(require_user)):
+    if not settings.memory_observations_enabled:
+        return {"queued": 0}
+    rows = await SupabaseRepository(settings, user.token)._request("GET", "memory_observations",
+        params={"status": "neq.done", "order": "updated_at.asc", "limit": "5"})
+    for row in rows:
+        background_tasks.add_task(observe, settings, user.token, row["source_message_id"])
+    return {"queued": len(rows)}
