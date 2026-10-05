@@ -4,8 +4,12 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import {
-  Sparkles, Target, Heart, BookOpen, AlertCircle, Zap, Eye, Pencil, X, TrendingUp,
+  Sparkles, Target, Heart, BookOpen, AlertCircle, Zap, Eye, Pencil, X, TrendingUp, Upload,
 } from 'lucide-react-native';
+import { useAuth } from '@/lib/auth';
+import {
+  BUILT_IN_PORTRAITS, DEFAULT_PORTRAIT, PortraitUploadError, deleteUploadedPortrait, pickAndUploadPortrait,
+} from '@/lib/portraits';
 import { useCompanion } from '@/hooks/useCompanion';
 import { useTheme } from '@/lib/theme-context';
 import { Spacing, Radius, Typography, type ExtendedThemeColors } from '@/lib/theme';
@@ -13,13 +17,6 @@ import { CompanionPortrait } from '@/components/CompanionPortrait';
 import { StateGlow } from '@/components/StateGlow';
 import { useCompanionState, getMoodFromState, getMoodLabel } from '@/hooks/useCompanionState';
 import type { CompanionState } from '@/types/database';
-
-const PORTRAITS = [
-  { label: 'Original', url: '/lumen-portrait.webp' },
-  { label: 'Solar', url: '/lumen-portrait-solar.webp' },
-  { label: 'Tide', url: '/lumen-portrait-tide.webp' },
-  { label: 'Ember', url: '/lumen-portrait-ember.webp' },
-] as const;
 
 const STATE_VARIABLES: Array<{ key: keyof CompanionState; label: string; icon: typeof Sparkles }> = [
   { key: 'attention', label: 'Attention', icon: Eye },
@@ -47,6 +44,39 @@ export default function CompanionScreen() {
   const [nameText, setNameText] = useState('');
   const [showPortraitPicker, setShowPortraitPicker] = useState(false);
   const [portraitSaving, setPortraitSaving] = useState(false);
+  const [portraitError, setPortraitError] = useState<string | null>(null);
+  const { session } = useAuth();
+
+  const applyPortrait = useCallback(async (getPath: () => Promise<string | null>) => {
+    setPortraitError(null);
+    setPortraitSaving(true);
+    const previous = companion?.portrait_url;
+    let newPath: string | null = null;
+    try {
+      newPath = await getPath();
+      if (!newPath) return;
+      await updateCompanion({ portrait_url: newPath });
+      if (previous !== newPath) await deleteUploadedPortrait(previous);
+      setShowPortraitPicker(false);
+    } catch (err) {
+      if (newPath && newPath !== previous) await deleteUploadedPortrait(newPath);
+      console.error('portrait change failed', err);
+      setPortraitError(err instanceof PortraitUploadError ? err.message : 'Could not update the portrait. Please try again.');
+    } finally {
+      setPortraitSaving(false);
+    }
+  }, [companion?.portrait_url, updateCompanion]);
+
+  const uploadOwnPortrait = useCallback(() => {
+    const userId = session?.user.id;
+    if (!userId) return;
+    applyPortrait(() => pickAndUploadPortrait(userId));
+  }, [session?.user.id, applyPortrait]);
+
+  const openPortraitPicker = useCallback(() => {
+    setPortraitError(null);
+    setShowPortraitPicker(true);
+  }, []);
 
   const savePersona = useCallback(async () => {
     try { await updateCompanion({ persona: personaText.trim() }); setEditingPersona(false); } catch {}
@@ -82,11 +112,11 @@ export default function CompanionScreen() {
     <SafeAreaView style={styles.container} edges={['top']}>
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
         <View style={styles.heroSection}>
-          <TouchableOpacity onPress={() => setShowPortraitPicker(true)} accessibilityLabel="Change companion portrait">
+          <TouchableOpacity onPress={openPortraitPicker} accessibilityLabel="Change companion portrait">
             <CompanionPortrait colors={c} size={120} mood={mood} portraitUrl={companion?.portrait_url}
               glowIntensity={displayState ? (displayState.energy + displayState.curiosity) / 2 : undefined} />
           </TouchableOpacity>
-          <TouchableOpacity style={styles.changePortraitButton} onPress={() => setShowPortraitPicker(true)}>
+          <TouchableOpacity style={styles.changePortraitButton} onPress={openPortraitPicker}>
             <Text style={styles.changePortraitText}>Change portrait</Text>
           </TouchableOpacity>
           <View style={styles.moodRow}>
@@ -233,31 +263,39 @@ export default function CompanionScreen() {
         <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={() => setShowPortraitPicker(false)}>
           <View style={styles.modalContent}>
             <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Choose a portrait</Text>
+              <Text style={styles.modalTitle}>Change portrait</Text>
               <TouchableOpacity onPress={() => setShowPortraitPicker(false)}>
                 <X color={c.neutral[400]} size={22} strokeWidth={2} />
               </TouchableOpacity>
             </View>
-            <Text style={styles.modalDescription}>Pick the look that feels right for your companion.</Text>
+            <TouchableOpacity
+              style={[styles.uploadButton, portraitSaving && styles.uploadButtonDisabled]}
+              onPress={uploadOwnPortrait}
+              disabled={portraitSaving}
+            >
+              {portraitSaving ? (
+                <ActivityIndicator color={c.neutral[0]} />
+              ) : (
+                <>
+                  <Upload color={c.neutral[0]} size={18} strokeWidth={2} />
+                  <Text style={styles.uploadButtonText}>Upload your own photo</Text>
+                </>
+              )}
+            </TouchableOpacity>
+            <Text style={styles.modalDescription}>JPG, PNG, WebP or GIF up to 5 MB. You can crop it to a square before saving.</Text>
+            {portraitError && <Text style={styles.portraitErrorText}>{portraitError}</Text>}
+            <Text style={styles.modalLabel}>Or use a built-in portrait</Text>
             <View style={styles.portraitGrid}>
-              {PORTRAITS.map((portrait) => {
-                const selected = (companion?.portrait_url || '/lumen-portrait.webp') === portrait.url;
+              {BUILT_IN_PORTRAITS.map((portrait) => {
+                const selected = (companion?.portrait_url || DEFAULT_PORTRAIT) === portrait.path;
                 return (
                   <TouchableOpacity
-                    key={portrait.url}
+                    key={portrait.path}
                     style={[styles.portraitOption, selected && styles.portraitOptionSelected]}
                     disabled={portraitSaving}
-                    onPress={async () => {
-                      setPortraitSaving(true);
-                      try {
-                        await updateCompanion({ portrait_url: portrait.url });
-                        setShowPortraitPicker(false);
-                      } finally {
-                        setPortraitSaving(false);
-                      }
-                    }}
+                    onPress={() => applyPortrait(async () => portrait.path)}
                   >
-                    <Image source={{ uri: portrait.url }} style={styles.portraitThumbnail} />
+                    <Image source={portrait.source} style={styles.portraitThumbnail} />
                     <Text style={[styles.portraitLabel, selected && styles.portraitLabelSelected]}>{portrait.label}</Text>
                   </TouchableOpacity>
                 );
@@ -333,14 +371,19 @@ function createStyles(c: ExtendedThemeColors) {
     tagText: { ...Typography.small, color: c.neutral[300], fontFamily: 'Inter-Medium' },
     footer: { height: Spacing.xl },
     modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'center', padding: Spacing.lg },
-    modalContent: { backgroundColor: c.neutral[900], borderRadius: Radius.xl, padding: Spacing.lg, gap: Spacing.sm, borderWidth: 1, borderColor: c.gold[800] },
+    modalContent: { backgroundColor: c.neutral[900], borderRadius: Radius.xl, padding: Spacing.lg, gap: Spacing.sm, borderWidth: 1, borderColor: c.gold[800], width: '100%', maxWidth: 480, alignSelf: 'center' },
     modalHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: Spacing.sm },
     modalTitle: { ...Typography.subheading, color: c.neutral[100] },
     modalDescription: { ...Typography.caption, color: c.neutral[400], lineHeight: 20 },
-    portraitGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.sm },
-    portraitOption: { width: '47%', alignItems: 'center', gap: Spacing.xs, padding: Spacing.xs, borderRadius: Radius.md, borderWidth: 2, borderColor: 'transparent' },
+    uploadButton: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: Spacing.sm, backgroundColor: c.primary[600], borderRadius: Radius.md, paddingVertical: Spacing.md, minHeight: 52 },
+    uploadButtonDisabled: { opacity: 0.7 },
+    uploadButtonText: { ...Typography.bodyMedium, color: c.neutral[0], fontFamily: 'Inter-SemiBold' },
+    portraitErrorText: { ...Typography.caption, color: c.error[300], backgroundColor: c.error[900], padding: Spacing.sm, borderRadius: Radius.sm },
+    modalLabel: { ...Typography.caption, color: c.neutral[400], fontFamily: 'Inter-SemiBold', marginTop: Spacing.sm },
+    portraitGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.sm, justifyContent: 'space-between' },
+    portraitOption: { width: '23%', minWidth: 64, alignItems: 'center', gap: Spacing.xs, padding: Spacing.xs, borderRadius: Radius.md, borderWidth: 2, borderColor: 'transparent' },
     portraitOptionSelected: { borderColor: c.primary[400], backgroundColor: c.neutral[800] },
-    portraitThumbnail: { width: 96, height: 96, borderRadius: 48 },
+    portraitThumbnail: { width: 56, height: 56, borderRadius: 28 },
     portraitLabel: { ...Typography.caption, color: c.neutral[400] },
     portraitLabelSelected: { color: c.primary[300], fontFamily: 'Inter-SemiBold' },
     modalInput: { ...Typography.body, color: c.neutral[100], backgroundColor: c.neutral[800], borderRadius: Radius.md, paddingHorizontal: Spacing.md, paddingVertical: Spacing.md, minHeight: 120, maxHeight: 240 },
