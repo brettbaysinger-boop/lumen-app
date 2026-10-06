@@ -1,6 +1,6 @@
 import { View, Text, Pressable, StyleSheet, useWindowDimensions } from 'react-native';
 import type { BottomTabBarProps } from '@react-navigation/bottom-tabs';
-import { MessageCircle, Brain, User, Settings, Images, Sparkles } from 'lucide-react-native';
+import { MessageCircle, Brain, User, Settings, Images } from 'lucide-react-native';
 import { useTheme } from '@/lib/theme-context';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -19,7 +19,6 @@ export function LumenNavigation({ state, navigation }: BottomTabBarProps) {
   const desktop = width >= 1000;
   return <View style={[styles.shell, { backgroundColor: c.neutral[950], borderColor: c.neutral[800] }, desktop ? styles.desktop : [styles.mobile, { paddingBottom: Math.max(insets.bottom, 10) }]]}>
     {desktop && <View style={styles.brand}>
-      <View style={[styles.mark, { backgroundColor: c.primary[900] }]}><Sparkles size={24} color={c.primary[300]} /></View>
       <Text style={[styles.wordmark, { color: c.neutral[50] }]}>lumen<Text style={{ color: c.primary[400] }}>.</Text></Text>
       <Text style={[styles.tagline, { color: c.neutral[400] }]}>A little closer.</Text>
     </View>}
@@ -52,7 +51,7 @@ export function LumenNavigation({ state, navigation }: BottomTabBarProps) {
 const styles = StyleSheet.create({
   shell: { flexShrink: 0 }, desktop: { width: 216, borderRightWidth: 1, padding: 18, paddingTop: 40 },
   mobile: { borderTopWidth: 1, paddingTop: 10, paddingHorizontal: 6 },
-  brand: { marginBottom: 52, paddingHorizontal: 12 }, mark: { width: 44, height: 44, borderRadius: 15, alignItems: 'center', justifyContent: 'center', marginBottom: 20 },
+  brand: { marginBottom: 52, paddingHorizontal: 12 },
   wordmark: { fontSize: 32, fontFamily: 'Inter-SemiBold', letterSpacing: -1.5 }, tagline: { fontSize: 12, marginTop: 6, fontFamily: 'Inter-Regular' },
   links: { gap: 8, flex: 1 }, mobileLinks: { flexDirection: 'row' }, link: { borderRadius: 12 },
   desktopLink: { flexDirection: 'row', alignItems: 'center', gap: 12, minHeight: 48, paddingHorizontal: 12 },

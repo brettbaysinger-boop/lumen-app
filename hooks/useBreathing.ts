@@ -1,5 +1,5 @@
-import { useEffect, useRef } from 'react';
-import { Animated, Easing, Platform } from 'react-native';
+import { useEffect, useRef, useState } from 'react';
+import { Animated, Easing, Platform, AccessibilityInfo } from 'react-native';
 import type { Mood } from '@/hooks/useCompanionState';
 
 const HALF_BREATH_MS: Record<Mood, number> = {
@@ -18,10 +18,18 @@ const DEPTH: Record<Mood, number> = {
   resting: 0.012,
 };
 
-export function useBreathing(mood: Mood) {
+export function useBreathing(mood: Mood, enabled = true) {
+  const [reduced, setReduced] = useState(false);
+  useEffect(() => {
+    let active = true;
+    void AccessibilityInfo.isReduceMotionEnabled().then(value => { if (active) setReduced(value); });
+    const subscription = AccessibilityInfo.addEventListener('reduceMotionChanged', setReduced);
+    return () => { active = false; subscription.remove(); };
+  }, []);
   const progress = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
+    if (!enabled || reduced) { progress.setValue(0); return; }
     const duration = HALF_BREATH_MS[mood];
     const ease = Easing.inOut(Easing.sin);
     const useNativeDriver = Platform.OS !== 'web';
@@ -33,7 +41,7 @@ export function useBreathing(mood: Mood) {
     );
     loop.start();
     return () => loop.stop();
-  }, [mood, progress]);
+  }, [mood, progress, enabled, reduced]);
 
   const depth = DEPTH[mood];
   return {

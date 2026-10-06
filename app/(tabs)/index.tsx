@@ -12,14 +12,11 @@ import {
   StyleSheet,
   ActivityIndicator,
   Keyboard,
-  Image,
-  Animated,
   useWindowDimensions,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import {
   Send,
-  Sparkles,
   Mic,
   Plus,
   ChevronLeft,
@@ -27,28 +24,29 @@ import {
   Square,
   ImagePlus,
   PanelLeft,
+  Camera,
 } from 'lucide-react-native';
-import { router } from 'expo-router';
-import { CompanionPresence } from '@/components/CompanionPresence';
+import { CameraCapture } from '@/components/CameraCapture';
+import { CompanionPortrait } from '@/components/CompanionPortrait';
+import { useFocusEffect } from 'expo-router';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth';
 import { respondToMessage, generateImage, isImageRequest } from '@/lib/cognition';
 import { pickImages, uploadImage, removeStoredFiles, MediaError, type PickedImage } from '@/lib/media';
-import { usePortraitSource } from '@/lib/portraits';
 import { MessageImages, PendingAttachments, readAttachments } from '@/components/ChatAttachments';
 import { recordMicrophone, transcribeRecording, playReply, type RecordingHandle } from '@/lib/voice';
 import { useTheme } from '@/lib/theme-context';
 import { Spacing, Radius, Typography, type ExtendedThemeColors } from '@/lib/theme';
 import { StateGlow } from '@/components/StateGlow';
 import { useCompanionState, getMoodFromState } from '@/hooks/useCompanionState';
-import { useBreathing } from '@/hooks/useBreathing';
 import type { Companion, Conversation, Message } from '@/types/database';
 
 export default function ChatScreen() {
   const { colors } = useTheme();
-  const { width: screenWidth, height: screenHeight } = useWindowDimensions();
+  const { width: screenWidth } = useWindowDimensions();
   const isMobile = screenWidth < 600;
-  const showPresence = screenWidth >= 1280 && screenHeight >= 700;
+  const [showCamera, setShowCamera] = useState(false);
+  const [speakingId, setSpeakingId] = useState<string | null>(null);
 
   const [companion, setCompanion] = useState<Companion | null>(null);
   const { state: companionState } = useCompanionState(companion?.id);
@@ -68,8 +66,6 @@ export default function ChatScreen() {
   const [creatingImage, setCreatingImage] = useState(false);
   const [pendingImages, setPendingImages] = useState<PickedImage[]>([]);
   const { session } = useAuth();
-  const portraitSource = usePortraitSource(companion?.portrait_url);
-  const breath = useBreathing(sending ? 'thinking' : getMoodFromState(companionState));
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [showSidebar, setShowSidebar] = useState(false);
@@ -171,24 +167,24 @@ export default function ChatScreen() {
   const togglePlayback = useCallback(async (message: Message) => {
     const stopping = playingId === message.id;
     playbackRef.current?.abort();
-    if (stopping) { setPlayingId(null); return; }
+    if (stopping) { setPlayingId(null); setSpeakingId(null); return; }
     if (voicePhaseRef.current !== 'idle') return;
     const controller = new AbortController();
     playbackRef.current = controller;
     setPlayingId(message.id);
     setError(null);
     const finished = () => {
-      if (mountedRef.current && playbackRef.current === controller) setPlayingId(null);
+      if (mountedRef.current && playbackRef.current === controller) { setPlayingId(null); setSpeakingId(null); }
     };
     try {
-      await playReply(message.content, controller.signal, finished);
+      await playReply(message.content, controller.signal, finished, { companionId: companion?.id, onStart: () => { if (mountedRef.current && !controller.signal.aborted) setSpeakingId(message.id); } });
     } catch (err) {
       if (mountedRef.current && !controller.signal.aborted) {
         setError(err instanceof Error ? err.message : 'Playback failed.');
         finished();
       }
     }
-  }, [playingId]);
+  }, [playingId, companion?.id]);
 
   const loadCompanion = useCallback(async () => {
     const { data, error: err } = await supabase
@@ -241,9 +237,7 @@ export default function ChatScreen() {
     setMessages((data as Message[]) || []);
   }, []);
 
-  useEffect(() => {
-    loadCompanion();
-  }, [loadCompanion]);
+  useFocusEffect(useCallback(() => { void loadCompanion(); return () => { playbackRef.current?.abort(); }; }, [loadCompanion]));
 
   useEffect(() => {
     if (activeConversation) {
@@ -485,8 +479,11 @@ export default function ChatScreen() {
         data={messages}
         ListFooterComponent={sending ? <View style={{ gap: 12, padding: 16 }}>
           <Text style={{ color: colors.neutral[100], textAlign: 'right' }}>{pendingQuestion}</Text>
-          <Text accessibilityLiveRegion="polite" style={{ color: colors.primary[300] }}>{activity}</Text>
-          {!!liveReply && <Text style={{ color: colors.neutral[100] }}>{liveReply}</Text>}
+          <View style={{ flexDirection: 'row', gap: 12, alignItems: 'flex-start' }}>
+            <CompanionPortrait colors={colors} size={isMobile ? 36 : 46} portraitUrl={companion?.portrait_url} mood="thinking" />
+            <View style={{ flex: 1, gap: 12 }}><Text accessibilityLiveRegion="polite" style={{ color: colors.primary[300] }}>{activity}</Text>
+            {!!liveReply && <Text style={{ color: colors.neutral[100], lineHeight: 26 }}>{liveReply}</Text>}</View>
+          </View>
         </View> : null}
         keyExtractor={(item) => item.id}
         contentContainerStyle={styles.messagesList}
@@ -498,9 +495,7 @@ export default function ChatScreen() {
             ]}
           >
             {item.role === 'assistant' && (
-              <View style={styles.messageAvatar}>
-                <Sparkles color={colors.primary[300]} size={16} strokeWidth={2} />
-              </View>
+              <View style={{ marginTop: 2 }}><CompanionPortrait colors={colors} size={isMobile ? 36 : 46} portraitUrl={companion?.portrait_url} mood={getMoodFromState(companionState)} speaking={speakingId === item.id} /></View>
             )}
             <View
               style={[
@@ -560,20 +555,7 @@ export default function ChatScreen() {
         )}
         ListEmptyComponent={
           <View style={styles.emptyChat}>
-            <View style={styles.emptyChatPortraitStage}>
-              <Animated.View style={[styles.emptyChatGlow, {
-                opacity: Animated.multiply(breath.glow, 0.14),
-                transform: [{ scale: breath.glowScale }],
-              }]} />
-              <Animated.View style={[styles.emptyChatPortraitRing, { transform: [{ scale: breath.scale }] }]}>
-                <Image
-                  source={portraitSource}
-                  style={styles.emptyChatPortrait}
-                  resizeMode="cover"
-                  accessibilityLabel={`Portrait of ${companion?.name || 'your companion'}`}
-                />
-              </Animated.View>
-            </View>
+            <CompanionPortrait colors={colors} size={isMobile ? 140 : 170} portraitUrl={companion?.portrait_url} />
             <Text style={styles.emptyChatTitle}>
               A moment with {companion?.name || 'your companion'}.
             </Text>
@@ -650,6 +632,9 @@ export default function ChatScreen() {
           >
             <ImagePlus color={sending || voiceBusy ? colors.neutral[500] : colors.primary[400]} size={22} strokeWidth={2} />
           </TouchableOpacity>
+          <TouchableOpacity style={styles.inputButton} accessibilityLabel="Take a photo" disabled={sending || voiceBusy || pendingImages.length >= 4} onPress={() => setShowCamera(true)}>
+            <Camera color={sending || voiceBusy || pendingImages.length >= 4 ? colors.neutral[500] : colors.primary[400]} size={21} strokeWidth={1.6} />
+          </TouchableOpacity>
           <TextInput
             style={styles.textInput}
             value={inputText}
@@ -695,10 +680,7 @@ export default function ChatScreen() {
         <Text style={styles.composerHint}>A conversation that stays with you.</Text>
       </KeyboardAvoidingView>
       </View>
-      {showPresence && <CompanionPresence name={companion?.name || 'Lumen'} portraitUrl={companion?.portrait_url}
-        busy={sending} status={voicePhase === 'recording' ? 'Listening…' : playingId ? 'Speaking…' : undefined}
-        onVoice={toggleRecording} voiceDisabled={Platform.OS !== 'web' || sending || voicePhase === 'starting' || voicePhase === 'transcribing'}
-        onCustomize={() => router.push('/companion')} />}
+      {showCamera && <CameraCapture onClose={() => setShowCamera(false)} onCapture={image => setPendingImages(previous => [...previous, image].slice(0, 4))} />}
     </SafeAreaView>
   );
 }
@@ -985,7 +967,7 @@ function useMemoStyles(c: ExtendedThemeColors, isMobile: boolean) {
       width: isMobile ? '96%' : '92%',
     },
     inputButton: {
-      width: 38,
+      width: isMobile ? 28 : 38,
       height: 44,
       alignItems: 'center',
       justifyContent: 'center',

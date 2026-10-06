@@ -24,7 +24,7 @@ async function voiceRequest(path: string, init: RequestInit, signal?: AbortSigna
       throw new Error(typeof body?.detail === 'string' ? body.detail : `Voice request failed (${response.status}).`);
     }
     // Read the body within the timeout and cancellation scope.
-    return path === 'transcribe' ? await response.json() : await response.blob();
+    return path === 'transcribe' || path.endsWith('/voices') || path.endsWith('/voice') ? await response.json() : await response.blob();
   } catch (err) {
     if (controller.signal.aborted && !signal?.aborted) throw new Error('Voice request timed out.');
     if (err instanceof TypeError) throw new Error('Could not reach Lumen for voice. Check the API connection.');
@@ -83,11 +83,11 @@ export async function recordMicrophone(
   return { stop, cancel: () => { cancelled = true; stop(); } };
 }
 
-export async function playReply(text: string, signal: AbortSignal, onEnd: () => void): Promise<() => void> {
+export async function playReply(text: string, signal: AbortSignal, onEnd: () => void, options: { companionId?: string; voice?: string; onStart?: () => void } = {}): Promise<() => void> {
   browserAudio();
   if (text.length > 4000) throw new Error('This reply is too long to play (maximum 4,000 characters).');
   const blob = await voiceRequest('speak', {
-    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text }),
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text, companion_id: options.companionId, voice: options.voice }),
   }, signal) as Blob;
   if (signal.aborted) throw new Error('Playback cancelled.');
   const objectUrl = URL.createObjectURL(blob);
@@ -109,5 +109,17 @@ export async function playReply(text: string, signal: AbortSignal, onEnd: () => 
     stop();
     throw new Error('Could not play the audio. Check browser sound permissions and try Play again.');
   }
+  if (signal.aborted) { stop(); throw new Error('Playback cancelled.'); }
+  options.onStart?.();
   return stop;
+}
+
+
+export interface VoiceOption { id: string; name: string; language?: string; gender?: string }
+export interface VoiceOptions { voices: VoiceOption[]; selected: string | null; effective: string; model: string }
+export async function getVoiceOptions(companionId: string, signal?: AbortSignal): Promise<VoiceOptions> {
+  return await voiceRequest(`companions/${encodeURIComponent(companionId)}/voices`, { method: 'GET' }, signal) as VoiceOptions;
+}
+export async function chooseVoice(companionId: string, voice: string | null, signal?: AbortSignal): Promise<{ selected: string | null; effective: string }> {
+  return await voiceRequest(`companions/${encodeURIComponent(companionId)}/voice`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ voice }) }, signal) as { selected: string | null; effective: string };
 }

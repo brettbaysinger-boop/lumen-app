@@ -1,3 +1,4 @@
+import { useTheme } from '@/lib/theme-context';
 import { useMemo } from 'react';
 import { View, StyleSheet, Image, Animated } from 'react-native';
 import { usePortraitSource } from '@/lib/portraits';
@@ -11,11 +12,16 @@ interface CompanionPortraitProps {
   mood?: Mood;
   glowIntensity?: number;
   portraitUrl?: string | null;
+  speaking?: boolean;
 }
 
-export function CompanionPortrait({ colors: c, size, mood = 'idle', glowIntensity, portraitUrl }: CompanionPortraitProps) {
+export function CompanionPortrait({ colors: c, size, mood = 'idle', glowIntensity, portraitUrl, speaking = false }: CompanionPortraitProps) {
   const source = usePortraitSource(portraitUrl);
-  const breath = useBreathing(mood);
+  const { appearance } = useTheme();
+  const breath = useBreathing(speaking ? 'thinking' : mood, appearance.motion);
+  const height = appearance.frame === 'oval' ? size * 1.2 : size;
+  const radius = appearance.frame === 'rounded' ? size * .22 : appearance.frame === 'none' ? size * .15 : size / 2;
+  const border = appearance.finish === 'gold' ? c.gold[400] : appearance.finish === 'silver' ? '#b8bec7' : c.primary[400];
   const intensity = useMemo(() => {
     if (glowIntensity !== undefined) return Math.max(0.15, Math.min(1, glowIntensity));
     const moodIntensities: Record<Mood, number> = {
@@ -41,33 +47,33 @@ export function CompanionPortrait({ colors: c, size, mood = 'idle', glowIntensit
   const glow2Size = size + 8;
 
   return (
-    <View style={[styles.container, { width: size + 20, height: size + 20 }]}>
+    <View style={[styles.container, { width: size + 12, height: height + 12 }]}>
       <Animated.View style={[styles.glowOuter, {
-        width: glow1Size, height: glow1Size, borderRadius: glow1Size / 2,
+        width: glow1Size, height: height + 16, borderRadius: radius + 8,
         backgroundColor: glowColor,
-        opacity: Animated.multiply(breath.glow, 0.12 * intensity),
+        opacity: Animated.multiply(breath.glow, (speaking ? .26 : .12) * intensity),
         transform: [{ scale: breath.glowScale }],
       }]} />
       <Animated.View style={[styles.glowInner, {
-        width: glow2Size, height: glow2Size, borderRadius: glow2Size / 2,
+        width: glow2Size, height: height + 8, borderRadius: radius + 4,
         backgroundColor: glowColor,
-        opacity: Animated.multiply(breath.glow, 0.18 * intensity),
+        opacity: Animated.multiply(breath.glow, (speaking ? .3 : .18) * intensity),
         transform: [{ scale: breath.glowScale }],
       }]} />
       <Animated.View style={[styles.frame, {
-        width: size, height: size, borderRadius: size / 2,
-        borderColor: c.primary[700], borderWidth: frameBorderWidth,
+        width: size, height, borderRadius: radius,
+        borderColor: border, borderWidth: appearance.frame === 'none' ? 0 : frameBorderWidth,
         transform: [{ scale: breath.scale }],
       }]}>
         <View style={[styles.innerFrame, {
-          width: innerSize, height: innerSize, borderRadius: innerSize / 2,
-          borderColor: c.neutral[700], borderWidth: 1,
+          width: innerSize, height: height - frameBorderWidth * 2, borderRadius: radius - 1,
+          borderColor: c.neutral[700], borderWidth: 0,
         }]}>
           <Image
             source={source}
             style={[styles.image, {
-              width: innerSize - 2, height: innerSize - 2,
-              borderRadius: (innerSize - 2) / 2,
+              width: innerSize - 2, height: height - frameBorderWidth * 2 - 2,
+              borderRadius: radius - 2, opacity: appearance.portraitOpacity,
             }]}
             resizeMode="cover"
             accessibilityLabel="Companion portrait"

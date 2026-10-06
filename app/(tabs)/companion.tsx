@@ -14,6 +14,7 @@ import { MediaError } from '@/lib/media';
 import { useCompanion } from '@/hooks/useCompanion';
 import { useTheme } from '@/lib/theme-context';
 import { Spacing, Radius, Typography, type ExtendedThemeColors } from '@/lib/theme';
+import { CompanionIdentity } from '@/components/CompanionIdentity';
 import { CompanionPortrait } from '@/components/CompanionPortrait';
 import { StateGlow } from '@/components/StateGlow';
 import { useCompanionState, getMoodFromState, getMoodLabel } from '@/hooks/useCompanionState';
@@ -153,9 +154,10 @@ export default function CompanionScreen() {
           <Text style={styles.personaText}>{companion?.persona}</Text>
         </View>
 
+        {companion && <View style={styles.section}><CompanionIdentity companion={companion} onSave={updateCompanion} /></View>}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Inner State</Text>
-          <Text style={styles.sectionSubtitle}>The Lumen Pulse — a window into my mind</Text>
+          <Text style={styles.sectionSubtitle}>Current computational state used to guide responses</Text>
           <View style={styles.stateGrid}>
             {displayState && STATE_VARIABLES.map((sv) => {
               const Icon = sv.icon;

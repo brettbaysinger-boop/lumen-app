@@ -17,6 +17,9 @@ export interface Companion {
   description: string | null;
   persona: string;
   system_prompt: string | null;
+  gender?: 'female' | 'male' | 'nonbinary' | 'unspecified';
+  speech_voice?: string | null;
+  visual_identity?: string | null;
   voice_enabled: boolean;
   vision_enabled: boolean;
   portrait_url: string;

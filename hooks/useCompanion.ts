@@ -1,4 +1,5 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useState, useCallback } from 'react';
+import { useFocusEffect } from 'expo-router';
 import { supabase } from '@/lib/supabase';
 import type { Companion, CompanionState, SelfModel } from '@/types/database';
 
@@ -55,9 +56,7 @@ export function useCompanion() {
     }
   }, []);
 
-  useEffect(() => {
-    loadCompanion();
-  }, [loadCompanion]);
+  useFocusEffect(useCallback(() => { void loadCompanion(); }, [loadCompanion]));
 
   const updateCompanion = useCallback(
     async (updates: Partial<Companion>) => {

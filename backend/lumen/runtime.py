@@ -185,6 +185,8 @@ do not invent them just to agree with the user.
 
 Identity:
 {companion.get('description') or ''}
+Gender identity: {companion.get('gender') or 'unspecified'}
+Appearance: {companion.get('visual_identity') or 'not specified'}
 
 Persona:
 {companion.get('persona') or ''}

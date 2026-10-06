@@ -58,9 +58,9 @@ const coralError: ColorRamp = {
 
 // Midnight Navy — deep, grounded dark base
 const midnightNavy: ColorRamp = {
-  0: '#ffffff', 50: '#f4f5f2', 100: '#e8ece9', 200: '#d2dcd6',
-  300: '#b0beb7', 400: '#8a9e94', 500: '#71867b', 600: '#82988b',
-  700: '#2c3c34', 800: '#1e2b25', 900: '#16211c', 950: '#101914',
+  0: '#ffffff', 50: '#f5f2ec', 100: '#eae5dc', 200: '#d9d3c9',
+  300: '#bcb6ac', 400: '#a39c93', 500: '#938a80', 600: '#8c847b',
+  700: '#3b3732', 800: '#282522', 900: '#1b1917', 950: '#100f0e',
 };
 
 const pearlCream: ColorRamp = {
@@ -82,7 +82,13 @@ const emberPrimary: ColorRamp = {
   800: '#842914', 900: '#6b2210', 950: '#4d180b',
 };
 
-export type SchemeId = 'lumen-dark' | 'lumen-light' | 'ocean-dark' | 'ocean-light' | 'forest-dark' | 'forest-light' | 'ember-dark' | 'ember-light';
+const silverPrimary: ColorRamp = {
+  50: '#f7f8fa', 100: '#e9edf1', 200: '#d8dfe6', 300: '#c7d0da',
+  400: '#b5c0cc', 500: '#939fae', 600: '#596779', 700: '#434f60',
+  800: '#303946', 900: '#21272f', 950: '#14181e',
+};
+
+export type SchemeId = 'gold-dark' | 'gold-light' | 'silver-dark' | 'silver-light' | 'lumen-dark' | 'lumen-light' | 'ocean-dark' | 'ocean-light' | 'forest-dark' | 'forest-light' | 'ember-dark' | 'ember-light';
 
 export interface SchemeDef {
   id: SchemeId;
@@ -93,6 +99,10 @@ export interface SchemeDef {
 }
 
 export const SCHEMES: SchemeDef[] = [
+  { id: 'gold-dark', name: 'Gold', primary: champagneGold, accent: silverPrimary, mode: 'dark' },
+  { id: 'gold-light', name: 'Gold', primary: champagneGold, accent: silverPrimary, mode: 'light' },
+  { id: 'silver-dark', name: 'Silver', primary: silverPrimary, accent: champagneGold, mode: 'dark' },
+  { id: 'silver-light', name: 'Silver', primary: silverPrimary, accent: champagneGold, mode: 'light' },
   { id: 'lumen-dark', name: 'Lumen', primary: lumenTurquoise, accent: champagneGold, mode: 'dark' },
   { id: 'lumen-light', name: 'Lumen', primary: lumenTurquoise, accent: champagneGold, mode: 'light' },
   { id: 'ocean-dark', name: 'Ocean', primary: oceanPrimary, accent: champagneGold, mode: 'dark' },
@@ -125,7 +135,7 @@ export function getThemeColors(schemeId: SchemeId): ExtendedThemeColors {
   };
 }
 
-export const Colors: ExtendedThemeColors = getThemeColors('lumen-dark');
+export const Colors: ExtendedThemeColors = getThemeColors('gold-dark');
 
 export const Spacing = {
   xs: 4,

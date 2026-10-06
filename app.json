@@ -20,7 +20,19 @@
       "expo-router",
       "expo-font",
       "expo-web-browser",
-      ["expo-image-picker", { "photosPermission": "Allow access to your photos so you can choose a portrait for your companion." }]
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Allow access to your photos so you can choose a portrait for your companion."
+        }
+      ],
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Allow Lumen to use your camera when you choose to take a photo.",
+          "recordAudioAndroid": false
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true

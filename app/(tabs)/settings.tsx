@@ -30,6 +30,7 @@ import {
 } from 'lucide-react-native';
 import { useAuth } from '@/lib/auth';
 import { supabase } from '@/lib/supabase';
+import { AppearanceControls } from '@/components/AppearanceControls';
 import { useTheme } from '@/lib/theme-context';
 import { SCHEMES, Spacing, Radius, Typography, type ExtendedThemeColors, type SchemeId } from '@/lib/theme';
 import type { Companion, ModelRun } from '@/types/database';
@@ -66,7 +67,7 @@ const INFRA_NODES = [
 ];
 
 export default function SettingsScreen() {
-  const { colors: c, schemeId, setSchemeId, mode } = useTheme();
+  const { colors: c, schemeId, setSchemeId, mode, setAppearance } = useTheme();
   const { session } = useAuth();
   const [accountError, setAccountError] = useState<string | null>(null);
   const [companion, setCompanion] = useState<Companion | null>(null);
@@ -152,7 +153,7 @@ export default function SettingsScreen() {
                     { borderColor: scheme.primary[500] },
                     isActive && { borderWidth: 3, borderColor: scheme.primary[400] },
                   ]}
-                  onPress={() => setSchemeId(`${scheme.name.toLowerCase()}-${mode}` as SchemeId)}
+                  onPress={() => { setAppearance({ background: '', text: '', accent: '' }); setSchemeId(`${scheme.name.toLowerCase()}-${mode}` as SchemeId); }}
                 >
                   <View style={[styles.colorDot, { backgroundColor: scheme.primary[400] }]} />
                   <Text style={[styles.colorLabel, { color: isActive ? c.neutral[100] : c.neutral[400] }]}>
@@ -179,6 +180,7 @@ export default function SettingsScreen() {
               <Text style={[styles.modeText, { color: mode === 'light' ? c.neutral[0] : c.neutral[400] }]}>Light</Text>
             </TouchableOpacity>
           </View>
+          <AppearanceControls />
         </View>
 
         <View style={styles.section}>

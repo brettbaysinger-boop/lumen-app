@@ -4,10 +4,11 @@ import { pickImages, removeStoredFiles, uploadImage, useSignedUrl } from '@/lib/
 const BUCKET = 'companion-portraits';
 const MAX_BYTES = 5 * 1024 * 1024;
 
-export const DEFAULT_PORTRAIT = '/lumen-portrait.webp';
+export const DEFAULT_PORTRAIT = '/lumen-original.jpg';
 
 export const BUILT_IN_PORTRAITS: Array<{ label: string; path: string; source: ImageSourcePropType }> = [
-  { label: 'Original', path: '/lumen-portrait.webp', source: require('../public/lumen-portrait.webp') },
+  { label: 'Lumen', path: '/lumen-original.jpg', source: require('../public/lumen-original.jpg') },
+  { label: 'Classic', path: '/lumen-portrait.webp', source: require('../public/lumen-portrait.webp') },
   { label: 'Solar', path: '/lumen-portrait-solar.webp', source: require('../public/lumen-portrait-solar.webp') },
   { label: 'Tide', path: '/lumen-portrait-tide.webp', source: require('../public/lumen-portrait-tide.webp') },
   { label: 'Ember', path: '/lumen-portrait-ember.webp', source: require('../public/lumen-portrait-ember.webp') },
