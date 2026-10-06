@@ -26,7 +26,10 @@ import {
   Volume2,
   Square,
   ImagePlus,
+  PanelLeft,
 } from 'lucide-react-native';
+import { router } from 'expo-router';
+import { CompanionPresence } from '@/components/CompanionPresence';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth';
 import { respondToMessage, generateImage, isImageRequest } from '@/lib/cognition';
@@ -43,8 +46,9 @@ import type { Companion, Conversation, Message } from '@/types/database';
 
 export default function ChatScreen() {
   const { colors } = useTheme();
-  const { width: screenWidth } = useWindowDimensions();
-  const isMobile = screenWidth < 480;
+  const { width: screenWidth, height: screenHeight } = useWindowDimensions();
+  const isMobile = screenWidth < 600;
+  const showPresence = screenWidth >= 1280 && screenHeight >= 700;
 
   const [companion, setCompanion] = useState<Companion | null>(null);
   const { state: companionState } = useCompanionState(companion?.id);
@@ -397,14 +401,16 @@ export default function ChatScreen() {
   const sidebarWidth = isMobile ? screenWidth * 0.82 : 280;
 
   return (
-    <SafeAreaView style={styles.container} edges={['top']}>
+    <SafeAreaView style={[styles.container, { flexDirection: 'row' }]} edges={['top']}>
+      <View style={{ flex: 1, minWidth: 0 }}>
       <View style={styles.header}>
         <TouchableOpacity
           style={styles.menuButton}
           disabled={sending}
+          accessibilityLabel="Open conversation history"
           onPress={() => setShowSidebar(true)}
         >
-          <Plus color={colors.neutral[200]} size={22} strokeWidth={2} />
+          <PanelLeft color={colors.neutral[300]} size={20} strokeWidth={1.6} />
         </TouchableOpacity>
         <View style={styles.headerInfo}>
           <StateGlow colors={colors} state={companionState} size={10} />
@@ -415,7 +421,7 @@ export default function ChatScreen() {
         </View>
         <View style={styles.headerStatus}>
           <Text style={styles.statusText}>
-            {sending ? `${companion?.name || 'Companion'} thinking…` : 'Ready'}
+            {sending ? 'Thinking…' : 'Conversation'}
           </Text>
         </View>
       </View>
@@ -569,11 +575,17 @@ export default function ChatScreen() {
               </Animated.View>
             </View>
             <Text style={styles.emptyChatTitle}>
-              {companion?.name || 'Your companion'} is here
+              A moment with {companion?.name || 'your companion'}.
             </Text>
             <Text style={styles.emptyChatSubtitle}>
-              {companion?.persona || 'Start a conversation to begin your journey together.'}
+              No agenda needed. Start wherever you are.
             </Text>
+            <View style={styles.starters}>
+              {['How was your day?', 'Let’s dream a little', 'Create an image for me'].map(prompt =>
+                <TouchableOpacity key={prompt} style={styles.starter} onPress={() => setInputText(prompt)} accessibilityRole="button">
+                  <Text style={styles.starterText}>{prompt}</Text>
+                </TouchableOpacity>)}
+            </View>
           </View>
         }
       />
@@ -642,7 +654,7 @@ export default function ChatScreen() {
             style={styles.textInput}
             value={inputText}
             onChangeText={setInputText}
-            placeholder={pendingImages.length ? 'Add a message (optional)...' : 'Message, or ask for an image...'}
+            placeholder={pendingImages.length ? 'Add a message (optional)...' : `Message ${companion?.name || 'your companion'}…`}
             placeholderTextColor={colors.neutral[500]}
             multiline
             {...(Platform.OS === 'web' ? { onKeyPress: (event: any) => {
@@ -669,6 +681,7 @@ export default function ChatScreen() {
               styles.sendButton,
               ((!inputText.trim() && !pendingImages.length) || sending || voiceBusy) && styles.sendButtonDisabled,
             ]}
+            accessibilityLabel="Send message"
             onPress={sendMessage}
             disabled={(!inputText.trim() && !pendingImages.length) || sending || voiceBusy}
           >
@@ -679,7 +692,13 @@ export default function ChatScreen() {
             )}
           </TouchableOpacity>
         </View>
+        <Text style={styles.composerHint}>A conversation that stays with you.</Text>
       </KeyboardAvoidingView>
+      </View>
+      {showPresence && <CompanionPresence name={companion?.name || 'Lumen'} portraitUrl={companion?.portrait_url}
+        busy={sending} status={voicePhase === 'recording' ? 'Listening…' : playingId ? 'Speaking…' : undefined}
+        onVoice={toggleRecording} voiceDisabled={Platform.OS !== 'web' || sending || voicePhase === 'starting' || voicePhase === 'transcribing'}
+        onCustomize={() => router.push('/companion')} />}
     </SafeAreaView>
   );
 }
@@ -713,7 +732,7 @@ function useMemoStyles(c: ExtendedThemeColors, isMobile: boolean) {
       alignItems: 'center',
       justifyContent: 'space-between',
       paddingHorizontal: isMobile ? Spacing.sm + 2 : Spacing.md,
-      paddingVertical: Spacing.sm,
+      paddingVertical: 18,
       borderBottomWidth: 1,
       borderBottomColor: c.neutral[800],
       maxWidth: 800,
@@ -731,7 +750,8 @@ function useMemoStyles(c: ExtendedThemeColors, isMobile: boolean) {
       alignItems: 'center',
       gap: Spacing.sm,
       flex: 1,
-      justifyContent: 'center',
+      justifyContent: 'flex-start',
+      marginLeft: 14,
     },
     avatarDot: {
       width: 10,
@@ -840,7 +860,7 @@ function useMemoStyles(c: ExtendedThemeColors, isMobile: boolean) {
     },
     messageWrapper: {
       flexDirection: 'row',
-      marginBottom: Spacing.sm + 2,
+      marginBottom: 28,
       maxWidth: isMobile ? '92%' : '85%',
       gap: Spacing.sm,
     },
@@ -867,11 +887,11 @@ function useMemoStyles(c: ExtendedThemeColors, isMobile: boolean) {
       flexShrink: 1,
     },
     messageBubbleUser: {
-      backgroundColor: c.primary[600],
+      backgroundColor: c.neutral[800],
       borderBottomRightRadius: Radius.sm,
     },
     messageBubbleAI: {
-      backgroundColor: c.neutral[800],
+      backgroundColor: 'transparent',
       borderBottomLeftRadius: Radius.sm,
     },
     messageText: {
@@ -889,7 +909,8 @@ function useMemoStyles(c: ExtendedThemeColors, isMobile: boolean) {
       flex: 1,
       alignItems: 'center',
       justifyContent: 'center',
-      paddingTop: Spacing.xxl * 2,
+      paddingTop: isMobile ? 24 : 40,
+      paddingBottom: 32,
       paddingHorizontal: Spacing.xl,
       gap: Spacing.md,
     },
@@ -913,10 +934,10 @@ function useMemoStyles(c: ExtendedThemeColors, isMobile: boolean) {
       borderRadius: 108,
       padding: Spacing.xs,
       borderWidth: 1,
-      borderColor: c.gold[700],
+      borderColor: c.neutral[700],
       alignItems: 'center',
       justifyContent: 'center',
-      opacity: 0.55,
+      opacity: 1,
     },
     emptyChatPortrait: {
       width: 200,
@@ -925,6 +946,10 @@ function useMemoStyles(c: ExtendedThemeColors, isMobile: boolean) {
     },
     emptyChatTitle: {
       ...Typography.heading,
+      fontSize: isMobile ? 26 : 34,
+      lineHeight: 42,
+      letterSpacing: -1,
+      fontFamily: 'Inter-Medium',
       color: c.neutral[100],
       textAlign: 'center',
     },
@@ -952,11 +977,12 @@ function useMemoStyles(c: ExtendedThemeColors, isMobile: boolean) {
       paddingHorizontal: isMobile ? Spacing.sm + 2 : Spacing.md,
       paddingVertical: Spacing.sm,
       backgroundColor: c.neutral[900],
-      borderTopWidth: 1,
-      borderTopColor: c.neutral[800],
+      borderWidth: 1,
+      borderColor: c.neutral[700],
+      borderRadius: 20,
       maxWidth: 800,
       alignSelf: 'center',
-      width: '100%',
+      width: isMobile ? '96%' : '92%',
     },
     inputButton: {
       width: 38,
@@ -968,13 +994,17 @@ function useMemoStyles(c: ExtendedThemeColors, isMobile: boolean) {
       flex: 1,
       ...Typography.body,
       color: c.neutral[100],
-      backgroundColor: c.neutral[800],
+      backgroundColor: 'transparent',
       borderRadius: Radius.lg,
       paddingHorizontal: Spacing.md,
       paddingVertical: Spacing.sm + 2,
       maxHeight: 120,
       minHeight: 44,
     },
+    starters: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', gap: 8, marginTop: 20 },
+    starter: { borderWidth: 1, borderColor: c.neutral[700], borderRadius: 12, paddingHorizontal: 14, paddingVertical: 12 },
+    starterText: { ...Typography.caption, color: c.neutral[300] },
+    composerHint: { ...Typography.small, color: c.neutral[400], textAlign: 'center', paddingVertical: 12 },
     sendButton: {
       width: 44,
       height: 44,

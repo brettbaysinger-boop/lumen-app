@@ -1,10 +1,12 @@
-import { View, ActivityIndicator } from 'react-native';
+import { View, ActivityIndicator, useWindowDimensions } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '@/lib/auth';
 import { useTheme } from '@/lib/theme-context';
 import { Tabs, Redirect } from 'expo-router';
 import type { LucideIcon } from 'lucide-react-native';
 import { MessageCircle, Brain, User, Settings, Image as ImageIcon } from 'lucide-react-native';
+
+import { LumenNavigation } from '@/components/LumenNavigation';
 
 type TabBarIconProps = { color: string; size: number };
 
@@ -18,12 +20,15 @@ export default function TabLayout() {
   const { session, loading, error } = useAuth();
   const { colors } = useTheme();
   const insets = useSafeAreaInsets();
+  const { width } = useWindowDimensions();
   if (loading) return <View style={{ flex: 1, backgroundColor: colors.neutral[950], justifyContent: 'center' }}><ActivityIndicator color={colors.primary[400]} /></View>;
   if (!session || error) return <Redirect href="/login" />;
   return (
-    <Tabs key={session.user.id}
+    <Tabs key={session.user.id} tabBar={(props) => <LumenNavigation {...props} />}
       screenOptions={{
         headerShown: false,
+        tabBarPosition: width >= 1000 ? 'left' : 'bottom',
+        sceneStyle: { backgroundColor: colors.neutral[950] },
         tabBarActiveTintColor: colors.primary[400],
         tabBarInactiveTintColor: colors.neutral[500],
         tabBarStyle: {

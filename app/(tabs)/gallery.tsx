@@ -108,8 +108,8 @@ export default function GalleryScreen() {
     <SafeAreaView style={styles.container} edges={['top']}>
       <View style={styles.header}>
         <View style={styles.headerTitleRow}>
-          <Sparkles color={c.gold[400]} size={22} strokeWidth={2} />
-          <Text style={styles.headerTitle}>Shared Gallery</Text>
+          <Sparkles color={c.primary[400]} size={22} strokeWidth={2} />
+          <View><Text style={styles.headerTitle}>Gallery</Text><Text style={styles.headerSubtitle}>Little moments. A shared imagination.</Text></View>
         </View>
         <TouchableOpacity style={styles.addButton} onPress={() => setShowAddModal(true)}>
           <Plus color={c.primary[400]} size={22} strokeWidth={2} />
@@ -252,10 +252,11 @@ function createStyles(c: ExtendedThemeColors) {
   return StyleSheet.create({
     container: { flex: 1, backgroundColor: c.neutral[950], overflow: 'hidden' },
     loadingContainer: { flex: 1, backgroundColor: c.neutral[950], alignItems: 'center', justifyContent: 'center' },
-    header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: Spacing.md, paddingVertical: Spacing.md, maxWidth: 720, alignSelf: 'center', width: '100%' },
+    header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: Spacing.md, paddingVertical: Spacing.xl, maxWidth: 720, alignSelf: 'center', width: '100%' },
     headerTitleRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm },
-    headerTitle: { ...Typography.heading, color: c.neutral[100] },
-    addButton: { width: 44, height: 44, borderRadius: 22, backgroundColor: c.neutral[800], alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: c.gold[500] },
+    headerTitle: { ...Typography.heading, fontFamily: 'Inter-Medium', letterSpacing: -0.8, color: c.neutral[100] },
+    headerSubtitle: { ...Typography.caption, color: c.neutral[400], marginTop: 6 },
+    addButton: { width: 44, height: 44, borderRadius: 22, backgroundColor: c.neutral[800], alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: c.neutral[700] },
     filterRow: { marginBottom: Spacing.sm, maxWidth: 720, alignSelf: 'center', width: '100%' },
     filterContent: { paddingHorizontal: Spacing.md, gap: Spacing.sm, maxWidth: 720, alignSelf: 'center', width: '100%' },
     filterChip: { paddingHorizontal: Spacing.md, paddingVertical: Spacing.sm, borderRadius: Radius.pill, backgroundColor: c.neutral[800], borderWidth: 1, borderColor: c.neutral[700] },
@@ -263,7 +264,7 @@ function createStyles(c: ExtendedThemeColors) {
     errorBanner: { marginHorizontal: Spacing.md, marginBottom: Spacing.sm, backgroundColor: c.error[900], paddingHorizontal: Spacing.md, paddingVertical: Spacing.sm, borderRadius: Radius.md },
     errorText: { ...Typography.caption, color: c.error[200] },
     list: { padding: Spacing.md, paddingTop: 0, maxWidth: 720, alignSelf: 'center', width: '100%' },
-    card: { borderRadius: Radius.md, marginBottom: Spacing.sm, overflow: 'hidden', backgroundColor: c.neutral[800], marginRight: Spacing.md, borderWidth: 1, borderColor: c.gold[800] },
+    card: { borderRadius: Radius.md, marginBottom: Spacing.sm, overflow: 'hidden', backgroundColor: c.neutral[800], marginRight: Spacing.md, borderWidth: 1, borderColor: c.neutral[700] },
     cardImage: { flex: 1, width: '100%' },
     cardOverlay: { position: 'absolute', bottom: 0, left: 0, right: 0, paddingHorizontal: Spacing.xs + 2, paddingVertical: Spacing.xs + 2, backgroundColor: 'rgba(15,20,32,0.7)' },
     cardCaption: { ...Typography.small, color: c.neutral[200] },
@@ -272,7 +273,7 @@ function createStyles(c: ExtendedThemeColors) {
     emptyTitle: { ...Typography.subheading, color: c.neutral[400] },
     emptySubtitle: { ...Typography.body, color: c.neutral[600], textAlign: 'center', lineHeight: 22 },
     modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.7)', justifyContent: 'center', padding: Spacing.lg },
-    modalContent: { backgroundColor: c.neutral[900], borderRadius: Radius.xl, padding: Spacing.lg, gap: Spacing.sm, borderWidth: 1, borderColor: c.gold[800] },
+    modalContent: { backgroundColor: c.neutral[900], borderRadius: Radius.xl, padding: Spacing.lg, gap: Spacing.sm, borderWidth: 1, borderColor: c.neutral[700] },
     modalHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: Spacing.sm },
     modalTitle: { ...Typography.subheading, color: c.neutral[100] },
     modalInput: { ...Typography.body, color: c.neutral[100], backgroundColor: c.neutral[800], borderRadius: Radius.md, paddingHorizontal: Spacing.md, paddingVertical: Spacing.md, minHeight: 44 },
@@ -284,7 +285,7 @@ function createStyles(c: ExtendedThemeColors) {
     modalSaveButtonDisabled: { backgroundColor: c.neutral[700] },
     modalSaveText: { ...Typography.bodyMedium, color: c.neutral[0], fontFamily: 'Inter-SemiBold' },
     previewOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.85)', justifyContent: 'center', padding: Spacing.md },
-    previewContent: { backgroundColor: c.neutral[900], borderRadius: Radius.xl, padding: Spacing.md, borderWidth: 1, borderColor: c.gold[700] },
+    previewContent: { backgroundColor: c.neutral[900], borderRadius: Radius.xl, padding: Spacing.md, borderWidth: 1, borderColor: c.neutral[700] },
     previewHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: Spacing.sm },
     previewCaption: { ...Typography.subheading, color: c.neutral[100], flex: 1 },
     previewActions: { flexDirection: 'row', alignItems: 'center', gap: Spacing.md },

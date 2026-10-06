@@ -182,8 +182,8 @@ export default function MemoriesScreen() {
     <SafeAreaView style={styles.container} edges={['top']}>
       <View style={styles.header}>
         <View style={styles.headerTitleRow}>
-          <Brain color={c.gold[400]} size={22} strokeWidth={2} />
-          <Text style={styles.headerTitle}>Memory Thread</Text>
+          <Brain color={c.primary[400]} size={22} strokeWidth={2} />
+          <View><Text style={styles.headerTitle}>Memories</Text><Text style={styles.headerSubtitle}>The things that make your story yours.</Text></View>
         </View>
         <TouchableOpacity style={styles.addButton} onPress={() => setShowAddModal(true)}>
           <Plus color={c.primary[400]} size={22} strokeWidth={2} />
@@ -277,7 +277,7 @@ export default function MemoriesScreen() {
                 </View>
                 {!isLast && <View style={[styles.timelineLine, { backgroundColor: c.gold[800] }]} />}
               </View>
-              <View style={[styles.memoryCard, isImportant && { borderColor: c.gold[600], borderWidth: 1 }]}>
+              <View style={[styles.memoryCard, isImportant && { borderColor: c.neutral[700], borderWidth: 1 }]}>
                 <View style={styles.memoryCardHeader}>
                   <View style={styles.memoryTypeBadge}>
                     <Icon color={config.color} size={13} strokeWidth={2} />
@@ -518,10 +518,11 @@ function createStyles(c: ExtendedThemeColors) {
   return StyleSheet.create({
     container: { flex: 1, backgroundColor: c.neutral[950], overflow: 'hidden' },
     loadingContainer: { flex: 1, backgroundColor: c.neutral[950], alignItems: 'center', justifyContent: 'center' },
-    header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: Spacing.md, paddingVertical: Spacing.md, maxWidth: 640, alignSelf: 'center', width: '100%' },
+    header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: Spacing.md, paddingVertical: Spacing.xl, maxWidth: 640, alignSelf: 'center', width: '100%' },
     headerTitleRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm },
-    headerTitle: { ...Typography.heading, color: c.neutral[100] },
-    addButton: { width: 44, height: 44, borderRadius: 22, backgroundColor: c.neutral[800], alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: c.gold[500] },
+    headerTitle: { ...Typography.heading, fontFamily: 'Inter-Medium', letterSpacing: -0.8, color: c.neutral[100] },
+    headerSubtitle: { ...Typography.caption, color: c.neutral[400], marginTop: 6 },
+    addButton: { width: 44, height: 44, borderRadius: 22, backgroundColor: c.neutral[800], alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: c.neutral[700] },
     searchContainer: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, marginBottom: Spacing.sm, paddingHorizontal: Spacing.md, paddingVertical: Spacing.sm + 2, backgroundColor: c.neutral[900], borderRadius: Radius.lg, borderWidth: 1, borderColor: c.neutral[800], maxWidth: 640, alignSelf: 'center', width: '100%' },
     searchInput: { flex: 1, ...Typography.body, color: c.neutral[100], padding: 0 },
     filterRow: { marginBottom: Spacing.sm },
@@ -558,7 +559,7 @@ function createStyles(c: ExtendedThemeColors) {
     emptyTitle: { ...Typography.subheading, color: c.neutral[400] },
     emptySubtitle: { ...Typography.body, color: c.neutral[600], textAlign: 'center', lineHeight: 22 },
     modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.7)', justifyContent: 'center', padding: Spacing.lg },
-    modalContent: { backgroundColor: c.neutral[900], borderRadius: Radius.xl, padding: Spacing.lg, gap: Spacing.sm, borderWidth: 1, borderColor: c.gold[800] },
+    modalContent: { backgroundColor: c.neutral[900], borderRadius: Radius.xl, padding: Spacing.lg, gap: Spacing.sm, borderWidth: 1, borderColor: c.neutral[700] },
     modalHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: Spacing.sm },
     modalTitle: { ...Typography.subheading, color: c.neutral[100] },
     modalInput: { ...Typography.body, color: c.neutral[100], backgroundColor: c.neutral[800], borderRadius: Radius.md, paddingHorizontal: Spacing.md, paddingVertical: Spacing.md, minHeight: 80, maxHeight: 160 },

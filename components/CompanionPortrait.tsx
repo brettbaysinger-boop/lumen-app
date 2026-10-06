@@ -35,7 +35,7 @@ export function CompanionPortrait({ colors: c, size, mood = 'idle', glowIntensit
     return moodColors[mood];
   }, [mood, c]);
 
-  const frameBorderWidth = Math.max(2, size * 0.028);
+  const frameBorderWidth = 1;
   const innerSize = size - frameBorderWidth * 2;
   const glow1Size = size + 16;
   const glow2Size = size + 8;
@@ -56,12 +56,12 @@ export function CompanionPortrait({ colors: c, size, mood = 'idle', glowIntensit
       }]} />
       <Animated.View style={[styles.frame, {
         width: size, height: size, borderRadius: size / 2,
-        borderColor: c.gold[400], borderWidth: frameBorderWidth,
+        borderColor: c.primary[700], borderWidth: frameBorderWidth,
         transform: [{ scale: breath.scale }],
       }]}>
         <View style={[styles.innerFrame, {
           width: innerSize, height: innerSize, borderRadius: innerSize / 2,
-          borderColor: c.gold[600], borderWidth: 1,
+          borderColor: c.neutral[700], borderWidth: 1,
         }]}>
           <Image
             source={source}

@@ -236,7 +236,7 @@ export default function CompanionScreen() {
           {capabilities.length > 0 ? (
             <View style={styles.tagWrap}>
               {capabilities.map((cap, i) => (
-                <View key={i} style={[styles.tag, { borderColor: c.gold[800] }]}><Text style={styles.tagText}>{cap}</Text></View>
+                <View key={i} style={[styles.tag, { borderColor: c.neutral[700] }]}><Text style={styles.tagText}>{cap}</Text></View>
               ))}
             </View>
           ) : <Text style={styles.emptyText}>No capabilities registered</Text>}
@@ -372,7 +372,7 @@ function createStyles(c: ExtendedThemeColors) {
     tagText: { ...Typography.small, color: c.neutral[300], fontFamily: 'Inter-Medium' },
     footer: { height: Spacing.xl },
     modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'center', padding: Spacing.lg },
-    modalContent: { backgroundColor: c.neutral[900], borderRadius: Radius.xl, padding: Spacing.lg, gap: Spacing.sm, borderWidth: 1, borderColor: c.gold[800], width: '100%', maxWidth: 480, alignSelf: 'center' },
+    modalContent: { backgroundColor: c.neutral[900], borderRadius: Radius.xl, padding: Spacing.lg, gap: Spacing.sm, borderWidth: 1, borderColor: c.neutral[700], width: '100%', maxWidth: 480, alignSelf: 'center' },
     modalHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: Spacing.sm },
     modalTitle: { ...Typography.subheading, color: c.neutral[100] },
     modalDescription: { ...Typography.caption, color: c.neutral[400], lineHeight: 20 },

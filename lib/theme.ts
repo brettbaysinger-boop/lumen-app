@@ -58,34 +58,15 @@ const coralError: ColorRamp = {
 
 // Midnight Navy — deep, grounded dark base
 const midnightNavy: ColorRamp = {
-  0: '#ffffff',
-  50: '#1a1f2e',
-  100: '#1e2433',
-  200: '#252c3d',
-  300: '#2e3548',
-  400: '#3a4258',
-  500: '#4a5470',
-  600: '#5e6a8a',
-  700: '#7b88a8',
-  800: '#a5b0c8',
-  900: '#d0d8e8',
-  950: '#0f1420',
+  0: '#ffffff', 50: '#f4f5f2', 100: '#e8ece9', 200: '#d2dcd6',
+  300: '#b0beb7', 400: '#8a9e94', 500: '#71867b', 600: '#82988b',
+  700: '#2c3c34', 800: '#1e2b25', 900: '#16211c', 950: '#101914',
 };
 
-// Pearl Cream — soft, warm light base
 const pearlCream: ColorRamp = {
-  0: '#ffffff',
-  50: '#faf8f3',
-  100: '#f5f1e8',
-  200: '#ebe5d5',
-  300: '#ddd4be',
-  400: '#c9bea0',
-  500: '#a89a7c',
-  600: '#7a6f57',
-  700: '#524a3c',
-  800: '#3a3528',
-  900: '#252118',
-  950: '#f8f5ed',
+  0: '#ffffff', 50: '#182b23', 100: '#233b30', 200: '#344e41',
+  300: '#496254', 400: '#596e62', 500: '#6e8175', 600: '#60766a',
+  700: '#cbd6ce', 800: '#e1e8e2', 900: '#edf1eb', 950: '#f6f8f3',
 };
 
 // Legacy schemes kept for backwards compat
@@ -132,7 +113,7 @@ export function getThemeColors(schemeId: SchemeId): ExtendedThemeColors {
   const isDark = scheme.mode === 'dark';
   const neutral = isDark ? midnightNavy : pearlCream;
   return {
-    primary: scheme.primary,
+    primary: isDark ? scheme.primary : { ...scheme.primary, 200: scheme.primary[700], 300: scheme.primary[700], 400: scheme.primary[700] },
     secondary: champagneGold,
     accent: scheme.accent,
     success: forestSuccess,
