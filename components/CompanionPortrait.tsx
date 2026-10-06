@@ -1,6 +1,7 @@
 import { useMemo } from 'react';
-import { View, StyleSheet, Image } from 'react-native';
+import { View, StyleSheet, Image, Animated } from 'react-native';
 import { usePortraitSource } from '@/lib/portraits';
+import { useBreathing } from '@/hooks/useBreathing';
 import type { ExtendedThemeColors } from '@/lib/theme';
 import type { Mood } from '@/hooks/useCompanionState';
 
@@ -14,6 +15,7 @@ interface CompanionPortraitProps {
 
 export function CompanionPortrait({ colors: c, size, mood = 'idle', glowIntensity, portraitUrl }: CompanionPortraitProps) {
   const source = usePortraitSource(portraitUrl);
+  const breath = useBreathing(mood);
   const intensity = useMemo(() => {
     if (glowIntensity !== undefined) return Math.max(0.15, Math.min(1, glowIntensity));
     const moodIntensities: Record<Mood, number> = {
@@ -40,17 +42,22 @@ export function CompanionPortrait({ colors: c, size, mood = 'idle', glowIntensit
 
   return (
     <View style={[styles.container, { width: size + 20, height: size + 20 }]}>
-      <View style={[styles.glowOuter, {
+      <Animated.View style={[styles.glowOuter, {
         width: glow1Size, height: glow1Size, borderRadius: glow1Size / 2,
-        backgroundColor: glowColor, opacity: 0.12 * intensity,
+        backgroundColor: glowColor,
+        opacity: Animated.multiply(breath.glow, 0.12 * intensity),
+        transform: [{ scale: breath.glowScale }],
       }]} />
-      <View style={[styles.glowInner, {
+      <Animated.View style={[styles.glowInner, {
         width: glow2Size, height: glow2Size, borderRadius: glow2Size / 2,
-        backgroundColor: glowColor, opacity: 0.18 * intensity,
+        backgroundColor: glowColor,
+        opacity: Animated.multiply(breath.glow, 0.18 * intensity),
+        transform: [{ scale: breath.glowScale }],
       }]} />
-      <View style={[styles.frame, {
+      <Animated.View style={[styles.frame, {
         width: size, height: size, borderRadius: size / 2,
         borderColor: c.gold[400], borderWidth: frameBorderWidth,
+        transform: [{ scale: breath.scale }],
       }]}>
         <View style={[styles.innerFrame, {
           width: innerSize, height: innerSize, borderRadius: innerSize / 2,
@@ -66,7 +73,7 @@ export function CompanionPortrait({ colors: c, size, mood = 'idle', glowIntensit
             accessibilityLabel="Companion portrait"
           />
         </View>
-      </View>
+      </Animated.View>
     </View>
   );
 }

@@ -11,6 +11,7 @@ import {
   ActivityIndicator,
   Keyboard,
   Image,
+  Animated,
   useWindowDimensions,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -34,7 +35,8 @@ import { recordMicrophone, transcribeRecording, playReply, type RecordingHandle 
 import { useTheme } from '@/lib/theme-context';
 import { Spacing, Radius, Typography, type ExtendedThemeColors } from '@/lib/theme';
 import { StateGlow } from '@/components/StateGlow';
-import { useCompanionState } from '@/hooks/useCompanionState';
+import { useCompanionState, getMoodFromState } from '@/hooks/useCompanionState';
+import { useBreathing } from '@/hooks/useBreathing';
 import type { Companion, Conversation, Message } from '@/types/database';
 
 export default function ChatScreen() {
@@ -53,6 +55,7 @@ export default function ChatScreen() {
   const [pendingImages, setPendingImages] = useState<PickedImage[]>([]);
   const { session } = useAuth();
   const portraitSource = usePortraitSource(companion?.portrait_url);
+  const breath = useBreathing(sending ? 'thinking' : getMoodFromState(companionState));
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [showSidebar, setShowSidebar] = useState(false);
@@ -469,13 +472,19 @@ export default function ChatScreen() {
         )}
         ListEmptyComponent={
           <View style={styles.emptyChat}>
-            <View style={styles.emptyChatPortraitRing}>
-              <Image
-                source={portraitSource}
-                style={styles.emptyChatPortrait}
-                resizeMode="cover"
-                accessibilityLabel={`Portrait of ${companion?.name || 'your companion'}`}
-              />
+            <View style={styles.emptyChatPortraitStage}>
+              <Animated.View style={[styles.emptyChatGlow, {
+                opacity: Animated.multiply(breath.glow, 0.14),
+                transform: [{ scale: breath.glowScale }],
+              }]} />
+              <Animated.View style={[styles.emptyChatPortraitRing, { transform: [{ scale: breath.scale }] }]}>
+                <Image
+                  source={portraitSource}
+                  style={styles.emptyChatPortrait}
+                  resizeMode="cover"
+                  accessibilityLabel={`Portrait of ${companion?.name || 'your companion'}`}
+                />
+              </Animated.View>
             </View>
             <Text style={styles.emptyChatTitle}>
               {companion?.name || 'Your companion'} is here
@@ -777,6 +786,20 @@ function useMemoStyles(c: ExtendedThemeColors, isMobile: boolean) {
       paddingHorizontal: Spacing.xl,
       gap: Spacing.md,
     },
+    emptyChatPortraitStage: {
+      width: 248,
+      height: 248,
+      alignItems: 'center',
+      justifyContent: 'center',
+      marginBottom: Spacing.sm,
+    },
+    emptyChatGlow: {
+      position: 'absolute',
+      width: 236,
+      height: 236,
+      borderRadius: 118,
+      backgroundColor: c.primary[400],
+    },
     emptyChatPortraitRing: {
       width: 216,
       height: 216,
@@ -786,7 +809,6 @@ function useMemoStyles(c: ExtendedThemeColors, isMobile: boolean) {
       borderColor: c.gold[700],
       alignItems: 'center',
       justifyContent: 'center',
-      marginBottom: Spacing.sm,
       opacity: 0.55,
     },
     emptyChatPortrait: {
