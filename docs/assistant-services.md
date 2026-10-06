@@ -17,6 +17,27 @@ The goal is for the companion to help naturally.
 
 ## Core experiences
 
+### Implemented Take 2 checkpoint
+
+The development build includes My Day tasks, reminders, notes, checklists,
+projects and goals, source search, chat action cards, and an in-app due inbox.
+Reminders needing clarification retain their request in conversation metadata
+for 30 minutes. An immediate reply such as “PM”, “tomorrow at 9 am”, or
+“in 30 minutes” completes the original request. “Never mind” cancels it.
+Unrelated conversation clears this context. A bare “yes” does not schedule an
+unspecified time. Saved reminders still use the caller's timezone and the
+existing idempotent write path. No additional migration is needed for this
+follow-up increment.
+
+The gold/silver visual redesign, appearance controls, companion identity,
+Helios voice selection, and camera capture are also in the development build.
+Camera interpretation, closed-app notifications, and external calendar actions
+remain planned. This checkpoint has not been deployed to main-llm-video.
+
+Detailed acceptance criteria and installation notes for this checkpoint are in
+`docs/assistant/ROADMAP.md` and `docs/assistant/INSTALL.md`; the root roadmap
+remains the unified product roadmap.
+
 ### Remember what matters
 
 Example:

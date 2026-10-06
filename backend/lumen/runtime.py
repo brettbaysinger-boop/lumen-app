@@ -52,7 +52,7 @@ class CognitionRuntime:
             messages.append({"role": "user", "content": user_message})
 
         action = await handle_action(self.db, companion_id, conversation_id, user_message,
-                                    getattr(self, 'timezone', 'UTC'), getattr(self, 'request_key', str(uuid4()))) if not attachments else None
+                                    getattr(self, 'timezone', 'UTC'), getattr(self, 'request_key', str(uuid4())), recent=recent) if not attachments else None
         is_request, memory_content = memory_request(user_message, companion["name"])
         memory_status = "none"
         saved_subject = None
@@ -133,7 +133,7 @@ class CognitionRuntime:
             "tokens_in": result["tokens_in"],
             "tokens_out": result["tokens_out"],
             "latency_ms": result["latency_ms"],
-            "metadata": {"provider": self.provider.name, "runtime": "v0.1", "memory_status": memory_status, "memory_subject": saved_subject, "timings_ms": result.get("timings_ms", {}), "my_day_item": action.get("item") if action else None},
+            "metadata": {"provider": self.provider.name, "runtime": "v0.1", "memory_status": memory_status, "memory_subject": saved_subject, "timings_ms": result.get("timings_ms", {}), "my_day_item": action.get("item") if action else None, "pending_reminder": action.get("pending_reminder") if action else None},
         })
         await self.db.touch_conversation(conversation_id, 2)
 

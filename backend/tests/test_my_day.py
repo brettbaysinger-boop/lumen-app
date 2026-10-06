@@ -4,13 +4,31 @@ from unittest.mock import AsyncMock, Mock, patch
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from lumen.auth import AuthUser, require_user
-from lumen.my_day import router, parse_action, handle_action
+from lumen.my_day import router, parse_action, handle_action, reminder_followup
 from lumen.config import Settings
 
 C='11111111-1111-4111-8111-111111111111'
 I='22222222-2222-4222-8222-222222222222'
 K='33333333-3333-4333-8333-333333333333'
 NOW=datetime(2026,10,6,20,0,tzinfo=timezone.utc)
+
+class ReminderFollowups(unittest.TestCase):
+ def pending(self, text='remind me tomorrow at 9 to call the mechanic', expires='2026-10-06T20:30:00+00:00'):
+  return [{'role':'assistant','metadata':{'pending_reminder':{'text':text,'expires_at':expires}}}]
+ def test_period_preserves_requested_task(self):
+  resolved=reminder_followup('PM',self.pending(),NOW)
+  self.assertEqual(parse_action(resolved,'America/Phoenix',NOW)['title'],'call the mechanic')
+  self.assertEqual(parse_action(resolved,'America/Phoenix',NOW)['due_at'],'2026-10-07T21:00:00-07:00')
+ def test_schedule_answer_preserves_task(self):
+  resolved=reminder_followup('tomorrow at 9 am',self.pending('remind me to call the mechanic'),NOW)
+  self.assertEqual(resolved,'remind me tomorrow at 9 am to call the mechanic')
+ def test_unrelated_expired_and_interrupted_answers_do_not_execute(self):
+  self.assertEqual(reminder_followup('yes',self.pending(),NOW),'yes')
+  self.assertEqual(reminder_followup('PM',self.pending(expires='2026-10-06T19:00:00+00:00'),NOW),'PM')
+  self.assertEqual(reminder_followup('PM',[{'role':'user'},*self.pending()],NOW),'PM')
+  self.assertEqual(reminder_followup('PM',[],NOW),'PM')
+ def test_cancellation_is_explicit(self):
+  self.assertEqual(reminder_followup('never mind',self.pending(),NOW),'cancel pending reminder')
 
 class ActionParsing(unittest.TestCase):
  def test_no_incidental_writes(self):
@@ -98,6 +116,15 @@ class ActionExecution(unittest.IsolatedAsyncioTestCase):
   db=Mock(_request=AsyncMock())
   result=await handle_action(db,C,I,'remind me tomorrow at 9 to call','UTC',K)
   self.assertIsNone(result['item']);db._request.assert_not_awaited()
+ async def test_followup_saves_original_reminder_and_clears_pending(self):
+  from datetime import timedelta
+  pending=[{'role':'assistant','metadata':{'pending_reminder':{'text':'remind me tomorrow at 9 to call the mechanic',
+   'expires_at':(datetime.now(timezone.utc)+timedelta(minutes=30)).isoformat()}}}]
+  db=Mock(get_conversation=AsyncMock(return_value={'id':I}),_request=AsyncMock(return_value=[{'id':I,'kind':'reminder','title':'call the mechanic'}]))
+  result=await handle_action(db,C,I,'PM','America/Phoenix',K,recent=pending)
+  self.assertEqual(db._request.call_args.kwargs['json']['title'],'call the mechanic')
+  self.assertEqual(db._request.call_args.kwargs['json']['request_key'],K)
+  self.assertNotIn('pending_reminder',result)
 
 class RuntimeActionIntegration(unittest.IsolatedAsyncioTestCase):
  async def test_chat_command_returns_card_without_model_or_memory_write(self):

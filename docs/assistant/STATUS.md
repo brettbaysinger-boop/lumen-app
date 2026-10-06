@@ -3,7 +3,7 @@
 | # | Action item | Delivered foundation | Next increment |
 |---|---|---|---|
 | 1 | Remember what matters | Owner-scoped keyword search of memories, messages, and notes with source navigation | Semantic retrieval, stronger recall evaluation |
-| 2 | Conversation into action | Explicit task/reminder commands, persisted cards, undo, schedule clarification | More natural phrasing, resolving follow-up instructions |
+| 2 | Conversation into action | Explicit task/reminder commands, persisted cards, undo, immediate reminder schedule/AM-PM follow-ups and cancellation | More natural phrasing, named-item editing in chat |
 | 3 | Plan the day | Saved agenda, due inbox, completion and rescheduling | Focused daily plans, optional check-ins, calendar connection |
 | 4 | Capture everyday stuff | Notes and checklists; edit, check off, archive, restore | Named-list additions in chat, faster capture UI |
 | 5 | Help when stuck | Work on it together sends saved context into a chat draft | Saved step-by-step work sessions and progress updates |

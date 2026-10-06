@@ -194,10 +194,34 @@ def parse_action(text: str, zone: str, now: datetime | None = None):
     return None
 
 
-async def handle_action(db, companion_id, conversation_id, text, zone, request_key):
+def reminder_followup(text, recent, now=None):
+    """Resolve only a fresh, immediately preceding reminder clarification."""
+    if not recent or recent[0].get('role') != 'assistant': return text
+    pending=(recent[0].get('metadata') or {}).get('pending_reminder')
+    if not isinstance(pending,dict): return text
+    try:
+        expires=datetime.fromisoformat(pending['expires_at'])
+        if expires.tzinfo is None or expires <= (now or datetime.now(timezone.utc)): return text
+        original=pending['text']
+        if not isinstance(original,str) or len(original)>2000: return text
+    except (KeyError,TypeError,ValueError): return text
+    reply=text.strip().rstrip('.!').strip()
+    if re.fullmatch(r'(?:cancel|never mind|nevermind|forget it)',reply,re.I): return 'cancel pending reminder'
+    if re.fullmatch(r'am|pm',reply,re.I):
+        return re.sub(r'(at \d{1,2}(?::\d{2})?)\s+to\b',lambda m:m[1]+' '+reply+' to',original,flags=re.I)
+    title=re.search(r'\bto\s+(.+)$',original,re.I)
+    if title and re.fullmatch(r'(?:today|tomorrow|on \d{4}-\d{2}-\d{2}) at \d{1,2}(?::\d{2})?\s*(?:am|pm)?|in \d+ (?:minutes?|hours?|days?)',reply,re.I):
+        return 'remind me '+reply+' to '+title[1]
+    return text
+
+
+async def handle_action(db, companion_id, conversation_id, text, zone, request_key, recent=None):
+    text=reminder_followup(text,recent)
+    if text=='cancel pending reminder': return {'content':'Okay, I haven’t saved that reminder.','item':None}
     command=parse_action(text,zone)
     if not command: return None
-    if 'clarify' in command: return {'content':command['clarify'],'item':None}
+    if 'clarify' in command:
+        return {'content':command['clarify'],'item':None,'pending_reminder':{'text':text,'expires_at':(datetime.now(timezone.utc)+timedelta(minutes=30)).isoformat()}}
     if command.get('read')=='agenda':
         rows=await db._request('GET','my_day_items',params={'companion_id':f'eq.{companion_id}','status':'eq.open','order':'due_at.asc.nullslast,created_at.desc','limit':'50'})
         lines=[]
