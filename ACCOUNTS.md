@@ -117,3 +117,83 @@ Live signup, SMTP, and your full Supabase restore still require the steps above.
 
 Reference: [Supabase Auth](https://supabase.com/docs/guides/auth),
 [row-level security](https://supabase.com/docs/guides/database/postgres/row-level-security).
+
+<!-- LUMEN-CURRENT-STATE-2026-10 -->
+## Current state — October 2026
+
+The account architecture described in this document remains the ownership
+foundation for newer Lumen capabilities.
+
+### Ownership now extends beyond conversation
+
+Authenticated account/companion boundaries must also be preserved for:
+
+- generated chat media
+- companion visual identity
+- future canonical companion reference images
+- assistant-service objects such as tasks, reminders, notes, checklists,
+  projects, and goals
+- future user reference images
+- future connected-service data
+
+Companion ownership continues to be determined by authenticated user UUID and
+`owner_user_id`, not by companion display name.
+
+### Companion visual identity
+
+`companions.visual_identity` is now part of persistent companion state.
+
+It describes the companion's stable appearance for image generation.
+
+Visual identity is:
+
+- companion scoped
+- protected by the existing companion ownership boundary
+- distinct from conversational memory
+- distinct from the current UI portrait
+- not selected by companion name alone
+
+The current image-generation route validates the authenticated companion and
+conversation before using visual identity.
+
+### Generated media
+
+Generated chat images are stored in the private Supabase Storage bucket:
+
+`chat-media`
+
+Media access must remain authenticated and owner scoped.
+
+Future Gallery work should preserve the same ownership model rather than making
+generated media public for convenience.
+
+### Assistant services
+
+The My Day / assistant-action work must use the same account-isolation
+principles when integrated.
+
+Structured objects such as tasks, reminders, notes, checklists, projects, and
+goals are user-owned application state.
+
+They are not automatically conversational memories.
+
+### Product boundary
+
+The current product architecture separates:
+
+- Conversation
+- Companion
+- Memories
+- Gallery
+- Settings
+
+Authentication and ownership apply across all five even though their UI
+responsibilities differ.
+
+See:
+
+- `README.md`
+- `ROADMAP.md`
+- `docs/architecture.md`
+- `docs/product-design.md`
+- `docs/assistant-services.md`

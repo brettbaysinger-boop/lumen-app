@@ -80,3 +80,85 @@ Stop a failed backup's retry loop: `sudo systemctl stop lumen-backup.service`.
 Restore tests confirm database-data recovery within an existing Supabase
 installation. A full replacement-machine recovery still needs an end-to-end
 drill; do not claim it has been tested until it has.
+
+<!-- LUMEN-CURRENT-STATE-2026-10 -->
+## Current state and expansion — October 2026
+
+The existing backup system remains the current database/Auth recovery
+foundation.
+
+It does not yet represent complete recovery of Lumen's newer multimodal state.
+
+### Current gap: Supabase Storage
+
+Generated chat images now live in the private Supabase Storage bucket:
+
+`chat-media`
+
+Database backups can preserve metadata referring to generated media without
+necessarily preserving the underlying Storage object.
+
+Therefore complete Lumen recovery now requires a tested Supabase Storage
+backup/restore strategy.
+
+### Future critical media
+
+Before these become essential identity state, backup coverage must include:
+
+- canonical companion reference images
+- future user reference images
+- other irreplaceable Gallery assets
+
+Generated images may be reproducible in some cases, but canonical identity
+references should be treated as important user data.
+
+### ComfyUI
+
+The known-good Lumen image workflow is versioned in Git:
+
+`backend/workflows/flux2-klein-4b-fp8.json`
+
+Large model weights do not necessarily need to be copied into every Lumen
+backup if they can be reliably reacquired.
+
+However, recovery documentation should record:
+
+- exact model filenames
+- model versions/revisions where available
+- provider requirements
+- preferably checksums
+
+### Assistant-service data
+
+When My Day / assistant services are integrated, verify that backup and restore
+cover their database tables, including:
+
+- tasks
+- reminders
+- notes
+- checklists
+- projects/goals
+- source/provenance data
+
+Reminder recovery must eventually include enough scheduling state to resume
+reliable delivery after restoration.
+
+### Recovery testing
+
+A complete replacement-machine recovery drill remains a required reliability
+milestone.
+
+A future drill should verify:
+
+1. Supabase database/Auth restoration
+2. account and companion ownership
+3. memories
+4. assistant-service state
+5. Supabase Storage
+6. companion identity/reference assets
+7. provider/workflow configuration
+8. application startup
+9. conversation
+10. voice and image generation
+
+See `ROADMAP.md` and `docs/architecture.md` for the current system boundaries.

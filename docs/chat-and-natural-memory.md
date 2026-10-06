@@ -17,3 +17,72 @@ Apply `20261005020000_automatic_memory.sql` with local `supabase db push --local
 Verification: backend streaming/auth/error/scheduling and memory-classification tests; real SQL migrations, owner isolation, toggle/conflict/idempotence and full backup restore; TypeScript; keyboard utility and voice checks; Expo web export. Browser end-to-end validation could not run because Chromium downloads failed in the execution environment. GPU timings, UI streaming, notices and model fit still require desktop verification.
 
 Desktop acceptance: hard refresh; Enter a direct preference; see immediate question, activity, then incremental reply; Shift+Enter inserts a line. Confirm one reply per submission. Wait for a database-backed memory notice, inspect it in Memories, Undo it, and confirm it stays inactive. Disable automatic remembering in Settings and submit a different fact: it must stay a proposal. Sensitive or changed facts should ask for review, not overwrite existing records. Confirm the chat model in `ollama ps`; compare its context/offload with Open WebUI closed and after an Open WebUI request.
+
+<!-- LUMEN-CURRENT-STATE-2026-10 -->
+## Current integration context — October 2026
+
+The chat and natural-memory behavior documented above remains part of the
+current integrated Lumen foundation.
+
+Newer capabilities now share the same authenticated Conversation surface.
+
+### Conversation now includes more than text
+
+The current integrated conversation can include:
+
+- streamed text replies
+- voice transcription
+- assistant speech playback
+- generated images
+- generated-image metadata/provenance
+
+Future Conversation work will add structured assistant actions and richer
+multimodal inputs.
+
+### Image requests
+
+Natural image requests are detected by the frontend and sent through an
+authenticated backend image route.
+
+The backend, not the frontend, resolves companion-self identity because the
+backend has authoritative companion context.
+
+When Lumen is explicitly the image subject, the backend can compose
+`companions.visual_identity` into the provider prompt.
+
+This identity state is not injected through conversational memory.
+
+### Assistant actions
+
+The separate My Day feature line introduces structured actions such as tasks,
+reminders, notes, checklists, and projects/goals.
+
+When integrated, action persistence should remain distinct from memory
+observation.
+
+A model saying that it remembered, scheduled, or created something is never
+authoritative by itself.
+
+### UI direction
+
+Take 2 treats Conversation as the interaction surface rather than a general
+configuration screen.
+
+Conversation should increasingly support:
+
+- companion portrait presence
+- subtle observable activity state
+- contextual action cards
+- media
+- camera/file input
+- useful follow-up actions
+
+Stable companion identity/configuration belongs in Companion.
+
+Application configuration belongs in Settings.
+
+See:
+
+- `docs/product-design.md`
+- `docs/assistant-services.md`
+- `docs/image-generation.md`
