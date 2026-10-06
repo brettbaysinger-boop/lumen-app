@@ -86,6 +86,26 @@ class VoiceRoutes(unittest.TestCase):
         self.settings.speech_url = ""
         self.assertEqual(self.client.post("/v0.1/voice/speak", json={"text": "Hello"}).status_code, 503)
 
+    def test_openai_base_url_does_not_duplicate_v1(self):
+        self.settings.speech_url = 'http://helios:8000/v1/'
+        def handler(request):
+            self.assertEqual(request.url.path, '/v1/audio/speech')
+            return httpx.Response(200, content=b'RIFFtestWAVE', headers={'Content-Type':'audio/wav'})
+        with self.upstream(handler):
+            self.assertEqual(self.client.post('/v0.1/voice/speak', json={'text':'Hello'}).status_code,200)
+
+    def test_old_catalog_endpoint_fallback(self):
+        db = Mock(get_companion=AsyncMock(return_value={'id':'mine'}))
+        paths=[]
+        def handler(request):
+            paths.append(request.url.path)
+            if request.url.path == '/v1/audio/models': return httpx.Response(404)
+            return httpx.Response(200,json={'data':[{'id':self.settings.speech_model,'voices':['af_heart']}]})
+        with patch('lumen.voice.SupabaseRepository',return_value=db), self.upstream(handler):
+            response=self.client.get('/v0.1/voice/companions/11111111-1111-4111-8111-111111111111/voices')
+        self.assertEqual(response.status_code,200)
+        self.assertEqual(paths,['/v1/audio/models','/v1/models'])
+
     def test_voice_catalog_is_scoped_to_configured_model(self):
         db = Mock(get_companion=AsyncMock(return_value={"speech_voice": "am_adam"}))
         def handler(request):

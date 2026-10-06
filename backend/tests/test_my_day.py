@@ -13,6 +13,10 @@ K='33333333-3333-4333-8333-333333333333'
 NOW=datetime(2026,10,6,20,0,tzinfo=timezone.utc)
 
 class ReminderFollowups(unittest.TestCase):
+ def test_long_prompt_schema_accepts_64000_and_rejects_overflow(self):
+  from lumen.schemas import RespondRequest
+  self.assertEqual(len(RespondRequest(companion_id=C,message='x'*64000).message),64000)
+  with self.assertRaises(ValueError): RespondRequest(companion_id=C,message='x'*64001)
  def pending(self, text='remind me tomorrow at 9 to call the mechanic', expires='2026-10-06T20:30:00+00:00'):
   return [{'role':'assistant','metadata':{'pending_reminder':{'text':text,'expires_at':expires}}}]
  def test_period_preserves_requested_task(self):

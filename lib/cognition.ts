@@ -36,7 +36,7 @@ export async function generateImage(
   }
 
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 360_000);
+  const timeout = setTimeout(() => controller.abort(), 660_000);
 
   try {
     const response = await fetch(`${baseUrl}/v0.2/images/generate`, {
@@ -100,7 +100,7 @@ export async function respondToMessage(
     throw new Error('Set EXPO_PUBLIC_LUMEN_API_URL to your Lumen server address, then restart Expo.');
   }
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 240_000);
+  const timeout = setTimeout(() => controller.abort(), 660_000);
   try {
     const response = await fetch(`${baseUrl}${onEvent && Platform.OS === "web" ? "/v0.2/respond/stream" : "/v0.1/respond"}`, {
       method: 'POST',

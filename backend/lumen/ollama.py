@@ -27,6 +27,7 @@ class OllamaProvider:
         self.base_url = settings.ollama_url.rstrip("/")
         self.context_length = getattr(settings, "chat_context_length", 8192)
         self.keep_alive = getattr(settings, "ollama_keep_alive", "15m")
+        self.max_reply_tokens = getattr(settings, "chat_max_reply_tokens", 8192)
 
     async def health_check(self) -> bool:
         try:
@@ -55,7 +56,7 @@ class OllamaProvider:
 
     async def generate(self, model: str, messages: list[dict], temperature: float = 0.7) -> dict:
         started = time.perf_counter()
-        async with httpx.AsyncClient(timeout=180) as client:
+        async with httpx.AsyncClient(timeout=600) as client:
             response = await client.post(
                 f"{self.base_url}/api/chat",
                 json={
@@ -63,7 +64,7 @@ class OllamaProvider:
                     "messages": messages,
                     "stream": False,
                     "keep_alive": self.keep_alive,
-                    "options": {"temperature": temperature, "num_ctx": self.context_length},
+                    "options": {"temperature": temperature, "num_ctx": self.context_length, "num_predict": self.max_reply_tokens},
                 },
             )
             response.raise_for_status()
@@ -81,11 +82,11 @@ class OllamaProvider:
         started = time.perf_counter()
         content = ""
         final = None
-        async with httpx.AsyncClient(timeout=180) as client:
+        async with httpx.AsyncClient(timeout=600) as client:
             async with client.stream("POST", f"{self.base_url}/api/chat", json={
                 "model": model, "messages": messages, "stream": True,
                 "keep_alive": self.keep_alive,
-                "options": {"temperature": 0.7, "num_ctx": self.context_length},
+                "options": {"temperature": 0.7, "num_ctx": self.context_length, "num_predict": self.max_reply_tokens},
             }) as response:
                 response.raise_for_status()
                 async for line in response.aiter_lines():

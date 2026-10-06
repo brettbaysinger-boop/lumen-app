@@ -143,7 +143,7 @@ export default function ChatScreen() {
           const text = await transcribeRecording(blob, controller.signal);
           if (mountedRef.current && !controller.signal.aborted) {
             const draft = [draftRef.current.trim(), text].filter(Boolean).join(' ');
-            if (draft.length > 4000) throw new Error('The draft is too long. Shorten it and record again.');
+            if (draft.length > 64000) throw new Error('The draft exceeds 64,000 characters. Save part as a note before adding more.');
             setInputText(draft);
           }
         } catch (err) {
@@ -181,7 +181,7 @@ export default function ChatScreen() {
       if (mountedRef.current && playbackRef.current === controller) { setPlayingId(null); setSpeakingId(null); }
     };
     try {
-      await playReply(message.content, controller.signal, finished, { companionId: companion?.id, onStart: () => { if (mountedRef.current && !controller.signal.aborted) setSpeakingId(message.id); } });
+      await playReply(message.content, controller.signal, finished, { companionId: companion?.id, onError: err => { if (mountedRef.current && !controller.signal.aborted) setError(err.message); }, onStart: () => { if (mountedRef.current && !controller.signal.aborted) setSpeakingId(message.id); } });
     } catch (err) {
       if (mountedRef.current && !controller.signal.aborted) {
         setError(err instanceof Error ? err.message : 'Playback failed.');
@@ -257,7 +257,7 @@ export default function ChatScreen() {
   }, [routeParams.conversation, conversations, sending, voiceBusy]);
   useEffect(() => {
     if (routeParams.draft && !sending && !voiceBusy) {
-      setInputText(routeParams.draft.slice(0, 4000));
+      setInputText(routeParams.draft.slice(0, 64000));
       router.setParams({ draft: undefined });
     }
   }, [routeParams.draft, sending, voiceBusy]);
@@ -667,7 +667,7 @@ export default function ChatScreen() {
                 void sendMessage();
               }
             } } : {})}
-            maxLength={4000}
+            maxLength={64000}
             editable={!sending && !voiceBusy}
           />
           <TouchableOpacity
@@ -999,7 +999,7 @@ function useMemoStyles(c: ExtendedThemeColors, isMobile: boolean) {
       borderRadius: Radius.lg,
       paddingHorizontal: Spacing.md,
       paddingVertical: Spacing.sm + 2,
-      maxHeight: 120,
+      maxHeight: 260,
       minHeight: 44,
     },
     starters: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', gap: 8, marginTop: 20 },

@@ -20,8 +20,9 @@ class Recorder {
     });
   }
 }
+const audios = [];
 class Audio {
-  constructor(url) { this.url = url; }
+  constructor(url) { this.url = url; audios.push(this); }
   async play() {}
   pause() {}
   removeAttribute() {}
@@ -60,6 +61,42 @@ const voice = sandbox.exports;
   stop();
   assert.equal(revoked, 1, 'playback object URL released once');
   assert.equal(ended, 1);
+  const longReply = 'A full sentence about our celebration. '.repeat(200);
+  const chunks = voice.speechChunks(longReply);
+  assert.equal(chunks.join(''), longReply, 'chunking preserves every character');
+  assert.ok(chunks.length > 1 && chunks.every(chunk => chunk.length <= 500));
+  const sent = [];
+  sandbox.fetch = async (url, init) => {
+    sent.push(JSON.parse(init.body).text);
+    return { ok: true, blob: async () => new Blob(['audio'], { type: 'audio/wav' }) };
+  };
+  let queueEnded = 0;
+  const queueController = new AbortController();
+  const queueStop = await voice.playReply(longReply, queueController.signal, () => { queueEnded++; });
+  assert.equal(sent.length, 1, 'only synthesize the first chunk before playback');
+  for (let i = 0; i < chunks.length; i++) {
+    assert.equal(sent[i], chunks[i]);
+    audios.at(-1).onended();
+    await new Promise(resolve => setImmediate(resolve));
+  }
+  assert.equal(sent.join(''), longReply, 'all text synthesized in order');
+  assert.equal(queueEnded, 1, 'completion fires once after the final chunk');
+  queueStop();
+  const cancelledQueue = new AbortController();
+  const before = sent.length;
+  await voice.playReply(longReply, cancelledQueue.signal, () => {});
+  cancelledQueue.abort();
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(sent.length, before + 1, 'cancellation stops all remaining synthesis');
+  let failure;
+  let attempts = 0;
+  sandbox.fetch = async () => ++attempts === 1
+    ? { ok: true, blob: async () => new Blob(['audio']) }
+    : { ok: false, status: 502, json: async () => ({ detail: 'Helios chunk failed' }) };
+  await voice.playReply(longReply, new AbortController().signal, () => {}, { onError: error => { failure = error; } });
+  audios.at(-1).onended();
+  await new Promise(resolve => setImmediate(resolve));
+  assert.match(failure.message, /Helios chunk failed/, 'mid-reply failure is visible');
   sandbox.fetch = async () => ({ ok: false, status: 502, json: async () => ({ detail: 'Helios unavailable' }) });
   await assert.rejects(voice.transcribeRecording(blob), /Helios unavailable/);
   sandbox.navigator.mediaDevices.getUserMedia = async () => { throw new Error('Permission denied'); };

@@ -20,6 +20,7 @@ class Settings(BaseSettings):
     reflection_model: str = "llama3.1:8b"
     memory_model: str = "llama3.1:8b"
     chat_context_length: int = Field(default=8192, ge=1024, le=32768)
+    chat_max_reply_tokens: int = Field(default=8192, ge=256, le=32768)
     ollama_keep_alive: str = "15m"
     memory_observations_enabled: bool = True
     memory_observation_model: str = ""

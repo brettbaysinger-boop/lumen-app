@@ -25,6 +25,14 @@ def speech_settings():
     return settings
 
 
+def speech_base(settings):
+    # Accept either the server origin or an OpenAI-style /v1 base URL.
+    base = settings.speech_url.rstrip('/')
+    for suffix in ('/v1/audio', '/v1'):
+        if base.endswith(suffix): return base[:-len(suffix)]
+    return base
+
+
 def upstream_error(exc: httpx.HTTPError):
     if isinstance(exc, httpx.TimeoutException):
         return HTTPException(504, "Helios speech request timed out. Try a shorter recording or reply.")
@@ -44,7 +52,7 @@ async def transcribe(file: UploadFile = File(...)):
             raise HTTPException(413, "Recording exceeds 10 MB. Record a shorter message.")
         async with httpx.AsyncClient(timeout=120) as client:
             result = await client.post(
-                settings.speech_url.rstrip("/") + "/v1/audio/transcriptions",
+                speech_base(settings) + "/v1/audio/transcriptions",
                 files={"file": ("recording" + suffix(file.content_type), audio,
                                 file.content_type or "application/octet-stream")},
                 data={"model": settings.transcription_model, "response_format": "json"},
@@ -87,7 +95,7 @@ async def speak(request: SpeechRequest, user: AuthUser = Depends(require_user)):
     try:
         async with httpx.AsyncClient(timeout=120) as client:
             result = await client.post(
-                settings.speech_url.rstrip("/") + "/v1/audio/speech",
+                speech_base(settings) + "/v1/audio/speech",
                 json={"model": settings.speech_model, "voice": selected_voice,
                       "input": request.text, "response_format": "wav"},
             )
@@ -111,7 +119,9 @@ async def discover_voices():
     settings = speech_settings()
     try:
         async with httpx.AsyncClient(timeout=20) as client:
-            result = await client.get(settings.speech_url.rstrip("/") + "/v1/audio/models")
+            result = await client.get(speech_base(settings) + "/v1/audio/models")
+            if result.status_code == 404:
+                result = await client.get(speech_base(settings) + "/v1/models")
             result.raise_for_status()
         body = result.json()
         models = body.get("models", body.get("data", [])) if isinstance(body, dict) else []

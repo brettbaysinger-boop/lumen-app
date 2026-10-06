@@ -13,6 +13,7 @@ class StreamingTests(unittest.IsolatedAsyncioTestCase):
         def handler(request):
             payload = json.loads(request.content)
             self.assertEqual(payload['options']['num_ctx'], 8192)
+            self.assertEqual(payload['options']['num_predict'], 8192)
             self.assertTrue(payload['stream'])
             self.assertEqual(payload['keep_alive'], '15m')
             return httpx.Response(200, text='\n'.join(json.dumps(x) for x in [

@@ -83,34 +83,76 @@ export async function recordMicrophone(
   return { stop, cancel: () => { cancelled = true; stop(); } };
 }
 
-export async function playReply(text: string, signal: AbortSignal, onEnd: () => void, options: { companionId?: string; voice?: string; onStart?: () => void } = {}): Promise<() => void> {
+export function speechChunks(text: string, maximum = 500): string[] {
+  const chunks: string[] = [];
+  let remaining = text;
+  while (remaining.length > maximum) {
+    const sample = remaining.slice(0, maximum);
+    const boundary = Math.max(sample.lastIndexOf('. '), sample.lastIndexOf('! '), sample.lastIndexOf('? '), sample.lastIndexOf('\n'));
+    const space = sample.lastIndexOf(' ');
+    let end = boundary >= maximum / 2 ? boundary + 1 : space >= maximum / 2 ? space + 1 : maximum;
+    // Keep surrogate pairs together at a hard boundary.
+    if (end === maximum && /[\uD800-\uDBFF]/.test(remaining[end - 1])) end--;
+    chunks.push(remaining.slice(0, end)); remaining = remaining.slice(end);
+  }
+  if (remaining) chunks.push(remaining);
+  return chunks;
+}
+
+export async function playReply(text: string, signal: AbortSignal, onEnd: () => void, options: { companionId?: string; voice?: string; onStart?: () => void; onError?: (error: Error) => void } = {}): Promise<() => void> {
   browserAudio();
-  if (text.length > 4000) throw new Error('This reply is too long to play (maximum 4,000 characters).');
-  const blob = await voiceRequest('speak', {
-    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text, companion_id: options.companionId, voice: options.voice }),
-  }, signal) as Blob;
-  if (signal.aborted) throw new Error('Playback cancelled.');
-  const objectUrl = URL.createObjectURL(blob);
-  const audio = new Audio(objectUrl);
+  const chunks = speechChunks(text).filter(chunk => chunk.trim());
+  if (!chunks.length) throw new Error('Reply text is empty.');
+  const controller = new AbortController();
+  let release: (() => void) | undefined;
+  let completeChunk: (() => void) | undefined;
   let finished = false;
   const stop = () => {
     if (finished) return;
     finished = true;
-    audio.pause();
-    audio.removeAttribute('src');
-    URL.revokeObjectURL(objectUrl);
+    controller.abort(); release?.(); completeChunk?.();
     signal.removeEventListener('abort', stop);
     onEnd();
   };
-  audio.onended = stop;
-  audio.onerror = stop;
   signal.addEventListener('abort', stop);
-  try { await audio.play(); } catch (err) {
-    stop();
-    throw new Error('Could not play the audio. Check browser sound permissions and try Play again.');
-  }
   if (signal.aborted) { stop(); throw new Error('Playback cancelled.'); }
-  options.onStart?.();
+  async function startChunk(chunk: string): Promise<{ ended: Promise<void> }> {
+    const blob = await voiceRequest('speak', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text: chunk, companion_id: options.companionId, voice: options.voice }),
+    }, controller.signal) as Blob;
+    if (finished) throw new Error('Playback cancelled.');
+    const objectUrl = URL.createObjectURL(blob);
+    const audio = new Audio(objectUrl);
+    let released = false;
+    release = () => { if (released) return; released = true; audio.pause(); audio.removeAttribute('src'); URL.revokeObjectURL(objectUrl); };
+    const ended = new Promise<void>((resolve, reject) => {
+      completeChunk = resolve;
+      audio.onended = () => { release?.(); resolve(); };
+      audio.onerror = () => { release?.(); reject(new Error('Speech playback failed before this reply finished.')); };
+    });
+    // Attach a handler before play(), which can fail before the queue starts waiting.
+    void ended.catch(() => {});
+    try { await audio.play(); } catch {
+      release();
+      throw new Error('Could not play the audio. Check browser sound permissions and try Play again.');
+    }
+    if (finished) { release(); throw new Error('Playback cancelled.'); }
+    return { ended };
+  }
+  let first: { ended: Promise<void> };
+  try { first = await startChunk(chunks[0]); options.onStart?.(); } catch (err) { stop(); throw err; }
+  void (async () => {
+    try {
+      await first.ended;
+      for (const chunk of chunks.slice(1)) {
+        if (finished) return;
+        const next = await startChunk(chunk); await next.ended;
+      }
+      stop();
+    } catch (err) {
+      if (!finished) { options.onError?.(err instanceof Error ? err : new Error('Speech failed.')); stop(); }
+    }
+  })();
   return stop;
 }
 

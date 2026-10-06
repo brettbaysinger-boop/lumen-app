@@ -21,7 +21,7 @@ class RespondRequest(BaseModel):
     _timezone = field_validator("timezone")(valid_timezone)
     companion_id: str
     conversation_id: str | None = None
-    message: str = Field(min_length=1, max_length=16000)
+    message: str = Field(min_length=1, max_length=64000)
     attachments: list[Attachment] = Field(default_factory=list, max_length=4)
 
 

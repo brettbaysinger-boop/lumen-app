@@ -17,6 +17,55 @@ The goal is for the companion to help naturally.
 
 ## Core experiences
 
+### Post-deployment priorities (October 6)
+
+Long-message and speech fixes are implemented in the next patch: composer and
+API prompts accept 64,000 characters, generated replies have a configurable
+8,192-token ceiling, and foreground generation/request timeouts allow longer
+replies. Speech queues sentence-aware chunks of at most 500 characters, waits
+for playback to finish before requesting the next, and stops the queue on
+cancellation. Mid-reply errors are shown rather than silently treating partial
+speech as completion. The per-request speech API limit remains 4,000 characters;
+the UI queue supports longer replies without one giant synthesis request.
+
+Prompt character limits do not increase the model's context window. Set
+`CHAT_CONTEXT_LENGTH` separately for the selected model and available VRAM.
+The existing default remains 8,192 tokens. Long input plus history and output
+can exceed it. Large-document retrieval and context budgeting remain pending.
+Chat bubbles already render full response text without a line clamp; if output
+still ends mid-sentence, inspect the model finish reason and server logs.
+
+Helios diagnostics: from `backend`, run
+`PYTHONPATH=. .venv/bin/python ../scripts/diagnose-helios.py`.
+The patch normalizes server URLs ending in `/v1` and falls back from the audio
+model catalog to `/v1/models` on a missing catalog endpoint. Actual deployment
+configuration and installed-model problems still need the Helios diagnostic
+output. Do not expose backend secrets in pasted configuration.
+
+Google, X, Apple, GitHub, Microsoft, and Facebook sign-in remain in the UI;
+buttons appear only when local Supabase reports that provider enabled.
+
+The next requested capabilities are not implemented yet:
+
+- Account-support admin: a server-controlled role and dedicated UI restricted
+  to account email/ID, account state, unlock actions, and user-delivered recovery.
+  No chat, memory, photo, document, or companion browsing; no impersonation,
+  recovery-token display, or administrator-selected user passwords. Record
+  support actions in an audit log. Keep service-role secrets server-side.
+  Test cross-user data isolation for the support role. The machine operator's
+  database, Mailpit, and filesystem privileges remain separate from this UI.
+- Optional “Hey [companion name]”: local wake-word detection with a visible
+  listening indicator, microphone permissions, mute control, and suppression
+  during companion speech. Start with an open-app mode; closed-app/background
+  listening requires platform-specific work. Do not use continuous cloud speech
+  recognition for the self-hosted default.
+- Internet tools: optional search and page retrieval through a configurable
+  provider (self-hosted search supported), cited results, download review for
+  printable CAD/STL files, and local vision for camera questions. Web content
+  must remain untrusted tool data, without access to authentication secrets or
+  authority to trigger unrelated private actions. Identification should state
+  uncertainty and must not establish whether a snake is safe to handle.
+
 ### Implemented Take 2 checkpoint
 
 The development build includes My Day tasks, reminders, notes, checklists,
