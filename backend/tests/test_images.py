@@ -105,6 +105,57 @@ class ImageEndpointTests(unittest.IsolatedAsyncioTestCase):
             2,
         )
 
+    async def test_companion_self_image_uses_visual_identity(self):
+        repository = AsyncMock()
+        repository.get_companion.return_value = {
+            "id": COMPANION_ID,
+            "name": "Lumen",
+            "visual_identity": (
+                "An adult woman with long dark brown hair, green eyes, "
+                "an oval face, and a small beauty mark beneath her left eye."
+            ),
+        }
+        repository.get_conversation.return_value = {
+            "id": CONVERSATION_ID,
+            "companion_id": COMPANION_ID,
+        }
+        repository.create_message.side_effect = [
+            {"id": "user-message"},
+            {"id": MESSAGE_ID},
+        ]
+
+        provider = FakeImageProvider()
+        original = "Send me a picture of yourself wearing a hoodie on the couch."
+
+        with patch("lumen.main.SupabaseRepository", return_value=repository), \
+             patch("lumen.main.create_image_provider", return_value=provider), \
+             patch("lumen.main.uuid.uuid4", return_value="generated-image-id"):
+
+            await generate_image(
+                ImageGenerateRequest(
+                    companion_id=COMPANION_ID,
+                    conversation_id=CONVERSATION_ID,
+                    prompt=original,
+                ),
+                AuthUser(USER_ID, "user-token"),
+            )
+
+        self.assertNotEqual(provider.prompt, original)
+        self.assertIn("Depict Lumen as the subject", provider.prompt)
+        self.assertIn("long dark brown hair", provider.prompt)
+        self.assertIn(original, provider.prompt)
+
+        user_message = repository.create_message.await_args_list[0].args[0]
+        assistant_message = repository.create_message.await_args_list[1].args[0]
+
+        self.assertEqual(user_message["content"], original)
+
+        metadata = assistant_message["metadata"]
+        self.assertEqual(metadata["image_prompt"], original)
+        self.assertEqual(metadata["resolved_image_prompt"], provider.prompt)
+        self.assertEqual(metadata["image_subject"], "companion")
+
+
     async def test_generate_image_creates_conversation_when_missing(self):
         repository = AsyncMock()
         repository.get_companion.return_value = {"id": COMPANION_ID}

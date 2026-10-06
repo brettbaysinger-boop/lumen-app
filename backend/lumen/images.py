@@ -180,3 +180,50 @@ def create_image_provider(settings: Settings):
     raise ImageProviderNotConfigured(
         f"Unsupported image provider: {settings.image_provider}"
     )
+
+
+_COMPANION_SELF_PATTERNS = (
+    r"\byourself\b",
+    r"\bof you\b",
+    r"\bwith you\b",
+)
+
+
+def compose_image_prompt(
+    user_prompt: str,
+    companion_name: str,
+    visual_identity: str | None,
+) -> tuple[str, str | None]:
+    """Resolve explicit companion-self references for image generation.
+
+    Returns (provider_prompt, subject). Ordinary image requests remain
+    unchanged. A companion visual identity is used only when the user
+    explicitly makes the companion a subject of the requested image.
+    """
+    import re
+
+    if not visual_identity or not visual_identity.strip():
+        return user_prompt, None
+
+    companion_name = companion_name.strip()
+    patterns = list(_COMPANION_SELF_PATTERNS)
+
+    if companion_name:
+        patterns.append(rf"\b{re.escape(companion_name)}\b")
+
+    if not any(re.search(pattern, user_prompt, re.IGNORECASE) for pattern in patterns):
+        return user_prompt, None
+
+    identity = visual_identity.strip()
+    name = companion_name or "the companion"
+
+    provider_prompt = (
+        f"Depict {name} as the subject using this persistent visual identity: "
+        f"{identity}\n\n"
+        f"User's requested image: {user_prompt}\n\n"
+        f"Keep {name}'s identifying physical traits consistent with the "
+        "persistent visual identity while following the requested scene, "
+        "clothing, expression, composition, and style."
+    )
+
+    return provider_prompt, "companion"

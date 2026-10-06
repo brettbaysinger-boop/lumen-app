@@ -26,6 +26,7 @@ from .schemas import (
 from .images import (
     ImageProviderError,
     ImageProviderNotConfigured,
+    compose_image_prompt,
     create_image_provider,
 )
 from .voice import router as voice_router
@@ -146,9 +147,15 @@ async def generate_image(
         if not conversation:
             raise HTTPException(status_code=404, detail="Conversation not found")
 
+    resolved_prompt, image_subject = compose_image_prompt(
+        request.prompt,
+        companion.get("name", ""),
+        companion.get("visual_identity"),
+    )
+
     try:
         provider = create_image_provider(settings)
-        result = await provider.generate(request.prompt)
+        result = await provider.generate(resolved_prompt)
     except ImageProviderNotConfigured as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
     except ImageProviderError as exc:
@@ -208,6 +215,8 @@ async def generate_image(
             }],
             "generated_image": True,
             "image_prompt": request.prompt,
+            "resolved_image_prompt": resolved_prompt,
+            "image_subject": image_subject,
             "image_provider": result["provider"],
         },
     })
