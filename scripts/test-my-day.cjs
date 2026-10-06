@@ -1,0 +1,47 @@
+const assert=require('node:assert/strict');
+const fs=require('node:fs');
+const {PGlite}=require('@electric-sql/pglite');
+const A='11111111-1111-4111-8111-111111111111',B='22222222-2222-4222-8222-222222222222';
+const C='33333333-3333-4333-8333-333333333333',D='44444444-4444-4444-8444-444444444444';
+const X='55555555-5555-4555-8555-555555555555',Y='66666666-6666-4666-8666-666666666666';
+const db=new PGlite();
+async function as(user){await db.exec('RESET ROLE');await db.query("SELECT set_config('request.jwt.claim.sub',$1,false)",[user]);await db.exec('SET ROLE authenticated')}
+async function scalar(sql,args=[]){return Object.values((await db.query(sql,args)).rows[0])[0]}
+(async()=>{try{
+ await db.exec(`CREATE ROLE authenticated; CREATE ROLE service_role BYPASSRLS; CREATE ROLE anon; CREATE SCHEMA auth;
+ CREATE FUNCTION auth.uid() RETURNS uuid LANGUAGE sql AS $$SELECT nullif(current_setting('request.jwt.claim.sub',true),'')::uuid$$;
+ GRANT USAGE ON SCHEMA public,auth TO authenticated,service_role,anon;
+ CREATE TABLE companions(id uuid PRIMARY KEY,owner_user_id uuid);
+ CREATE TABLE conversations(id uuid PRIMARY KEY,companion_id uuid REFERENCES companions(id));
+ CREATE TABLE memories(id uuid PRIMARY KEY DEFAULT gen_random_uuid(),companion_id uuid,conversation_id uuid,content text,subject text DEFAULT 'unknown',is_active boolean DEFAULT true,created_at timestamptz DEFAULT now());
+ CREATE TABLE messages(id uuid PRIMARY KEY DEFAULT gen_random_uuid(),companion_id uuid,conversation_id uuid,role text,content text,created_at timestamptz DEFAULT now());
+ GRANT SELECT,INSERT,UPDATE ON companions,conversations,memories,messages TO authenticated;
+ ALTER TABLE companions ENABLE ROW LEVEL SECURITY; CREATE POLICY owner ON companions TO authenticated USING(owner_user_id=auth.uid()) WITH CHECK(owner_user_id=auth.uid());
+ ALTER TABLE conversations ENABLE ROW LEVEL SECURITY; CREATE POLICY owner ON conversations TO authenticated USING(EXISTS(SELECT 1 FROM companions c WHERE c.id=companion_id));
+ ALTER TABLE memories ENABLE ROW LEVEL SECURITY; CREATE POLICY owner ON memories TO authenticated USING(EXISTS(SELECT 1 FROM companions c WHERE c.id=companion_id));
+ ALTER TABLE messages ENABLE ROW LEVEL SECURITY; CREATE POLICY owner ON messages TO authenticated USING(EXISTS(SELECT 1 FROM companions c WHERE c.id=companion_id));
+ INSERT INTO companions VALUES('${C}','${A}'),('${D}','${B}'); INSERT INTO conversations VALUES('${X}','${C}'),('${Y}','${D}');`);
+ await db.exec(fs.readFileSync('supabase/migrations/20261006223000_my_day.sql','utf8'));
+ await as(A);
+ const reminder=await scalar("INSERT INTO my_day_items(companion_id,kind,title,due_at,timezone) VALUES($1,'reminder','Call mechanic','2020-01-01T09:00:00Z','America/Phoenix') RETURNING id",[C]);
+ await db.query("INSERT INTO my_day_items(companion_id,kind,title) VALUES($1,'note','Sarah recommended the movie Arrival')",[C]);
+ await db.query("INSERT INTO messages(companion_id,conversation_id,role,content) VALUES($1,$2,'user','Sarah recommended a movie called Arrival')",[C,X]);
+ let hits=(await db.query('SELECT * FROM search_my_information($1,$2)',[C,'Sarah movie'])).rows;
+ assert.equal(hits.length,2);assert.ok(hits.some(h=>h.conversation_id===X));
+ let due=(await db.query('SELECT * FROM my_day_due($1)',[C])).rows;assert.equal(due.length,1);const alert=due[0].id;
+ await db.query('SELECT * FROM my_day_due($1)',[C]);assert.equal(await scalar('SELECT count(*) FROM my_day_alerts'),1,'no duplicate due delivery');
+ await db.query('UPDATE my_day_alerts SET seen_at=now() WHERE id=$1',[alert]);assert.equal((await db.query('SELECT * FROM my_day_due($1)',[C])).rows.length,0,'dismissal persists');
+ await db.query("UPDATE my_day_items SET due_at='2020-01-02T09:00:00Z' WHERE id=$1",[reminder]);assert.equal((await db.query('SELECT * FROM my_day_due($1)',[C])).rows.length,1,'rescheduled due time delivers once');
+ await db.query("UPDATE my_day_items SET status='done' WHERE id=$1",[reminder]);assert.equal((await db.query('SELECT * FROM my_day_due($1)',[C])).rows.length,0,'completed reminder removed');
+ await assert.rejects(db.query("INSERT INTO my_day_items(companion_id,kind,title,source_conversation_id) VALUES($1,'task','bad source',$2)",[C,Y]),/Conversation does not belong/);
+ await assert.rejects(db.query("INSERT INTO my_day_items(companion_id,kind,title,timezone) VALUES($1,'task','invalid zone','Broken/Zone')",[C]),/Invalid timezone/);
+ await assert.rejects(db.query("INSERT INTO my_day_items(companion_id,kind,title) VALUES($1,'reminder','missing time')",[C]),/check constraint/);
+ await as(B);
+ assert.equal(await scalar('SELECT count(*) FROM my_day_items'),0,'other owner cannot read');
+ assert.equal((await db.query('SELECT * FROM search_my_information($1,$2)',[C,'Sarah movie'])).rows.length,0,'search respects RLS');
+ assert.equal((await db.query('UPDATE my_day_items SET title=$1 WHERE id=$2 RETURNING id',['hijack',reminder])).rows.length,0,'other owner cannot change');
+ await assert.rejects(db.query('SELECT * FROM my_day_due($1)',[C]),/Companion not found/);
+ await assert.rejects(db.query("INSERT INTO my_day_items(companion_id,kind,title) VALUES($1,'task','intrusion')",[C]),/row-level security/);
+ assert.equal(await scalar('SELECT count(*) FROM my_day_alerts'),0,'other owner cannot see notifications');
+ console.log('My Day migration passed: ownership, source scope, full-text search, reminder replay, dismissal, rescheduling, completion, and timezone validation.');
+}finally{await db.close()}})().catch(e=>{console.error(e);process.exit(1)});

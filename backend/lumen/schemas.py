@@ -1,6 +1,8 @@
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
+from uuid import UUID, uuid4
+from .my_day import valid_timezone
 
 
 class ChatMessage(BaseModel):
@@ -14,6 +16,9 @@ class Attachment(BaseModel):
 
 
 class RespondRequest(BaseModel):
+    timezone: str = Field(default="UTC", max_length=100)
+    request_id: UUID = Field(default_factory=uuid4)
+    _timezone = field_validator("timezone")(valid_timezone)
     companion_id: str
     conversation_id: str | None = None
     message: str = Field(min_length=1, max_length=16000)

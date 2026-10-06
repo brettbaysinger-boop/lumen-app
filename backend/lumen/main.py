@@ -30,12 +30,14 @@ from .images import (
     create_image_provider,
 )
 from .voice import router as voice_router
+from .my_day import router as my_day_router
 
 settings = get_settings()
 runtime = CognitionRuntime(settings)
 
 app = FastAPI(title="Lumen Cognition API", version="0.1.0")
 app.include_router(voice_router)
+app.include_router(my_day_router)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origins,
@@ -66,7 +68,10 @@ async def respond(request: RespondRequest, background_tasks: BackgroundTasks, us
     try:
         await prioritize_chat()
         async with model_lock:
-            response = await CognitionRuntime(settings, user.token, user.id).respond(
+            instance = CognitionRuntime(settings, user.token, user.id)
+            instance.timezone = request.timezone
+            instance.request_key = str(request.request_id)
+            response = await instance.respond(
                 request.companion_id,
                 request.conversation_id,
                 request.message,
@@ -236,6 +241,8 @@ async def generate_image(
 async def respond_stream(request: RespondRequest, background_tasks: BackgroundTasks,
                          user: AuthUser = Depends(require_user)):
     instance = CognitionRuntime(settings, user.token, user.id)
+    instance.timezone = request.timezone
+    instance.request_key = str(request.request_id)
     if not await instance.db.get_companion(request.companion_id):
         raise HTTPException(status_code=404, detail="Companion not found")
     if request.conversation_id and not await instance.db.get_conversation(request.conversation_id, request.companion_id):

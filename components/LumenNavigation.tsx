@@ -1,11 +1,12 @@
 import { View, Text, Pressable, StyleSheet, useWindowDimensions } from 'react-native';
 import type { BottomTabBarProps } from '@react-navigation/bottom-tabs';
-import { MessageCircle, Brain, User, Settings, Images } from 'lucide-react-native';
+import { MessageCircle, Brain, User, Settings, Images, CalendarCheck } from 'lucide-react-native';
 import { useTheme } from '@/lib/theme-context';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 const items = {
   index: { label: 'Conversation', icon: MessageCircle },
+  'my-day': { label: 'My Day', icon: CalendarCheck },
   gallery: { label: 'Gallery', icon: Images },
   memories: { label: 'Memories', icon: Brain },
   companion: { label: 'Companion', icon: User },

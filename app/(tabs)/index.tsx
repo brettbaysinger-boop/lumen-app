@@ -28,7 +28,9 @@ import {
 } from 'lucide-react-native';
 import { CameraCapture } from '@/components/CameraCapture';
 import { CompanionPortrait } from '@/components/CompanionPortrait';
-import { useFocusEffect } from 'expo-router';
+import { DayActionCard } from '@/components/DayActionCard';
+import { requestKey, type DayItem } from '@/lib/my-day';
+import { router, useLocalSearchParams, useFocusEffect } from 'expo-router';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth';
 import { respondToMessage, generateImage, isImageRequest } from '@/lib/cognition';
@@ -43,6 +45,8 @@ import type { Companion, Conversation, Message } from '@/types/database';
 
 export default function ChatScreen() {
   const { colors } = useTheme();
+  const routeParams = useLocalSearchParams<{ conversation?: string; draft?: string }>();
+  const turnKey = useRef<{ text: string; id: string } | null>(null);
   const { width: screenWidth } = useWindowDimensions();
   const isMobile = screenWidth < 600;
   const [showCamera, setShowCamera] = useState(false);
@@ -247,6 +251,17 @@ export default function ChatScreen() {
     }
   }, [activeConversation, loadMessages]);
 
+  useEffect(() => {
+    const target = conversations.find(item => item.id === routeParams.conversation);
+    if (target && !sending && !voiceBusy) { setActiveConversation(target); router.setParams({ conversation: undefined }); }
+  }, [routeParams.conversation, conversations, sending, voiceBusy]);
+  useEffect(() => {
+    if (routeParams.draft && !sending && !voiceBusy) {
+      setInputText(routeParams.draft.slice(0, 4000));
+      router.setParams({ draft: undefined });
+    }
+  }, [routeParams.draft, sending, voiceBusy]);
+
   const createConversation = useCallback(async () => {
     if (!companion || sending || voicePhaseRef.current !== 'idle') return;
     const { data, error: err } = await supabase
@@ -303,6 +318,7 @@ export default function ChatScreen() {
     setActivity(`${companion.name} thinking…`);
     setMemoryNotice(null);
     setMemoryQuestions([]);
+    if (!turnKey.current || turnKey.current.text !== text) turnKey.current = { text, id: requestKey() };
     const images = pendingImages;
     const wantsImage = !images.length && isImageRequest(text);
     setInputText('');
@@ -339,6 +355,7 @@ export default function ChatScreen() {
             }
             if (event.type === 'reset') setLiveReply('');
           },
+          turnKey.current.id,
         );
       }
       const { data, error: refreshError } = await supabase
@@ -354,6 +371,7 @@ export default function ChatScreen() {
         if (conversation) setActiveConversation(conversation as Conversation);
       }
       await loadMessages(response.conversation_id);
+      turnKey.current = null;
     } catch (err) {
       if (!handedToServer) await removeStoredFiles('chat-media', uploaded);
       setError(err instanceof Error ? err.message : 'Lumen could not respond.');
@@ -512,6 +530,7 @@ export default function ChatScreen() {
               >
                 {item.content}
               </Text>
+              {item.role === 'assistant' && item.metadata?.my_day_item != null && <DayActionCard item={item.metadata.my_day_item as DayItem} />}
               {item.role === 'assistant' && item.metadata?.timings_ms != null && (
                 <View>
                   <TouchableOpacity onPress={() => setExpandedActivity(expandedActivity === item.id ? null : item.id)}>
@@ -563,7 +582,7 @@ export default function ChatScreen() {
               No agenda needed. Start wherever you are.
             </Text>
             <View style={styles.starters}>
-              {['How was your day?', 'Let’s dream a little', 'Create an image for me'].map(prompt =>
+              {["What's on my plate?", 'Let’s dream a little', 'Add a task: '].map(prompt =>
                 <TouchableOpacity key={prompt} style={styles.starter} onPress={() => setInputText(prompt)} accessibilityRole="button">
                   <Text style={styles.starterText}>{prompt}</Text>
                 </TouchableOpacity>)}

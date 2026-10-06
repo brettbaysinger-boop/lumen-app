@@ -1,4 +1,6 @@
 import logging
+from uuid import uuid4
+from .my_day import handle_action
 
 from .config import Settings
 from .db import SupabaseRepository
@@ -49,10 +51,15 @@ class CognitionRuntime:
         else:
             messages.append({"role": "user", "content": user_message})
 
+        action = await handle_action(self.db, companion_id, conversation_id, user_message,
+                                    getattr(self, 'timezone', 'UTC'), getattr(self, 'request_key', str(uuid4()))) if not attachments else None
         is_request, memory_content = memory_request(user_message, companion["name"])
         memory_status = "none"
         saved_subject = None
-        if memory_content:
+        if action:
+            result = {"content": action['content'], "model": "my-day-action", "latency_ms": 0,
+                      "tokens_in": None, "tokens_out": None}
+        elif memory_content:
             subject = memory_subject(memory_content, companion["name"], (profile or {}).get("display_name", ""))
             outcome = await self.db.remember(companion_id, conversation_id, memory_content, subject)
             memory_status = outcome
@@ -126,12 +133,12 @@ class CognitionRuntime:
             "tokens_in": result["tokens_in"],
             "tokens_out": result["tokens_out"],
             "latency_ms": result["latency_ms"],
-            "metadata": {"provider": self.provider.name, "runtime": "v0.1", "memory_status": memory_status, "memory_subject": saved_subject, "timings_ms": result.get("timings_ms", {})},
+            "metadata": {"provider": self.provider.name, "runtime": "v0.1", "memory_status": memory_status, "memory_subject": saved_subject, "timings_ms": result.get("timings_ms", {}), "my_day_item": action.get("item") if action else None},
         })
         await self.db.touch_conversation(conversation_id, 2)
 
         observation_message_id = None
-        if memory_status == "none" and getattr(self.settings, "memory_observations_enabled", False) is True:
+        if not action and memory_status == "none" and getattr(self.settings, "memory_observations_enabled", False) is True:
             try:
                 await self.db._request("POST", "memory_observations",
                     headers={"Prefer": "resolution=ignore-duplicates"},
@@ -193,6 +200,16 @@ Persona:
 
 Self-model system prompt:
 {companion.get('system_prompt') or ''}
+
+Assistant capabilities:
+Explicit commands can create My Day tasks, reminders, lists, notes, projects, and goals.
+Examples: "add a task: call the mechanic", "save a note: draft text", "create a shopping list: milk, eggs",
+"remind me tomorrow at 9 am to call the mechanic", "start a project: garden", "set a goal: practice Spanish".
+"What's on my plate?" retrieves saved items. "Search my history: movie Sarah" finds saved sources.
+For ordinary chat, suggest useful next steps, help draft text, rehearse conversations, or collaborate creatively.
+Do not claim you created, completed, scheduled, searched, sent, or changed anything unless a tool actually did so.
+If the user mentions a possible task casually, offer help; do not assume it is a scheduling instruction.
+Calendar, external sending, document import, and image understanding are not connected yet.
 
 Current computational state:
 attention={state.get('attention', 0.7)}

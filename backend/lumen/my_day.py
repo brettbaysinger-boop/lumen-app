@@ -1,0 +1,219 @@
+"""Owner-scoped daily work, explicit chat actions, and in-app reminder delivery."""
+import re
+from datetime import datetime, timedelta, timezone
+from typing import Literal
+from uuid import UUID
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+
+from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel, Field, field_validator, model_validator
+
+from .auth import AuthUser, require_user
+from .config import get_settings
+from .db import SupabaseRepository
+
+router = APIRouter(prefix="/v0.3/my-day", tags=["my-day"])
+Kind = Literal['task', 'reminder', 'note', 'list', 'project', 'goal']
+
+
+def valid_timezone(value: str) -> str:
+    try:
+        ZoneInfo(value)
+    except (ZoneInfoNotFoundError, ValueError):
+        raise ValueError('Choose a valid IANA timezone.')
+    return value
+
+
+class CheckItem(BaseModel):
+    text: str = Field(min_length=1, max_length=300)
+    done: bool = False
+
+
+class DayItemCreate(BaseModel):
+    kind: Kind
+    title: str = Field(min_length=1, max_length=300)
+    body: str = Field(default='', max_length=12000)
+    checklist: list[CheckItem] = Field(default_factory=list, max_length=100)
+    due_at: datetime | None = None
+    timezone: str = Field(default='UTC', max_length=100)
+    request_key: UUID
+    source_conversation_id: UUID | None = None
+
+    _timezone = field_validator('timezone')(valid_timezone)
+
+    @field_validator('title')
+    @classmethod
+    def title_not_blank(cls, value):
+        if not value.strip(): raise ValueError('A title is required.')
+        return value.strip()
+
+    @model_validator(mode='after')
+    def check_schedule(self):
+        if self.kind == 'reminder' and self.due_at is None:
+            raise ValueError('Choose a reminder date and time.')
+        if self.due_at and self.due_at.tzinfo is None:
+            raise ValueError('Reminder times must include a UTC offset.')
+        return self
+
+
+class DayItemUpdate(BaseModel):
+    title: str | None = Field(default=None, min_length=1, max_length=300)
+    body: str | None = Field(default=None, max_length=12000)
+    checklist: list[CheckItem] | None = Field(default=None, max_length=100)
+    status: Literal['open', 'done', 'archived'] | None = None
+    due_at: datetime | None = None
+    timezone: str | None = Field(default=None, max_length=100)
+
+    @field_validator('title')
+    @classmethod
+    def title_not_blank(cls, value):
+        if value is None or not value.strip(): raise ValueError('A title is required.')
+        return value.strip()
+
+    @field_validator('timezone')
+    @classmethod
+    def check_timezone(cls, value):
+        if value is None: raise ValueError('A timezone is required.')
+        return valid_timezone(value)
+
+    @model_validator(mode='after')
+    def check_schedule(self):
+        if self.due_at and self.due_at.tzinfo is None: raise ValueError('Include a UTC offset.')
+        for name in ('body','checklist','status'):
+            if name in self.model_fields_set and getattr(self,name) is None: raise ValueError(f'{name} cannot be null.')
+        return self
+
+
+async def companion_db(companion_id: str, user: AuthUser):
+    db = SupabaseRepository(get_settings(), user.token)
+    if not await db.get_companion(companion_id): raise HTTPException(404, 'Companion not found.')
+    return db
+
+
+async def create_item(db, companion_id: str, payload: DayItemCreate):
+    if payload.source_conversation_id and not await db.get_conversation(str(payload.source_conversation_id), companion_id):
+        raise HTTPException(404, 'Conversation not found.')
+    data = payload.model_dump(mode='json')
+    rows = await db._request('POST', 'my_day_items', params={'on_conflict': 'companion_id,request_key'},
+        headers={'Prefer': 'resolution=ignore-duplicates,return=representation'}, json={**data,'companion_id': companion_id})
+    if not rows:
+        rows = await db._request('GET','my_day_items',params={'companion_id':f'eq.{companion_id}','request_key':f'eq.{payload.request_key}','limit':'1'})
+    if not rows: raise HTTPException(409, 'Could not save this item. Reload My Day before retrying.')
+    return rows[0]
+
+
+@router.get('/companions/{companion_id}')
+async def list_items(companion_id: UUID, user: AuthUser = Depends(require_user)):
+    db = await companion_db(str(companion_id), user)
+    return await db._request('GET','my_day_items',params={'companion_id':f'eq.{companion_id}','order':'created_at.desc','limit':'500'})
+
+
+@router.post('/companions/{companion_id}')
+async def add_item(companion_id: UUID, payload: DayItemCreate, user: AuthUser = Depends(require_user)):
+    return await create_item(await companion_db(str(companion_id), user), str(companion_id), payload)
+
+
+@router.patch('/companions/{companion_id}/items/{item_id}')
+async def update_item(companion_id: UUID, item_id: UUID, payload: DayItemUpdate, user: AuthUser = Depends(require_user)):
+    db = await companion_db(str(companion_id), user)
+    rows = await db._request('GET','my_day_items',params={'id':f'eq.{item_id}','companion_id':f'eq.{companion_id}','limit':'1'})
+    if not rows: raise HTTPException(404,'Item not found.')
+    changes = payload.model_dump(mode='json',exclude_unset=True)
+    if rows[0]['kind']=='reminder' and 'due_at' in changes and changes['due_at'] is None:
+        raise HTTPException(400,'A reminder needs a scheduled time.')
+    updated = await db._request('PATCH','my_day_items',params={'id':f'eq.{item_id}','companion_id':f'eq.{companion_id}'},
+        headers={'Prefer':'return=representation'},json=changes)
+    if not updated: raise HTTPException(404,'Item not found.')
+    return updated[0]
+
+
+@router.get('/companions/{companion_id}/due')
+async def due_items(companion_id: UUID, user: AuthUser = Depends(require_user)):
+    db = await companion_db(str(companion_id),user)
+    return await db._request('POST','rpc/my_day_due',json={'p_companion_id':str(companion_id)})
+
+
+@router.post('/companions/{companion_id}/alerts/{alert_id}/seen')
+async def see_alert(companion_id: UUID, alert_id: UUID, user: AuthUser = Depends(require_user)):
+    db = await companion_db(str(companion_id),user)
+    alerts = await db._request('POST','rpc/my_day_due',json={'p_companion_id':str(companion_id)})
+    if not any(row['id']==str(alert_id) for row in alerts): raise HTTPException(404,'Reminder not found.')
+    rows = await db._request('PATCH','my_day_alerts',params={'id':f'eq.{alert_id}'},
+        headers={'Prefer':'return=representation'},json={'seen_at':datetime.now(timezone.utc).isoformat()})
+    return {'seen':bool(rows)}
+
+
+@router.get('/companions/{companion_id}/search')
+async def search(companion_id: UUID, q: str, user: AuthUser = Depends(require_user)):
+    if not 2<=len(q.strip())<=200: raise HTTPException(400,'Search with 2 to 200 characters.')
+    db = await companion_db(str(companion_id),user)
+    return await db._request('POST','rpc/search_my_information',json={'p_companion_id':str(companion_id),'p_query':q.strip()})
+
+
+def parse_action(text: str, zone: str, now: datetime | None = None):
+    """Conservative commands: never turn a casual statement into a commitment."""
+    text = re.sub(r'^\s*(?:please\s+)?', '', text.strip(), flags=re.I)
+    local = (now or datetime.now(timezone.utc)).astimezone(ZoneInfo(valid_timezone(zone)))
+    if re.fullmatch(r"(?:what(?:'s| is) on my plate(?: today)?|show (?:me )?my (?:day|tasks)|what do i need to do today)[?.!]*",text,re.I):
+        return {'read':'agenda'}
+    match = re.fullmatch(r'(?:search (?:my )?(?:memories|history|notes)(?: for)?|find in my history)\s*:\s*(.{2,200})',text,re.I)
+    if match: return {'read':'search','query':match[1]}
+    if re.match(r'remind me\b',text,re.I):
+        relative = re.fullmatch(r'remind me in (\d+) (minutes?|hours?|days?) to (.+)',text,re.I)
+        scheduled = re.fullmatch(r'remind me (today|tomorrow|on \d{4}-\d{2}-\d{2}) at (\d{1,2})(?::(\d{2}))?\s*(am|pm)? to (.+)',text,re.I)
+        if relative:
+            amount=int(relative[1]); unit=relative[2].lower()
+            if not 1<=amount<=10000: return {'clarify':'Choose a reminder interval between 1 and 10,000 minutes, hours, or days.'}
+            due=local.astimezone(timezone.utc)+timedelta(**{'minutes' if unit.startswith('minute') else 'hours' if unit.startswith('hour') else 'days':amount})
+            title=relative[3]
+        elif scheduled:
+            date_text,hour,minute,period,title=scheduled.groups(); hour=int(hour); minute=int(minute or '0')
+            if not period and hour<=12: return {'clarify':'Is that AM or PM? For example: remind me tomorrow at 9 am to call the mechanic.'}
+            if minute>59 or hour>23 or period and not 1<=hour<=12: return {'clarify':'Please give a valid time, such as 9 am or 14:30.'}
+            hour=hour%12+(12 if period.lower()=='pm' else 0) if period else hour
+            try:
+                day=local.date()+timedelta(days=1 if date_text.lower()=='tomorrow' else 0) if not date_text.lower().startswith('on ') else datetime.fromisoformat(date_text[3:]).date()
+                wall=datetime(day.year,day.month,day.day,hour,minute)
+                due=wall.replace(tzinfo=local.tzinfo)
+                back=due.astimezone(timezone.utc).astimezone(local.tzinfo).replace(tzinfo=None)
+                if back!=wall or due.utcoffset()!=due.replace(fold=1).utcoffset():
+                    return {'clarify':'That local time is skipped or repeated by a clock change. Choose another time in My Day.'}
+            except ValueError: return {'clarify':'Please use a valid date, such as on 2026-10-07 at 9 am.'}
+        else: return {'clarify':'When should I remind you? Try “remind me tomorrow at 9 am to call the mechanic” or “remind me in 30 minutes to stretch”.'}
+        if due<=local: return {'clarify':'That time has already passed. Choose a future time.'}
+        return {'kind':'reminder','title':title,'due_at':due.isoformat(),'timezone':zone}
+    patterns=[('task',r'add (?:a )?task\s*:\s*(.+)'),('note',r'(?:save|add) (?:a )?note\s*:\s*(.+)'),
+              ('list',r'(?:make|create) (?:a )?(shopping|packing|.+?) list\s*:\s*(.+)'),
+              ('project',r'(?:start|create) (?:a )?project\s*:\s*(.+)'),('goal',r'(?:set|create) (?:a )?goal\s*:\s*(.+)')]
+    for kind,pattern in patterns:
+        match=re.fullmatch(pattern,text,re.I|re.S)
+        if not match: continue
+        if kind=='list':
+            return {'kind':'list','title':match[1].capitalize()+' list','checklist':[{'text':part.strip(),'done':False} for part in match[2].split(',') if part.strip()]}
+        return {'kind':kind,'title':match[1].strip()[:90] if kind=='note' else match[1].strip(),'body':match[1].strip() if kind=='note' else ''}
+    return None
+
+
+async def handle_action(db, companion_id, conversation_id, text, zone, request_key):
+    command=parse_action(text,zone)
+    if not command: return None
+    if 'clarify' in command: return {'content':command['clarify'],'item':None}
+    if command.get('read')=='agenda':
+        rows=await db._request('GET','my_day_items',params={'companion_id':f'eq.{companion_id}','status':'eq.open','order':'due_at.asc.nullslast,created_at.desc','limit':'50'})
+        lines=[]
+        for item in rows:
+            due=datetime.fromisoformat(item['due_at'].replace('Z','+00:00')).astimezone(ZoneInfo(zone)).strftime('%b %d, %I:%M %p') if item.get('due_at') else 'No scheduled time'
+            lines.append(f"• [{item['kind']}] {item['title']} — {due}")
+        return {'content':('Here’s what’s on your plate ('+zone+'):\n'+'\n'.join(lines)) if lines else 'Your My Day is clear. Add a task, reminder, list, or note whenever you like.','item':None}
+    if command.get('read')=='search':
+        rows=await db._request('POST','rpc/search_my_information',json={'p_companion_id':companion_id,'p_query':command['query']})
+        return {'content':'Here are matching saved sources:\n'+'\n'.join(f"• [{r['kind']}; source {r['id']}] {r['content']}" for r in rows) if rows else 'I couldn’t find a matching saved source. Try a shorter search phrase.','item':None}
+    try:
+        payload=DayItemCreate(**command,request_key=request_key,source_conversation_id=conversation_id)
+    except ValueError:
+        return {'content':'That item is too long or incomplete. Shorten it or add it from My Day.','item':None}
+    item=await create_item(db,companion_id,payload)
+    detail=''
+    if item.get('due_at'):
+        detail=' for '+datetime.fromisoformat(item['due_at'].replace('Z','+00:00')).astimezone(ZoneInfo(zone)).strftime('%b %d at %I:%M %p')+' ('+zone+')'
+    return {'content':f"Saved your {item['kind']}: {item['title']}{detail}. You can edit, complete, or undo it in My Day.",'item':item}
