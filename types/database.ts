@@ -19,6 +19,7 @@ export interface Companion {
   system_prompt: string | null;
   voice_enabled: boolean;
   vision_enabled: boolean;
+  portrait_url: string;
   created_at: string;
   updated_at: string;
 }
@@ -114,6 +115,23 @@ export interface Reflection {
   state_changes: Record<string, { from: number; to: number }>;
   beliefs_changed: Array<{ text: string; change: string }>;
   model_used: string | null;
+  created_at: string;
+}
+
+export type GalleryCategory = 'moment' | 'user_showed' | 'companion_sent';
+export type GallerySource = 'user' | 'companion';
+export type GalleryMediaType = 'image' | 'video';
+
+export interface GalleryItem {
+  id: string;
+  companion_id: string;
+  conversation_id: string | null;
+  source: GallerySource;
+  category: GalleryCategory;
+  media_type: GalleryMediaType;
+  url: string;
+  caption: string | null;
+  metadata: Record<string, unknown>;
   created_at: string;
 }
 

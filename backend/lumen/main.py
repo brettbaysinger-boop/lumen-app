@@ -54,6 +54,7 @@ async def respond(request: RespondRequest, background_tasks: BackgroundTasks, us
                 request.companion_id,
                 request.conversation_id,
                 request.message,
+                request.attachments,
             )
         if response.observation_message_id:
             background_tasks.add_task(observe, settings, user.token, response.observation_message_id)
@@ -125,8 +126,13 @@ async def respond_stream(request: RespondRequest, background_tasks: BackgroundTa
                 await queue.put({"type": "activity", "text": "Lumen is thinking…"})
                 await prioritize_chat()
                 async with model_lock:
-                    result = await instance.respond(request.companion_id, request.conversation_id,
-                                                    request.message, emit=queue.put)
+                    result = await instance.respond(
+                        request.companion_id,
+                        request.conversation_id,
+                        request.message,
+                        request.attachments,
+                        emit=queue.put,
+                    )
                 if result.observation_message_id:
                     background_tasks.add_task(observe, settings, user.token, result.observation_message_id)
                 await queue.put({"type": "done", "response": result.model_dump()})

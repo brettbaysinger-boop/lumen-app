@@ -13,26 +13,17 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import {
-  Brain,
-  Plus,
-  Trash2,
-  Search,
-  Heart,
-  BookOpen,
-  Clock,
-  User as UserIcon,
-  Sparkles,
-  Zap,
-  X,
+  Brain, Plus, Trash2, Search, Heart, BookOpen, Clock,
+  User as UserIcon, Sparkles, Zap, X,
 } from 'lucide-react-native';
 import { useFocusEffect } from 'expo-router';
 import { authHeaders } from '@/lib/auth';
 import { supabase } from '@/lib/supabase';
 import { useTheme } from '@/lib/theme-context';
-import { Spacing, Radius, Typography, type ThemeColors } from '@/lib/theme';
+import { Spacing, Radius, Typography, type ExtendedThemeColors } from '@/lib/theme';
 import type { Companion, Memory, MemoryType, MemorySubject } from '@/types/database';
 
-function buildTypeConfig(c: ThemeColors) {
+function buildTypeConfig(c: ExtendedThemeColors) {
   return {
     episodic: { label: 'Episodic', icon: Clock, color: c.primary[400] },
     semantic: { label: 'Semantic', icon: BookOpen, color: c.accent[400] },
@@ -44,7 +35,7 @@ function buildTypeConfig(c: ThemeColors) {
 }
 
 function subjectLabel(subject: MemorySubject, name?: string) {
-  return { user: 'You', companion: name || 'Companion', shared: 'Both of you', unknown: 'Unassigned' }[subject] || 'Unassigned';
+  return { user: 'You', companion: name || 'Companion', shared: 'Both', unknown: 'Unassigned' }[subject] || 'Unassigned';
 }
 
 type Suggestion = {
@@ -73,35 +64,25 @@ export default function MemoriesScreen() {
   const [filterType, setFilterType] = useState<MemoryType | 'all'>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [showAddModal, setShowAddModal] = useState(false);
-  const [newMemoryContent, setNewMemoryContent] = useState('');
-  const [newMemorySubject, setNewMemorySubject] = useState<MemorySubject>('user');
-  const [newMemoryType, setNewMemoryType] = useState<MemoryType>('semantic');
-  const [newMemoryImportance, setNewMemoryImportance] = useState('0.5');
+  const [newContent, setNewContent] = useState('');
+  const [newSubject, setNewSubject] = useState<MemorySubject>('user');
+  const [newType, setNewType] = useState<MemoryType>('semantic');
+  const [newImportance, setNewImportance] = useState('0.5');
 
   const loadCompanion = useCallback(async () => {
     const { data, error: err } = await supabase
-      .from('companions')
-      .select('*')
-      .order('created_at', { ascending: true })
-      .order('id', { ascending: true })
-      .limit(1)
-      .maybeSingle();
-    if (err) {
-      setError(err.message);
-      setLoading(false);
-      return;
-    }
+      .from('companions').select('*')
+      .order('created_at', { ascending: true }).order('id', { ascending: true })
+      .limit(1).maybeSingle();
+    if (err) { setError(err.message); setLoading(false); return; }
     if (data) setCompanion(data as Companion);
     setLoading(false);
   }, []);
 
   const loadMemories = useCallback(async () => {
     if (!companion) return;
-    let query = supabase
-      .from('memories')
-      .select('*')
-      .eq('companion_id', companion.id)
-      .eq('is_active', true)
+    let query = supabase.from('memories').select('*')
+      .eq('companion_id', companion.id).eq('is_active', true)
       .order('created_at', { ascending: false });
     if (filterType !== 'all') query = query.eq('type', filterType);
     if (searchQuery.trim()) query = query.ilike('content', `%${searchQuery.trim()}%`);
@@ -175,21 +156,19 @@ export default function MemoriesScreen() {
   }, []);
 
   const addMemory = useCallback(async () => {
-    if (!companion || !newMemoryContent.trim()) return;
-    const importance = parseFloat(newMemoryImportance) || 0.5;
+    if (!companion || !newContent.trim()) return;
+    const importance = parseFloat(newImportance) || 0.5;
     const { data, error: err } = await supabase
-      .from('memories')
-      .insert({
-        companion_id: companion.id, type: newMemoryType,
-        content: newMemoryContent.trim(),
+      .from('memories').insert({
+        companion_id: companion.id, type: newType,
+        content: newContent.trim(),
         importance: Math.max(0, Math.min(1, importance)),
-        source: 'manual', subject: newMemorySubject,
-      })
-      .select().single();
+        source: 'manual', subject: newSubject,
+      }).select().single();
     if (err) { setError(err.message); return; }
     setMemories((prev) => [data as Memory, ...prev]);
-    setNewMemoryContent(''); setNewMemoryImportance('0.5'); setShowAddModal(false);
-  }, [companion, newMemoryContent, newMemoryType, newMemoryImportance, newMemorySubject]);
+    setNewContent(''); setNewImportance('0.5'); setShowAddModal(false);
+  }, [companion, newContent, newType, newImportance, newSubject]);
 
   if (loading) {
     return (
@@ -203,8 +182,8 @@ export default function MemoriesScreen() {
     <SafeAreaView style={styles.container} edges={['top']}>
       <View style={styles.header}>
         <View style={styles.headerTitleRow}>
-          <Brain color={c.primary[400]} size={24} strokeWidth={2} />
-          <Text style={styles.headerTitle}>Memories</Text>
+          <Brain color={c.gold[400]} size={22} strokeWidth={2} />
+          <Text style={styles.headerTitle}>Memory Thread</Text>
         </View>
         <TouchableOpacity style={styles.addButton} onPress={() => setShowAddModal(true)}>
           <Plus color={c.primary[400]} size={22} strokeWidth={2} />
@@ -213,13 +192,8 @@ export default function MemoriesScreen() {
 
       <View style={styles.searchContainer}>
         <Search color={c.neutral[500]} size={18} strokeWidth={2} />
-        <TextInput
-          style={styles.searchInput}
-          value={searchQuery}
-          onChangeText={setSearchQuery}
-          placeholder="Search memories..."
-          placeholderTextColor={c.neutral[500]}
-        />
+        <TextInput style={styles.searchInput} value={searchQuery} onChangeText={setSearchQuery}
+          placeholder="Search memories..." placeholderTextColor={c.neutral[500]} />
         {searchQuery.length > 0 && (
           <TouchableOpacity onPress={() => setSearchQuery('')}>
             <X color={c.neutral[500]} size={16} strokeWidth={2} />
@@ -231,23 +205,16 @@ export default function MemoriesScreen() {
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filterContent}>
           <FilterChip label="All" active={filterType === 'all'} onPress={() => setFilterType('all')} colors={c} />
           {(Object.keys(MEMORY_TYPE_CONFIG) as MemoryType[]).map((type) => (
-            <FilterChip
-              key={type}
-              label={MEMORY_TYPE_CONFIG[type].label}
-              active={filterType === type}
-              onPress={() => setFilterType(type)}
-              color={MEMORY_TYPE_CONFIG[type].color}
-              colors={c}
-            />
+            <FilterChip key={type} label={MEMORY_TYPE_CONFIG[type].label}
+              active={filterType === type} onPress={() => setFilterType(type)}
+              color={MEMORY_TYPE_CONFIG[type].color} colors={c} />
           ))}
         </ScrollView>
       </View>
 
-      <View style={styles.statsRow}>
-        <Text style={styles.statsText}>
-          {memories.length} {memories.length === 1 ? 'memory' : 'memories'}
-        </Text>
-      </View>
+      <Text style={styles.statsText}>
+        {memories.length} {memories.length === 1 ? 'memory' : 'memories'} woven into our thread
+      </Text>
 
       {error && (
         <View style={styles.errorBanner}>
@@ -290,52 +257,177 @@ export default function MemoriesScreen() {
         keyExtractor={(item) => item.id}
         contentContainerStyle={styles.list}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={c.primary[400]} />}
-        renderItem={({ item }) => {
+        renderItem={({ item, index }) => {
           const config = MEMORY_TYPE_CONFIG[item.type];
           const Icon = config.icon;
+          const isImportant = item.importance > 0.7;
+          const isLast = index === memories.length - 1;
           return (
-            <View style={styles.memoryCard}>
-              <View style={styles.memoryCardHeader}>
-                <View style={styles.memoryTypeBadge}>
-                  <Icon color={config.color} size={14} strokeWidth={2} />
-                  <Text style={[styles.memoryTypeLabel, { color: config.color }]}>{config.label}</Text>
+            <View style={styles.timelineItem}>
+              <View style={styles.timelineLeft}>
+                <View style={[styles.timelineNode, {
+                  backgroundColor: isImportant ? config.color : c.neutral[700],
+                  borderColor: isImportant ? c.gold[400] : c.neutral[600],
+                }]}>
+                  {isImportant ? (
+                    <Icon color={c.neutral[0]} size={12} strokeWidth={2} />
+                  ) : (
+                    <View style={[styles.timelineNodeDot, { backgroundColor: config.color }]} />
+                  )}
                 </View>
-                <TouchableOpacity onPress={() => deleteMemory(item.id)} style={styles.deleteButton}>
-                  <Trash2 color={c.neutral[600]} size={16} strokeWidth={2} />
-                </TouchableOpacity>
+                {!isLast && <View style={[styles.timelineLine, { backgroundColor: c.gold[800] }]} />}
               </View>
-              <Text style={styles.memoryDate}>About: {subjectLabel(item.subject, companion?.name)}</Text>
-              {editingMemory === item.id ? <View style={{ gap: 8 }}>
-                <TextInput style={styles.modalInput} multiline maxLength={500} value={memoryDraft} onChangeText={setMemoryDraft} accessibilityLabel="Correct saved memory" />
-                <TouchableOpacity disabled={savingMemory || !memoryDraft.trim()} onPress={async () => {
-                  setSavingMemory(true);
-                  const { data, error: err } = await supabase.from('memories')
-                    .update({ content: memoryDraft.trim(), source: 'user_corrected' }).eq('id', item.id).select().single();
-                  setSavingMemory(false);
-                  if (err) setError(err.message);
-                  else { setMemories(items => items.map(memory => memory.id === item.id ? data as Memory : memory)); setEditingMemory(null); }
-                }}><Text style={{ color: c.primary[300] }}>{savingMemory ? 'Saving…' : 'Save correction'}</Text></TouchableOpacity>
-                <TouchableOpacity disabled={savingMemory} onPress={() => setEditingMemory(null)}><Text style={{ color: c.neutral[400] }}>Cancel</Text></TouchableOpacity>
-              </View> : <View style={{ gap: 8 }}>
-                <Text style={styles.memoryContent}>{item.content}</Text>
-                <TouchableOpacity onPress={() => { setEditingMemory(item.id); setMemoryDraft(item.content); }}><Text style={{ color: c.primary[300] }}>Edit memory</Text></TouchableOpacity>
-              </View>}
-              <View style={styles.typeSelector}>
-                {(['user', 'companion', 'shared', 'unknown'] as MemorySubject[]).map(subject => (
-                  <TouchableOpacity key={subject} style={styles.typeChip} onPress={async () => {
-                    const { data, error: err } = await supabase.from('memories').update({ subject }).eq('id', item.id).select().single();
-                    if (err) setError(err.message);
-                    else setMemories(prev => prev.map(m => m.id === item.id ? data as Memory : m));
-                  }} accessibilityLabel={`Set memory subject to ${subjectLabel(subject, companion?.name)}`}>
-                    <Text style={[styles.typeChipText, { color: item.subject === subject ? c.primary[300] : c.neutral[400] }]}>{subjectLabel(subject, companion?.name)}</Text>
+              <View style={[styles.memoryCard, isImportant && { borderColor: c.gold[600], borderWidth: 1 }]}>
+                <View style={styles.memoryCardHeader}>
+                  <View style={styles.memoryTypeBadge}>
+                    <Icon color={config.color} size={13} strokeWidth={2} />
+                    <Text style={[styles.memoryTypeLabel, { color: config.color }]}>{config.label}</Text>
+                  </View>
+                  <TouchableOpacity onPress={() => deleteMemory(item.id)} style={styles.deleteButton}>
+                    <Trash2 color={c.neutral[600]} size={15} strokeWidth={2} />
                   </TouchableOpacity>
-                ))}
-              </View>
-              <View style={styles.memoryFooter}>
-                <View style={styles.importanceBar}>
-                  <View style={[styles.importanceFill, { width: `${item.importance * 100}%`, backgroundColor: config.color }]} />
                 </View>
-                <Text style={styles.memoryDate}>{new Date(item.created_at).toLocaleDateString()}</Text>
+
+                <Text style={styles.memoryDate}>
+                  About: {subjectLabel(item.subject, companion?.name)}
+                </Text>
+
+                {editingMemory === item.id ? (
+                  <View style={{ gap: 8 }}>
+                    <TextInput
+                      style={styles.modalInput}
+                      multiline
+                      maxLength={500}
+                      value={memoryDraft}
+                      onChangeText={setMemoryDraft}
+                      accessibilityLabel="Correct saved memory"
+                    />
+
+                    <TouchableOpacity
+                      disabled={savingMemory || !memoryDraft.trim()}
+                      onPress={async () => {
+                        setSavingMemory(true);
+                        const { data, error: err } = await supabase
+                          .from('memories')
+                          .update({
+                            content: memoryDraft.trim(),
+                            source: 'user_corrected',
+                          })
+                          .eq('id', item.id)
+                          .select()
+                          .single();
+
+                        setSavingMemory(false);
+
+                        if (err) {
+                          setError(err.message);
+                        } else {
+                          setMemories(items =>
+                            items.map(memory =>
+                              memory.id === item.id ? data as Memory : memory
+                            )
+                          );
+                          setEditingMemory(null);
+                        }
+                      }}
+                    >
+                      <Text style={{ color: c.primary[300] }}>
+                        {savingMemory ? 'Saving…' : 'Save correction'}
+                      </Text>
+                    </TouchableOpacity>
+
+                    <TouchableOpacity
+                      disabled={savingMemory}
+                      onPress={() => setEditingMemory(null)}
+                    >
+                      <Text style={{ color: c.neutral[400] }}>Cancel</Text>
+                    </TouchableOpacity>
+                  </View>
+                ) : (
+                  <View style={{ gap: 8 }}>
+                    <Text style={styles.memoryContent}>{item.content}</Text>
+
+                    <TouchableOpacity
+                      onPress={() => {
+                        setEditingMemory(item.id);
+                        setMemoryDraft(item.content);
+                      }}
+                    >
+                      <Text style={{ color: c.primary[300] }}>Edit memory</Text>
+                    </TouchableOpacity>
+                  </View>
+                )}
+
+                <View style={styles.typeSelector}>
+                  {(['user', 'companion', 'shared', 'unknown'] as MemorySubject[]).map(subject => (
+                    <TouchableOpacity
+                      key={subject}
+                      style={styles.typeChip}
+                      onPress={async () => {
+                        const { data, error: err } = await supabase
+                          .from('memories')
+                          .update({ subject })
+                          .eq('id', item.id)
+                          .select()
+                          .single();
+
+                        if (err) {
+                          setError(err.message);
+                        } else {
+                          setMemories(prev =>
+                            prev.map(m => m.id === item.id ? data as Memory : m)
+                          );
+                        }
+                      }}
+                      accessibilityLabel={`Set memory subject to ${subjectLabel(subject, companion?.name)}`}
+                    >
+                      <Text
+                        style={[
+                          styles.typeChipText,
+                          {
+                            color:
+                              item.subject === subject
+                                ? c.primary[300]
+                                : c.neutral[400],
+                          },
+                        ]}
+                      >
+                        {subjectLabel(subject, companion?.name)}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+
+                {isImportant && (
+                  <View
+                    style={[
+                      styles.importantGlow,
+                      { backgroundColor: config.color, opacity: 0.08 },
+                    ]}
+                  />
+                )}
+
+                <View style={styles.memoryFooter}>
+                  <Text style={styles.memorySubject}>
+                    {subjectLabel(item.subject, companion?.name)}
+                  </Text>
+
+                  <View style={styles.importanceBar}>
+                    <View
+                      style={[
+                        styles.importanceFill,
+                        {
+                          width: `${item.importance * 100}%`,
+                          backgroundColor: config.color,
+                        },
+                      ]}
+                    />
+                  </View>
+
+                  <Text style={styles.memoryDate}>
+                    {new Date(item.created_at).toLocaleDateString()}
+                  </Text>
+                </View>
               </View>
             </View>
           );
@@ -343,9 +435,9 @@ export default function MemoriesScreen() {
         ListEmptyComponent={
           <View style={styles.emptyState}>
             <Brain color={c.neutral[700]} size={48} strokeWidth={1.5} />
-            <Text style={styles.emptyTitle}>No memories yet</Text>
+            <Text style={styles.emptyTitle}>The thread begins</Text>
             <Text style={styles.emptySubtitle}>
-              {companion?.name} will remember things that matter to you here. You can also add memories manually.
+              {companion?.name || 'Your companion'} will weave memories into this thread as you share your journey. You can also add them yourself.
             </Text>
           </View>
         }
@@ -360,19 +452,15 @@ export default function MemoriesScreen() {
                 <X color={c.neutral[400]} size={22} strokeWidth={2} />
               </TouchableOpacity>
             </View>
-            <TextInput
-              style={styles.modalInput}
-              value={newMemoryContent}
-              onChangeText={setNewMemoryContent}
-              placeholder="What should your companion remember?"
-              placeholderTextColor={c.neutral[500]}
-              multiline
-              autoFocus
-            />
-            <Text style={styles.modalLabel}>Who is this memory about?</Text>
+            <TextInput style={styles.modalInput} value={newContent} onChangeText={setNewContent}
+              placeholder="What should your companion remember?" placeholderTextColor={c.neutral[500]}
+              multiline autoFocus />
+            <Text style={styles.modalLabel}>Who is this about?</Text>
             <View style={styles.typeSelector}>
               {(['user', 'companion', 'shared', 'unknown'] as MemorySubject[]).map(subject => (
-                <TouchableOpacity key={subject} style={[styles.typeChip, newMemorySubject === subject && { backgroundColor: c.neutral[700] }]} onPress={() => setNewMemorySubject(subject)}>
+                <TouchableOpacity key={subject}
+                  style={[styles.typeChip, newSubject === subject && { backgroundColor: c.neutral[700] }]}
+                  onPress={() => setNewSubject(subject)}>
                   <Text style={styles.typeChipText}>{subjectLabel(subject, companion?.name)}</Text>
                 </TouchableOpacity>
               ))}
@@ -383,28 +471,28 @@ export default function MemoriesScreen() {
                 const config = MEMORY_TYPE_CONFIG[type];
                 const Icon = config.icon;
                 return (
-                  <TouchableOpacity key={type} style={[styles.typeChip, newMemoryType === type && { backgroundColor: c.neutral[700] }]} onPress={() => setNewMemoryType(type)}>
+                  <TouchableOpacity key={type}
+                    style={[styles.typeChip, newType === type && { backgroundColor: c.neutral[700] }]}
+                    onPress={() => setNewType(type)}>
                     <Icon color={config.color} size={14} strokeWidth={2} />
                     <Text style={styles.typeChipText}>{config.label}</Text>
                   </TouchableOpacity>
                 );
               })}
             </View>
-            <Text style={styles.modalLabel}>Importance: {Math.round(parseFloat(newMemoryImportance || '0.5') * 100)}%</Text>
+            <Text style={styles.modalLabel}>Importance: {Math.round(parseFloat(newImportance || '0.5') * 100)}%</Text>
             <View style={styles.importanceSlider}>
               {[0.1, 0.25, 0.5, 0.75, 1.0].map((val) => (
-                <TouchableOpacity
-                  key={val}
-                  style={[styles.importancePill, parseFloat(newMemoryImportance) === val && { backgroundColor: c.primary[600] }]}
-                  onPress={() => setNewMemoryImportance(val.toString())}
-                >
-                  <Text style={[styles.importancePillText, parseFloat(newMemoryImportance) === val && { color: c.neutral[0] }]}>
+                <TouchableOpacity key={val}
+                  style={[styles.importancePill, parseFloat(newImportance) === val && { backgroundColor: c.primary[600] }]}
+                  onPress={() => setNewImportance(val.toString())}>
+                  <Text style={[styles.importancePillText, parseFloat(newImportance) === val && { color: c.neutral[0] }]}>
                     {Math.round(val * 100)}%
                   </Text>
                 </TouchableOpacity>
               ))}
             </View>
-            <TouchableOpacity style={[styles.modalSaveButton, !newMemoryContent.trim() && styles.modalSaveButtonDisabled]} onPress={addMemory} disabled={!newMemoryContent.trim()}>
+            <TouchableOpacity style={[styles.modalSaveButton, !newContent.trim() && styles.modalSaveButtonDisabled]} onPress={addMemory} disabled={!newContent.trim()}>
               <Text style={styles.modalSaveText}>Save Memory</Text>
             </TouchableOpacity>
           </View>
@@ -414,62 +502,70 @@ export default function MemoriesScreen() {
   );
 }
 
-function FilterChip({
-  label, active, onPress, color, colors: c,
-}: {
-  label: string; active: boolean; onPress: () => void; color?: string; colors: ThemeColors;
+function FilterChip({ label, active, onPress, color, colors: c }: {
+  label: string; active: boolean; onPress: () => void; color?: string; colors: ExtendedThemeColors;
 }) {
   return (
     <TouchableOpacity
-      style={[{ paddingHorizontal: Spacing.md, paddingVertical: Spacing.sm, borderRadius: Radius.pill, backgroundColor: c.neutral[900] }, active && { backgroundColor: c.neutral[700] }]}
-      onPress={onPress}
-    >
-      <Text style={[{ ...Typography.caption, fontFamily: 'Inter-Medium', color: c.neutral[400] }, active && { color: color || c.neutral[0] }]}>
-        {label}
-      </Text>
+      style={[{ paddingHorizontal: Spacing.md, paddingVertical: Spacing.sm, borderRadius: Radius.pill, backgroundColor: c.neutral[800], borderWidth: 1, borderColor: c.neutral[700] }, active && { backgroundColor: c.neutral[700] }]}
+      onPress={onPress}>
+      <Text style={[{ ...Typography.caption, fontFamily: 'Inter-Medium', color: c.neutral[400] }, active && { color: color || c.neutral[0] }]}>{label}</Text>
     </TouchableOpacity>
   );
 }
 
-function createStyles(c: ThemeColors) {
+function createStyles(c: ExtendedThemeColors) {
   return StyleSheet.create({
-    container: { flex: 1, backgroundColor: c.neutral[950] },
+    container: { flex: 1, backgroundColor: c.neutral[950], overflow: 'hidden' },
     loadingContainer: { flex: 1, backgroundColor: c.neutral[950], alignItems: 'center', justifyContent: 'center' },
-    header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: Spacing.md, paddingVertical: Spacing.md },
+    header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: Spacing.md, paddingVertical: Spacing.md, maxWidth: 640, alignSelf: 'center', width: '100%' },
     headerTitleRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm },
     headerTitle: { ...Typography.heading, color: c.neutral[100] },
-    addButton: { width: 44, height: 44, borderRadius: 22, backgroundColor: c.neutral[800], alignItems: 'center', justifyContent: 'center' },
-    searchContainer: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, marginHorizontal: Spacing.md, marginBottom: Spacing.sm, paddingHorizontal: Spacing.md, paddingVertical: Spacing.sm + 2, backgroundColor: c.neutral[900], borderRadius: Radius.lg },
+    addButton: { width: 44, height: 44, borderRadius: 22, backgroundColor: c.neutral[800], alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: c.gold[500] },
+    searchContainer: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, marginBottom: Spacing.sm, paddingHorizontal: Spacing.md, paddingVertical: Spacing.sm + 2, backgroundColor: c.neutral[900], borderRadius: Radius.lg, borderWidth: 1, borderColor: c.neutral[800], maxWidth: 640, alignSelf: 'center', width: '100%' },
     searchInput: { flex: 1, ...Typography.body, color: c.neutral[100], padding: 0 },
     filterRow: { marginBottom: Spacing.sm },
     filterContent: { paddingHorizontal: Spacing.md, gap: Spacing.sm },
-    statsRow: { paddingHorizontal: Spacing.md, marginBottom: Spacing.sm },
-    statsText: { ...Typography.caption, color: c.neutral[500] },
+    statsText: { ...Typography.caption, color: c.neutral[500], paddingHorizontal: Spacing.md, marginBottom: Spacing.sm, maxWidth: 640, alignSelf: 'center', width: '100%' },
     errorBanner: { marginHorizontal: Spacing.md, marginBottom: Spacing.sm, backgroundColor: c.error[900], paddingHorizontal: Spacing.md, paddingVertical: Spacing.sm, borderRadius: Radius.md },
     errorText: { ...Typography.caption, color: c.error[200] },
-    list: { padding: Spacing.md, paddingTop: 0 },
-    memoryCard: { backgroundColor: c.neutral[900], borderRadius: Radius.lg, padding: Spacing.md, marginBottom: Spacing.sm, gap: Spacing.sm },
+    list: { padding: Spacing.md, paddingTop: 0, maxWidth: 640, alignSelf: 'center', width: '100%' },
+    timelineItem: { flexDirection: 'row', marginBottom: Spacing.sm },
+    timelineLeft: { alignItems: 'center', marginRight: Spacing.sm, width: 28 },
+    timelineNode: {
+      width: 24, height: 24, borderRadius: 12,
+      alignItems: 'center', justifyContent: 'center',
+      borderWidth: 2,
+    },
+    timelineNodeDot: { width: 8, height: 8, borderRadius: 4 },
+    timelineLine: { width: 2, flex: 1, marginTop: 2, opacity: 0.5 },
+    memoryCard: {
+      flex: 1, backgroundColor: c.neutral[900], borderRadius: Radius.lg,
+      padding: Spacing.md, gap: Spacing.sm, overflow: 'hidden',
+    },
+    importantGlow: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, borderRadius: Radius.lg },
     memoryCardHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
     memoryTypeBadge: { flexDirection: 'row', alignItems: 'center', gap: Spacing.xs },
     memoryTypeLabel: { ...Typography.small, fontFamily: 'Inter-SemiBold' },
-    deleteButton: { width: 32, height: 32, alignItems: 'center', justifyContent: 'center' },
+    deleteButton: { width: 28, height: 28, alignItems: 'center', justifyContent: 'center' },
     memoryContent: { ...Typography.body, color: c.neutral[100], lineHeight: 22 },
-    typeSelector: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.xs },
-    typeChip: { flexDirection: 'row', alignItems: 'center', gap: Spacing.xs, paddingHorizontal: Spacing.sm, paddingVertical: Spacing.sm, backgroundColor: c.neutral[800], borderRadius: Radius.sm },
-    typeChipText: { ...Typography.small, color: c.neutral[300] },
-    memoryFooter: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: Spacing.sm },
-    importanceBar: { flex: 1, height: 4, borderRadius: 2, backgroundColor: c.neutral[800], overflow: 'hidden' },
-    importanceFill: { height: '100%', borderRadius: 2 },
+    memoryFooter: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm },
+    memorySubject: { ...Typography.small, color: c.gold[400], fontFamily: 'Inter-Medium' },
+    importanceBar: { flex: 1, height: 3, borderRadius: 1.5, backgroundColor: c.neutral[800], overflow: 'hidden' },
+    importanceFill: { height: '100%', borderRadius: 1.5 },
     memoryDate: { ...Typography.small, color: c.neutral[600] },
     emptyState: { alignItems: 'center', justifyContent: 'center', paddingTop: Spacing.xxl * 2, paddingHorizontal: Spacing.xl, gap: Spacing.md },
     emptyTitle: { ...Typography.subheading, color: c.neutral[400] },
     emptySubtitle: { ...Typography.body, color: c.neutral[600], textAlign: 'center', lineHeight: 22 },
-    modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'center', padding: Spacing.lg },
-    modalContent: { backgroundColor: c.neutral[900], borderRadius: Radius.xl, padding: Spacing.lg, gap: Spacing.sm },
+    modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.7)', justifyContent: 'center', padding: Spacing.lg },
+    modalContent: { backgroundColor: c.neutral[900], borderRadius: Radius.xl, padding: Spacing.lg, gap: Spacing.sm, borderWidth: 1, borderColor: c.gold[800] },
     modalHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: Spacing.sm },
     modalTitle: { ...Typography.subheading, color: c.neutral[100] },
     modalInput: { ...Typography.body, color: c.neutral[100], backgroundColor: c.neutral[800], borderRadius: Radius.md, paddingHorizontal: Spacing.md, paddingVertical: Spacing.md, minHeight: 80, maxHeight: 160 },
-    modalLabel: { ...Typography.caption, color: c.neutral[400], fontFamily: 'Inter-SemiBold', marginTop: Spacing.sm },
+    modalLabel: { ...Typography.caption, color: c.neutral[400], fontFamily: 'Inter-SemiBold', marginTop: Spacing.xs },
+    typeSelector: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.xs },
+    typeChip: { flexDirection: 'row', alignItems: 'center', gap: Spacing.xs, paddingHorizontal: Spacing.sm, paddingVertical: Spacing.sm, backgroundColor: c.neutral[800], borderRadius: Radius.sm },
+    typeChipText: { ...Typography.small, color: c.neutral[300] },
     importanceSlider: { flexDirection: 'row', gap: Spacing.xs, flexWrap: 'wrap' },
     importancePill: { paddingHorizontal: Spacing.sm, paddingVertical: Spacing.xs + 2, backgroundColor: c.neutral[800], borderRadius: Radius.pill },
     importancePillText: { ...Typography.small, color: c.neutral[400] },

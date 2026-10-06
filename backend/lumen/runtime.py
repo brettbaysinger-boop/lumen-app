@@ -3,7 +3,7 @@ import logging
 from .config import Settings
 from .db import SupabaseRepository
 from .ollama import OllamaProvider
-from .schemas import RespondResponse
+from .schemas import Attachment, RespondResponse
 from .memory import memory_request, has_save_claim, is_memory_recall, memory_subject
 
 
@@ -14,7 +14,11 @@ class CognitionRuntime:
         self.user_id = user_id
         self.provider = OllamaProvider(settings)
 
-    async def respond(self, companion_id: str, conversation_id: str | None, user_message: str, emit=None) -> RespondResponse:
+    async def respond(self, companion_id: str, conversation_id: str | None, user_message: str,
+                      attachments: list[Attachment] | None = None, emit=None) -> RespondResponse:
+        attachments = attachments or []
+        if any(not a.path.startswith(f"{self.user_id}/") for a in attachments):
+            raise ValueError("Attachment not found")
         companion = await self.db.get_companion(companion_id)
         if not companion:
             raise ValueError(f"Companion {companion_id} not found")
@@ -38,7 +42,12 @@ class CognitionRuntime:
         messages = [{"role": "system", "content": system}]
         for message in reversed(recent):
             messages.append({"role": message["role"], "content": message["content"]})
-        messages.append({"role": "user", "content": user_message})
+        if attachments:
+            noun = "photo" if len(attachments) == 1 else f"{len(attachments)} photos"
+            messages.append({"role": "user", "content": f"{user_message}\n\n[The user attached {noun} to this message. "
+                             "You cannot see image contents, so ask about it if the details matter.]"})
+        else:
+            messages.append({"role": "user", "content": user_message})
 
         is_request, memory_content = memory_request(user_message, companion["name"])
         memory_status = "none"
@@ -106,6 +115,7 @@ class CognitionRuntime:
             "companion_id": companion_id,
             "role": "user",
             "content": user_message,
+            "metadata": {"attachments": [a.model_dump() for a in attachments]} if attachments else {},
         })
         assistant_row = await self.db.create_message({
             "conversation_id": conversation_id,

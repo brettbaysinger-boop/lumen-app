@@ -2,24 +2,24 @@ import { createContext, useContext, useEffect, useState, useCallback, useMemo, u
 import { Platform } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import type { ReactNode } from 'react';
-import { getThemeColors, SCHEMES, type SchemeId, type ThemeColors } from './theme';
+import { getThemeColors, SCHEMES, type SchemeId, type ExtendedThemeColors } from './theme';
 
 interface ThemeContextValue {
-  colors: ThemeColors;
+  colors: ExtendedThemeColors;
   schemeId: SchemeId;
   setSchemeId: (id: SchemeId) => void;
   mode: 'dark' | 'light';
 }
 
 const ThemeContext = createContext<ThemeContextValue>({
-  colors: getThemeColors('ocean-dark'),
-  schemeId: 'ocean-dark',
+  colors: getThemeColors('lumen-dark'),
+  schemeId: 'lumen-dark',
   setSchemeId: () => {},
   mode: 'dark',
 });
 
 export function ThemeProvider({ children }: { children: ReactNode }) {
-  const [schemeId, setSchemeIdState] = useState<SchemeId>('ocean-dark');
+  const [schemeId, setSchemeIdState] = useState<SchemeId>('lumen-dark');
 
   const chosen = useRef(false);
   useEffect(() => {

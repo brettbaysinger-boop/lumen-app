@@ -1,9 +1,10 @@
 import { View, ActivityIndicator } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '@/lib/auth';
 import { useTheme } from '@/lib/theme-context';
 import { Tabs, Redirect } from 'expo-router';
 import type { LucideIcon } from 'lucide-react-native';
-import { MessageCircle, Brain, User, Settings } from 'lucide-react-native';
+import { MessageCircle, Brain, User, Settings, Image as ImageIcon } from 'lucide-react-native';
 
 type TabBarIconProps = { color: string; size: number };
 
@@ -16,6 +17,7 @@ function makeIcon(Icon: LucideIcon) {
 export default function TabLayout() {
   const { session, loading, error } = useAuth();
   const { colors } = useTheme();
+  const insets = useSafeAreaInsets();
   if (loading) return <View style={{ flex: 1, backgroundColor: colors.neutral[950], justifyContent: 'center' }}><ActivityIndicator color={colors.primary[400]} /></View>;
   if (!session || error) return <Redirect href="/login" />;
   return (
@@ -23,14 +25,15 @@ export default function TabLayout() {
       screenOptions={{
         headerShown: false,
         tabBarActiveTintColor: colors.primary[400],
-        tabBarInactiveTintColor: colors.neutral[400],
+        tabBarInactiveTintColor: colors.neutral[500],
         tabBarStyle: {
           backgroundColor: colors.neutral[950],
           borderTopColor: colors.neutral[800],
           borderTopWidth: 1,
-          height: 60,
-          paddingBottom: 8,
+          height: 64 + insets.bottom,
+          paddingBottom: 8 + insets.bottom,
           paddingTop: 8,
+          minHeight: 64 + insets.bottom,
         },
         tabBarLabelStyle: {
           fontFamily: 'Inter-Medium',
@@ -40,31 +43,23 @@ export default function TabLayout() {
     >
       <Tabs.Screen
         name="index"
-        options={{
-          title: 'Chat',
-          tabBarIcon: makeIcon(MessageCircle),
-        }}
+        options={{ title: 'Chat', tabBarIcon: makeIcon(MessageCircle) }}
+      />
+      <Tabs.Screen
+        name="gallery"
+        options={{ title: 'Gallery', tabBarIcon: makeIcon(ImageIcon) }}
       />
       <Tabs.Screen
         name="memories"
-        options={{
-          title: 'Memories',
-          tabBarIcon: makeIcon(Brain),
-        }}
+        options={{ title: 'Memories', tabBarIcon: makeIcon(Brain) }}
       />
       <Tabs.Screen
         name="companion"
-        options={{
-          title: 'Companion',
-          tabBarIcon: makeIcon(User),
-        }}
+        options={{ title: 'Companion', tabBarIcon: makeIcon(User) }}
       />
       <Tabs.Screen
         name="settings"
-        options={{
-          title: 'Settings',
-          tabBarIcon: makeIcon(Settings),
-        }}
+        options={{ title: 'Settings', tabBarIcon: makeIcon(Settings) }}
       />
     </Tabs>
   );

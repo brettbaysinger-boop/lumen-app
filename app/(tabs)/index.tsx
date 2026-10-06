@@ -12,6 +12,8 @@ import {
   StyleSheet,
   ActivityIndicator,
   Keyboard,
+  Image,
+  Animated,
   useWindowDimensions,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -23,12 +25,20 @@ import {
   ChevronLeft,
   Volume2,
   Square,
+  ImagePlus,
 } from 'lucide-react-native';
 import { supabase } from '@/lib/supabase';
-import { respondToMessage } from '@/lib/cognition';
+import { useAuth } from '@/lib/auth';
+import { respondToMessage, generateImage, isImageRequest } from '@/lib/cognition';
+import { pickImages, uploadImage, removeStoredFiles, MediaError, type PickedImage } from '@/lib/media';
+import { usePortraitSource } from '@/lib/portraits';
+import { MessageImages, PendingAttachments, readAttachments } from '@/components/ChatAttachments';
 import { recordMicrophone, transcribeRecording, playReply, type RecordingHandle } from '@/lib/voice';
 import { useTheme } from '@/lib/theme-context';
-import { Spacing, Radius, Typography, type ThemeColors } from '@/lib/theme';
+import { Spacing, Radius, Typography, type ExtendedThemeColors } from '@/lib/theme';
+import { StateGlow } from '@/components/StateGlow';
+import { useCompanionState, getMoodFromState } from '@/hooks/useCompanionState';
+import { useBreathing } from '@/hooks/useBreathing';
 import type { Companion, Conversation, Message } from '@/types/database';
 
 export default function ChatScreen() {
@@ -37,6 +47,7 @@ export default function ChatScreen() {
   const isMobile = screenWidth < 480;
 
   const [companion, setCompanion] = useState<Companion | null>(null);
+  const { state: companionState } = useCompanionState(companion?.id);
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [activeConversation, setActiveConversation] = useState<Conversation | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
@@ -50,6 +61,11 @@ export default function ChatScreen() {
   const [liveReply, setLiveReply] = useState('');
   const [pendingQuestion, setPendingQuestion] = useState('');
   const [memoryNotice, setMemoryNotice] = useState<{id: string; content: string} | null>(null);
+  const [creatingImage, setCreatingImage] = useState(false);
+  const [pendingImages, setPendingImages] = useState<PickedImage[]>([]);
+  const { session } = useAuth();
+  const portraitSource = usePortraitSource(companion?.portrait_url);
+  const breath = useBreathing(sending ? 'thinking' : getMoodFromState(companionState));
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [showSidebar, setShowSidebar] = useState(false);
@@ -254,8 +270,31 @@ export default function ChatScreen() {
     setShowSidebar(false);
   }, [companion, sending]);
 
+  const attachPhotos = useCallback(async () => {
+    setError(null);
+    try {
+      const remaining = 4 - pendingImages.length;
+      if (remaining <= 0) {
+        setError('You can attach up to 4 photos per message.');
+        return;
+      }
+      const picked = await pickImages({ multiple: true, limit: remaining });
+      if (picked.length) setPendingImages((prev) => [...prev, ...picked].slice(0, 4));
+    } catch (err) {
+      setError(err instanceof MediaError ? err.message : 'Could not open your photos. Please try again.');
+    }
+  }, [pendingImages.length]);
+
   const sendMessage = useCallback(async () => {
-    if (!inputText.trim() || !companion || sendBusyRef.current || sending || voicePhaseRef.current !== 'idle') return;
+    const userId = session?.user.id;
+    if (
+      (!inputText.trim() && !pendingImages.length) ||
+      !companion ||
+      !userId ||
+      sendBusyRef.current ||
+      sending ||
+      voicePhaseRef.current !== 'idle'
+    ) return;
     playbackRef.current?.abort();
 
     sendBusyRef.current = true;
@@ -266,17 +305,44 @@ export default function ChatScreen() {
     setActivity(`${companion.name} thinking…`);
     setMemoryNotice(null);
     setMemoryQuestions([]);
+    const images = pendingImages;
+    const wantsImage = !images.length && isImageRequest(text);
     setInputText('');
+    setPendingImages([]);
     setSending(true);
+    setCreatingImage(wantsImage);
     Keyboard.dismiss();
 
     setError(null);
+    const uploaded: string[] = [];
+    let handedToServer = false;
     try {
-      const response = await respondToMessage(companion.id, activeConversation?.id ?? null, text, (event) => {
-        if (event.type === 'activity') setActivity(`${companion.name} thinking…`);
-        if (event.type === 'delta') { setActivity(`${companion.name} thinking…`); setLiveReply(reply => reply + event.text); }
-        if (event.type === 'reset') setLiveReply('');
-      });
+      let response: { conversation_id: string };
+      if (wantsImage) {
+        response = await generateImage(companion.id, activeConversation?.id ?? null, text);
+      } else {
+        for (const image of images) {
+          uploaded.push(await uploadImage('chat-media', userId, image, 10 * 1024 * 1024));
+        }
+        const attachments = uploaded.map((path, i) => ({ path, mime_type: images[i].mimeType }));
+        handedToServer = true;
+        response = await respondToMessage(
+          companion.id,
+          activeConversation?.id ?? null,
+          text || (images.length > 1
+            ? 'I wanted to share these photos with you.'
+            : 'I wanted to share this photo with you.'),
+          attachments,
+          (event) => {
+            if (event.type === 'activity') setActivity(`${companion.name} thinking…`);
+            if (event.type === 'delta') {
+              setActivity(`${companion.name} thinking…`);
+              setLiveReply(reply => reply + event.text);
+            }
+            if (event.type === 'reset') setLiveReply('');
+          },
+        );
+      }
       const { data, error: refreshError } = await supabase
         .from('conversations')
         .select('*')
@@ -291,16 +357,19 @@ export default function ChatScreen() {
       }
       await loadMessages(response.conversation_id);
     } catch (err) {
+      if (!handedToServer) await removeStoredFiles('chat-media', uploaded);
       setError(err instanceof Error ? err.message : 'Lumen could not respond.');
       setInputText(text);
+      setPendingImages(images);
     } finally {
       sendBusyRef.current = false;
       setSending(false);
       setPendingQuestion('');
       setLiveReply('');
       setActivity('');
+      setCreatingImage(false);
     }
-  }, [inputText, companion, sending, activeConversation, loadMessages]);
+  }, [inputText, pendingImages, companion, session?.user.id, sending, activeConversation, loadMessages]);
 
   useEffect(() => {
     if (messages.length > 0) {
@@ -338,14 +407,16 @@ export default function ChatScreen() {
           <Plus color={colors.neutral[200]} size={22} strokeWidth={2} />
         </TouchableOpacity>
         <View style={styles.headerInfo}>
-          <View style={[styles.avatarDot, { backgroundColor: colors.primary[400] }]} />
-          <View style={{ flexShrink: 1 }}><Text style={styles.headerName} numberOfLines={1}>{companion?.name || 'Companion'}</Text>
+          <StateGlow colors={colors} state={companionState} size={10} />
+          <View style={{ flexShrink: 1 }}>
+            <Text style={styles.headerName} numberOfLines={1}>{companion?.name || 'Companion'}</Text>
             {companion && <ModelPicker companionId={companion.id} compact disabled={sending || voiceBusy} />}
           </View>
         </View>
         <View style={styles.headerStatus}>
-          <View style={[styles.statusDot, { backgroundColor: colors.success[400] }]} />
-          <Text style={styles.statusText}>{sending ? `${companion?.name || 'Companion'} thinking…` : 'Ready'}</Text>
+          <Text style={styles.statusText}>
+            {sending ? `${companion?.name || 'Companion'} thinking…` : 'Ready'}
+          </Text>
         </View>
       </View>
 
@@ -431,6 +502,7 @@ export default function ChatScreen() {
                 item.role === 'user' ? styles.messageBubbleUser : styles.messageBubbleAI,
               ]}
             >
+              <MessageImages attachments={readAttachments(item.metadata)} colors={colors} />
               <Text
                 style={[
                   styles.messageText,
@@ -482,8 +554,19 @@ export default function ChatScreen() {
         )}
         ListEmptyComponent={
           <View style={styles.emptyChat}>
-            <View style={styles.emptyChatIcon}>
-              <Sparkles color={colors.primary[400]} size={40} strokeWidth={1.5} />
+            <View style={styles.emptyChatPortraitStage}>
+              <Animated.View style={[styles.emptyChatGlow, {
+                opacity: Animated.multiply(breath.glow, 0.14),
+                transform: [{ scale: breath.glowScale }],
+              }]} />
+              <Animated.View style={[styles.emptyChatPortraitRing, { transform: [{ scale: breath.scale }] }]}>
+                <Image
+                  source={portraitSource}
+                  style={styles.emptyChatPortrait}
+                  resizeMode="cover"
+                  accessibilityLabel={`Portrait of ${companion?.name || 'your companion'}`}
+                />
+              </Animated.View>
             </View>
             <Text style={styles.emptyChatTitle}>
               {companion?.name || 'Your companion'} is here
@@ -519,6 +602,13 @@ export default function ChatScreen() {
           else setMemoryNotice(null);
         }}><Text style={{ color: colors.primary[300] }}>Undo</Text></TouchableOpacity>
       </View>}
+      {creatingImage && (
+        <View style={styles.errorBanner}>
+          <Text style={styles.errorBannerText}>
+            {companion?.name || 'Your companion'} is creating your image. This can take up to a minute.
+          </Text>
+        </View>
+      )}
       {voiceBusy && (
         <View style={styles.errorBanner}>
           <Text style={styles.errorBannerText}>
@@ -533,12 +623,26 @@ export default function ChatScreen() {
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         keyboardVerticalOffset={0}
       >
+        <PendingAttachments
+          images={pendingImages}
+          onRemove={(index) => setPendingImages((prev) => prev.filter((_, i) => i !== index))}
+          colors={colors}
+          disabled={sending}
+        />
         <View style={styles.inputContainer}>
+          <TouchableOpacity
+            style={styles.inputButton}
+            onPress={attachPhotos}
+            disabled={sending || voiceBusy || pendingImages.length >= 4}
+            accessibilityLabel="Attach photos"
+          >
+            <ImagePlus color={sending || voiceBusy ? colors.neutral[500] : colors.primary[400]} size={22} strokeWidth={2} />
+          </TouchableOpacity>
           <TextInput
             style={styles.textInput}
             value={inputText}
             onChangeText={setInputText}
-            placeholder="Message your companion..."
+            placeholder={pendingImages.length ? 'Add a message (optional)...' : 'Message, or ask for an image...'}
             placeholderTextColor={colors.neutral[500]}
             multiline
             {...(Platform.OS === 'web' ? { onKeyPress: (event: any) => {
@@ -563,10 +667,10 @@ export default function ChatScreen() {
           <TouchableOpacity
             style={[
               styles.sendButton,
-              (!inputText.trim() || sending || voiceBusy) && styles.sendButtonDisabled,
+              ((!inputText.trim() && !pendingImages.length) || sending || voiceBusy) && styles.sendButtonDisabled,
             ]}
             onPress={sendMessage}
-            disabled={!inputText.trim() || sending || voiceBusy}
+            disabled={(!inputText.trim() && !pendingImages.length) || sending || voiceBusy}
           >
             {sending ? (
               <ActivityIndicator size="small" color={colors.neutral[0]} />
@@ -580,11 +684,12 @@ export default function ChatScreen() {
   );
 }
 
-function useMemoStyles(c: ThemeColors, isMobile: boolean) {
+function useMemoStyles(c: ExtendedThemeColors, isMobile: boolean) {
   return useMemo(() => StyleSheet.create({
     container: {
       flex: 1,
       backgroundColor: c.neutral[950],
+      overflow: 'hidden',
     },
     loadingContainer: {
       flex: 1,
@@ -611,6 +716,9 @@ function useMemoStyles(c: ThemeColors, isMobile: boolean) {
       paddingVertical: Spacing.sm,
       borderBottomWidth: 1,
       borderBottomColor: c.neutral[800],
+      maxWidth: 800,
+      alignSelf: 'center',
+      width: '100%',
     },
     menuButton: {
       width: 36,
@@ -726,6 +834,9 @@ function useMemoStyles(c: ThemeColors, isMobile: boolean) {
       paddingVertical: Spacing.md,
       paddingHorizontal: isMobile ? Spacing.sm + 2 : Spacing.md,
       flexGrow: 1,
+      maxWidth: 800,
+      alignSelf: 'center',
+      width: '100%',
     },
     messageWrapper: {
       flexDirection: 'row',
@@ -782,14 +893,35 @@ function useMemoStyles(c: ThemeColors, isMobile: boolean) {
       paddingHorizontal: Spacing.xl,
       gap: Spacing.md,
     },
-    emptyChatIcon: {
-      width: 72,
-      height: 72,
-      borderRadius: 36,
-      backgroundColor: c.neutral[900],
+    emptyChatPortraitStage: {
+      width: 248,
+      height: 248,
       alignItems: 'center',
       justifyContent: 'center',
       marginBottom: Spacing.sm,
+    },
+    emptyChatGlow: {
+      position: 'absolute',
+      width: 236,
+      height: 236,
+      borderRadius: 118,
+      backgroundColor: c.primary[400],
+    },
+    emptyChatPortraitRing: {
+      width: 216,
+      height: 216,
+      borderRadius: 108,
+      padding: Spacing.xs,
+      borderWidth: 1,
+      borderColor: c.gold[700],
+      alignItems: 'center',
+      justifyContent: 'center',
+      opacity: 0.55,
+    },
+    emptyChatPortrait: {
+      width: 200,
+      height: 200,
+      borderRadius: 100,
     },
     emptyChatTitle: {
       ...Typography.heading,
@@ -822,6 +954,9 @@ function useMemoStyles(c: ThemeColors, isMobile: boolean) {
       backgroundColor: c.neutral[900],
       borderTopWidth: 1,
       borderTopColor: c.neutral[800],
+      maxWidth: 800,
+      alignSelf: 'center',
+      width: '100%',
     },
     inputButton: {
       width: 38,

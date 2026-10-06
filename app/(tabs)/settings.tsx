@@ -31,7 +31,7 @@ import {
 import { useAuth } from '@/lib/auth';
 import { supabase } from '@/lib/supabase';
 import { useTheme } from '@/lib/theme-context';
-import { SCHEMES, Spacing, Radius, Typography, type ThemeColors, type SchemeId } from '@/lib/theme';
+import { SCHEMES, Spacing, Radius, Typography, type ExtendedThemeColors, type SchemeId } from '@/lib/theme';
 import type { Companion, ModelRun } from '@/types/database';
 
 interface ModelRouting {
@@ -397,7 +397,7 @@ export default function SettingsScreen() {
   );
 }
 
-function ToggleSwitch({ value, onToggle, colors: c }: { value: boolean; onToggle: () => void; colors: ThemeColors }) {
+function ToggleSwitch({ value, onToggle, colors: c }: { value: boolean; onToggle: () => void; colors: ExtendedThemeColors }) {
   return (
     <TouchableOpacity
       style={[{ width: 44, height: 26, borderRadius: 13, backgroundColor: c.neutral[700], padding: 3, justifyContent: 'center' }, value && { backgroundColor: c.primary[600] }]}
@@ -408,14 +408,14 @@ function ToggleSwitch({ value, onToggle, colors: c }: { value: boolean; onToggle
   );
 }
 
-function createStyles(c: ThemeColors) {
+function createStyles(c: ExtendedThemeColors) {
   return StyleSheet.create({
-    container: { flex: 1, backgroundColor: c.neutral[950] },
+    container: { flex: 1, backgroundColor: c.neutral[950], overflow: 'hidden' },
     loadingContainer: { flex: 1, backgroundColor: c.neutral[950], alignItems: 'center', justifyContent: 'center' },
-    scrollContent: { padding: Spacing.md, paddingBottom: Spacing.xxl },
+    scrollContent: { padding: Spacing.md, paddingBottom: Spacing.xxl, maxWidth: 640, alignSelf: 'center', width: '100%' },
     header: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, paddingVertical: Spacing.md },
     headerTitle: { ...Typography.heading, color: c.neutral[100] },
-    section: { backgroundColor: c.neutral[900], borderRadius: Radius.lg, padding: Spacing.md, marginTop: Spacing.sm, gap: Spacing.sm },
+    section: { backgroundColor: c.neutral[900], borderRadius: Radius.lg, padding: Spacing.md, marginTop: Spacing.sm, gap: Spacing.sm, borderWidth: 1, borderColor: c.neutral[800] },
     sectionTitle: { ...Typography.subheading, color: c.neutral[100] },
     sectionSubtitle: { ...Typography.caption, color: c.neutral[500], marginTop: -Spacing.xs },
     sectionHeaderRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm },
@@ -447,7 +447,7 @@ function createStyles(c: ThemeColors) {
     routingDetail: { ...Typography.caption, color: c.neutral[400] },
     routingProvider: { ...Typography.small, color: c.neutral[600] },
     statsGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.sm },
-    statCard: { width: '48%', backgroundColor: c.neutral[800], borderRadius: Radius.md, padding: Spacing.md, gap: Spacing.xs },
+    statCard: { flex: 1, minWidth: 130, maxWidth: '48%', backgroundColor: c.neutral[800], borderRadius: Radius.md, padding: Spacing.md, gap: Spacing.xs },
     statValue: { ...Typography.heading, color: c.neutral[100] },
     statLabel: { ...Typography.caption, color: c.neutral[500] },
     recentRuns: { marginTop: Spacing.sm, gap: Spacing.xs },
