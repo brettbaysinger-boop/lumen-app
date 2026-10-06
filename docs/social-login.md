@@ -54,3 +54,57 @@ https://supabase.com/docs/guides/auth/social-login/auth-twitter
 https://supabase.com/docs/guides/local-development/managing-config
 https://supabase.com/docs/guides/local-development/cli/config
 https://supabase.com/docs/guides/auth/auth-identity-linking
+
+<!-- LUMEN-CURRENT-STATE-2026-10 -->
+## Current ownership implications — October 2026
+
+Social authentication remains an alternative way to establish the same local
+Supabase Auth identity boundary.
+
+A successful OAuth login does not create a separate authorization model.
+
+Once authenticated, the same user UUID and RLS ownership rules apply to:
+
+- companions
+- conversations
+- memories
+- generated media
+- companion visual identity
+- future assistant-service objects
+- future private reference assets
+
+### New persistent state
+
+The addition of image generation and companion visual identity does not change
+the fundamental social-login security model.
+
+`companions.visual_identity` remains protected through companion ownership.
+
+Generated chat media remains private and should be accessed within the
+authenticated user's ownership boundary.
+
+Future My Day objects and connected-service data must preserve these same
+rules.
+
+### Connections versus login providers
+
+Take 2 distinguishes application Connections from authentication.
+
+A login provider answers:
+
+"How did this account authenticate?"
+
+A future Connection may answer:
+
+"What external service has the user explicitly allowed Lumen to access?"
+
+Examples might include calendar, email, contacts, or files.
+
+Those concepts should remain separate in both UI and authorization design.
+
+See:
+
+- `ACCOUNTS.md`
+- `docs/architecture.md`
+- `docs/product-design.md`
+- `ROADMAP.md`

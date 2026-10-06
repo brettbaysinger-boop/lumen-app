@@ -127,3 +127,104 @@ git add NATURAL_MEMORY.md 'app/(tabs)/memories.tsx' \
 git commit -m "Add natural conversation memory proposals and reviewed saves" &&
 git push origin feat/lumen-v0.1-baseline
 ```
+
+<!-- LUMEN-CURRENT-STATE-2026-10 -->
+## Current architecture boundary — October 2026
+
+Natural memory is one persistent subsystem inside Lumen, not the universal
+storage mechanism for every kind of persistent state.
+
+The current architecture deliberately distinguishes memory from companion
+identity and structured assistant state.
+
+### What belongs in memory
+
+Examples:
+
+- durable user preferences
+- facts the user explicitly asks Lumen to remember
+- useful facts noticed in conversation
+- evidence-linked personal information
+- companion/shared facts when subject semantics support them
+
+### What does not automatically belong in memory
+
+Examples:
+
+- companion visual identity
+- portrait configuration
+- selected conversation model
+- companion voice configuration
+- theme/settings
+- generated media objects
+- tasks
+- reminders
+- notes
+- checklists
+- projects/goals
+
+Those have their own authoritative state.
+
+A conversation may produce both a memory and a structured action, but one
+should not silently substitute for the other.
+
+### Visual identity
+
+`companions.visual_identity` is persistent companion state.
+
+It is intentionally not represented as an ordinary conversational memory.
+
+This allows Lumen's physical identity to remain stable and directly
+configurable without depending on memory extraction/retrieval.
+
+### Assistant services
+
+The My Day / assistant-services architecture introduces structured objects for
+future-facing or organizational information.
+
+A useful distinction is:
+
+Memory:
+
+"What should Lumen remember?"
+
+Assistant state:
+
+"What needs to happen, when, and what is its status?"
+
+Natural-memory extraction should not create tasks/reminders merely because a
+statement sounds actionable unless the assistant-action layer explicitly
+handles that intent.
+
+### Retrieval direction
+
+Future personal retrieval should be able to search across appropriate sources
+without erasing their distinctions.
+
+A request such as:
+
+"What was that movie Sarah recommended?"
+
+may eventually search:
+
+- memories
+- notes
+- conversations
+- other source-linked personal state
+
+The result should retain provenance where possible.
+
+### Research boundary
+
+The project's research into reflection, self-modeling, and learned
+personalization remains exploratory.
+
+Do not interpret convincing conversational behavior as evidence of subjective
+experience.
+
+See:
+
+- `docs/chat-and-natural-memory.md`
+- `docs/assistant-services.md`
+- `docs/architecture.md`
+- `ROADMAP.md`
