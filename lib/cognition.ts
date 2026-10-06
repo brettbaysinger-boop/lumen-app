@@ -18,7 +18,7 @@ export interface MessageAttachment {
   mime_type: string;
 }
 
-const IMAGE_REQUEST = /\b(generate|create|make|draw|paint|sketch|design|render|illustrate)\b[^.?!]{0,60}\b(image|picture|pic|photo|drawing|painting|illustration|artwork|art|portrait|wallpaper|logo|sketch)\b|\b(show me|send me)\s+(an?\s+)?(image|picture|pic|photo|drawing)\s+of\b/i;
+const IMAGE_REQUEST = /\b(generate|create|make|draw|paint|sketch|design|render|illustrate)\b[^.?!]{0,80}\b(image|picture|pic|photo|drawing|painting|illustration|artwork|art|portrait|wallpaper|logo|sketch)\b|\b(show|send)\b[^.?!]{0,40}\b(image|picture|pic|photo|drawing|portrait)\b/i;
 
 export function isImageRequest(text: string): boolean {
   return IMAGE_REQUEST.test(text);

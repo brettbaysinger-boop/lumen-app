@@ -1,5 +1,6 @@
 import asyncio
 import json
+import secrets
 import time
 import uuid
 from pathlib import Path
@@ -57,13 +58,16 @@ class ComfyUIProvider:
 
         # Workflow API JSON may use this sentinel anywhere a positive prompt
         # string belongs. This avoids coupling Lumen to specific ComfyUI node IDs.
-        replaced = False
+        prompt_replaced = False
+        seed = secrets.randbelow(2**32)
 
         def substitute(value: Any) -> Any:
-            nonlocal replaced
+            nonlocal prompt_replaced
             if isinstance(value, str) and value == "{{LUMEN_PROMPT}}":
-                replaced = True
+                prompt_replaced = True
                 return prompt
+            if isinstance(value, str) and value == "{{LUMEN_SEED}}":
+                return seed
             if isinstance(value, list):
                 return [substitute(item) for item in value]
             if isinstance(value, dict):
@@ -72,7 +76,7 @@ class ComfyUIProvider:
 
         workflow = substitute(workflow)
 
-        if not replaced:
+        if not prompt_replaced:
             raise ImageProviderNotConfigured(
                 "ComfyUI workflow must contain {{LUMEN_PROMPT}}."
             )
