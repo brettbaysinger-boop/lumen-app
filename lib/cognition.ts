@@ -29,26 +29,61 @@ export async function generateImage(
   conversationId: string | null,
   prompt: string,
 ): Promise<{ conversation_id: string; message_id: string }> {
-  const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL;
-  const anonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
-  let response: Response;
+  const baseUrl = process.env.EXPO_PUBLIC_LUMEN_API_URL?.trim().replace(/\/+$/, '');
+  if (!baseUrl) {
+    throw new Error('Set EXPO_PUBLIC_LUMEN_API_URL to your Lumen server address, then restart Expo.');
+  }
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 360_000);
+
   try {
-    response = await fetch(`${supabaseUrl}/functions/v1/generate-image`, {
+    const response = await fetch(`${baseUrl}/v0.2/images/generate`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', Apikey: anonKey ?? '', ...await authHeaders() },
-      body: JSON.stringify({ companion_id: companionId, conversation_id: conversationId, prompt }),
+      headers: { 'Content-Type': 'application/json', ...await authHeaders() },
+      body: JSON.stringify({
+        companion_id: companionId,
+        conversation_id: conversationId,
+        prompt,
+      }),
+      signal: controller.signal,
     });
-  } catch {
-    throw new Error('Could not reach the image service. Check your connection and try again.');
+
+    const body = await response.json().catch(() => null);
+
+    if (!response.ok) {
+      throw new Error(
+        typeof body?.detail === 'string'
+          ? body.detail
+          : 'The image could not be created. Please try again.',
+      );
+    }
+
+    if (
+      !body ||
+      typeof body.conversation_id !== 'string' ||
+      typeof body.message_id !== 'string'
+    ) {
+      throw new Error('Lumen returned an invalid image response.');
+    }
+
+    return {
+      conversation_id: body.conversation_id,
+      message_id: body.message_id,
+    };
+  } catch (error) {
+    if (controller.signal.aborted) {
+      throw new Error('Image generation timed out. Please try again.');
+    }
+    if (error instanceof TypeError) {
+      throw new Error(
+        'Could not reach Lumen. Check the API address, server, and network connection.',
+      );
+    }
+    throw error;
+  } finally {
+    clearTimeout(timeout);
   }
-  const body = await response.json().catch(() => null);
-  if (!response.ok) {
-    throw new Error(typeof body?.error === 'string' ? body.error : 'The image could not be created. Please try again.');
-  }
-  if (!body || typeof body.conversation_id !== 'string' || typeof body.message_id !== 'string') {
-    throw new Error('The image could not be created. Please try again.');
-  }
-  return body;
 }
 
 export async function respondToMessage(

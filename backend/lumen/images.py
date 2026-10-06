@@ -1,0 +1,178 @@
+import asyncio
+import json
+import time
+import uuid
+from pathlib import Path
+from typing import Any
+
+import httpx
+
+from .config import Settings
+
+
+class ImageProviderError(RuntimeError):
+    pass
+
+
+class ImageProviderNotConfigured(ImageProviderError):
+    pass
+
+
+class ComfyUIProvider:
+    name = "comfyui"
+
+    def __init__(self, settings: Settings):
+        self.base_url = settings.comfyui_url.rstrip("/")
+        self.workflow_path = settings.comfyui_workflow.strip()
+        self.timeout = settings.image_generation_timeout
+
+    async def health_check(self) -> bool:
+        if not self.base_url:
+            return False
+        try:
+            async with httpx.AsyncClient(timeout=3) as client:
+                response = await client.get(f"{self.base_url}/system_stats")
+                return response.is_success
+        except httpx.HTTPError:
+            return False
+
+    def _load_workflow(self, prompt: str) -> dict[str, Any]:
+        if not self.workflow_path:
+            raise ImageProviderNotConfigured(
+                "ComfyUI is connected, but no workflow is configured."
+            )
+
+        path = Path(self.workflow_path)
+        if not path.is_file():
+            raise ImageProviderNotConfigured(
+                f"ComfyUI workflow not found: {self.workflow_path}"
+            )
+
+        try:
+            workflow = json.loads(path.read_text())
+        except (OSError, json.JSONDecodeError) as exc:
+            raise ImageProviderNotConfigured(
+                "The configured ComfyUI workflow could not be loaded."
+            ) from exc
+
+        # Workflow API JSON may use this sentinel anywhere a positive prompt
+        # string belongs. This avoids coupling Lumen to specific ComfyUI node IDs.
+        replaced = False
+
+        def substitute(value: Any) -> Any:
+            nonlocal replaced
+            if isinstance(value, str) and value == "{{LUMEN_PROMPT}}":
+                replaced = True
+                return prompt
+            if isinstance(value, list):
+                return [substitute(item) for item in value]
+            if isinstance(value, dict):
+                return {key: substitute(item) for key, item in value.items()}
+            return value
+
+        workflow = substitute(workflow)
+
+        if not replaced:
+            raise ImageProviderNotConfigured(
+                "ComfyUI workflow must contain {{LUMEN_PROMPT}}."
+            )
+
+        return workflow
+
+    async def generate(self, prompt: str) -> dict[str, Any]:
+        if not self.base_url:
+            raise ImageProviderNotConfigured(
+                "Image generation is not configured."
+            )
+
+        workflow = self._load_workflow(prompt)
+        client_id = str(uuid.uuid4())
+        started = time.perf_counter()
+
+        timeout = httpx.Timeout(self.timeout)
+
+        async with httpx.AsyncClient(timeout=timeout) as client:
+            response = await client.post(
+                f"{self.base_url}/prompt",
+                json={"prompt": workflow, "client_id": client_id},
+            )
+            response.raise_for_status()
+
+            prompt_id = response.json().get("prompt_id")
+            if not isinstance(prompt_id, str) or not prompt_id:
+                raise ImageProviderError(
+                    "ComfyUI did not return a prompt ID."
+                )
+
+            deadline = time.monotonic() + self.timeout
+
+            while time.monotonic() < deadline:
+                history_response = await client.get(
+                    f"{self.base_url}/history/{prompt_id}"
+                )
+                history_response.raise_for_status()
+
+                history = history_response.json()
+                result = history.get(prompt_id)
+
+                if isinstance(result, dict):
+                    status = result.get("status", {})
+                    if status.get("status_str") == "error":
+                        raise ImageProviderError(
+                            "ComfyUI could not complete the workflow."
+                        )
+
+                    outputs = result.get("outputs", {})
+                    for node_output in outputs.values():
+                        if not isinstance(node_output, dict):
+                            continue
+
+                        images = node_output.get("images", [])
+                        if not images:
+                            continue
+
+                        image = images[0]
+                        filename = image.get("filename")
+                        if not filename:
+                            continue
+
+                        params = {
+                            "filename": filename,
+                            "subfolder": image.get("subfolder", ""),
+                            "type": image.get("type", "output"),
+                        }
+
+                        image_response = await client.get(
+                            f"{self.base_url}/view",
+                            params=params,
+                        )
+                        image_response.raise_for_status()
+
+                        return {
+                            "bytes": image_response.content,
+                            "mime_type": image_response.headers.get(
+                                "content-type", "image/png"
+                            ).split(";")[0],
+                            "provider": self.name,
+                            "model": "comfyui-workflow",
+                            "latency_ms": round(
+                                (time.perf_counter() - started) * 1000
+                            ),
+                        }
+
+                await asyncio.sleep(1)
+
+        raise ImageProviderError(
+            "ComfyUI timed out while generating the image."
+        )
+
+
+def create_image_provider(settings: Settings):
+    provider = settings.image_provider.strip().lower()
+
+    if provider == "comfyui":
+        return ComfyUIProvider(settings)
+
+    raise ImageProviderNotConfigured(
+        f"Unsupported image provider: {settings.image_provider}"
+    )

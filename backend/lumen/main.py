@@ -1,5 +1,8 @@
 import asyncio
 import json
+import uuid
+
+import httpx
 from fastapi.responses import StreamingResponse
 from .ollama import model_lock, prioritize_chat
 
@@ -12,7 +15,19 @@ from .auth import AuthUser, require_user
 from .config import get_settings
 from .ollama import OllamaProvider
 from .runtime import CognitionRuntime
-from .schemas import HealthResponse, RespondRequest, RespondResponse, ModelSelection
+from .schemas import (
+    HealthResponse,
+    RespondRequest,
+    RespondResponse,
+    ModelSelection,
+    ImageGenerateRequest,
+    ImageGenerateResponse,
+)
+from .images import (
+    ImageProviderError,
+    ImageProviderNotConfigured,
+    create_image_provider,
+)
 from .voice import router as voice_router
 
 settings = get_settings()
@@ -108,6 +123,104 @@ async def select_model(companion_id: str, request: ModelSelection, user: AuthUse
     if not rows:
         raise HTTPException(status_code=404, detail="Companion not found")
     return {"selected": request.model, "effective": request.model or settings.conversation_model}
+
+
+@app.post("/v0.2/images/generate", response_model=ImageGenerateResponse)
+async def generate_image(
+    request: ImageGenerateRequest,
+    user: AuthUser = Depends(require_user),
+):
+    db = SupabaseRepository(settings, user.token)
+
+    companion = await db.get_companion(request.companion_id)
+    if not companion:
+        raise HTTPException(status_code=404, detail="Companion not found")
+
+    active_conversation_id = request.conversation_id
+
+    if active_conversation_id:
+        conversation = await db.get_conversation(
+            active_conversation_id,
+            request.companion_id,
+        )
+        if not conversation:
+            raise HTTPException(status_code=404, detail="Conversation not found")
+
+    try:
+        provider = create_image_provider(settings)
+        result = await provider.generate(request.prompt)
+    except ImageProviderNotConfigured as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except ImageProviderError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    except httpx.HTTPError as exc:
+        raise HTTPException(
+            status_code=502,
+            detail="The local image provider could not complete the request.",
+        ) from exc
+
+    if not active_conversation_id:
+        conversation = await db.create_conversation(
+            request.companion_id,
+            request.prompt[:40],
+        )
+        active_conversation_id = conversation["id"]
+
+    mime_type = result["mime_type"]
+    extension = {
+        "image/jpeg": "jpg",
+        "image/webp": "webp",
+        "image/gif": "gif",
+    }.get(mime_type, "png")
+
+    storage_path = f"{user.id}/{uuid.uuid4()}.{extension}"
+
+    try:
+        await db.upload_storage(
+            "chat-media",
+            storage_path,
+            result["bytes"],
+            mime_type,
+        )
+    except httpx.HTTPError as exc:
+        raise HTTPException(
+            status_code=500,
+            detail="The image was created but could not be saved.",
+        ) from exc
+
+    await db.create_message({
+        "conversation_id": active_conversation_id,
+        "companion_id": request.companion_id,
+        "role": "user",
+        "content": request.prompt,
+    })
+
+    assistant_message = await db.create_message({
+        "conversation_id": active_conversation_id,
+        "companion_id": request.companion_id,
+        "role": "assistant",
+        "content": "Here's the image I made for you.",
+        "model_used": result["model"],
+        "metadata": {
+            "attachments": [{
+                "path": storage_path,
+                "mime_type": mime_type,
+            }],
+            "generated_image": True,
+            "image_prompt": request.prompt,
+            "image_provider": result["provider"],
+        },
+    })
+
+    await db.touch_conversation(active_conversation_id, 2)
+
+    return ImageGenerateResponse(
+        conversation_id=active_conversation_id,
+        message_id=assistant_message["id"],
+        provider=result["provider"],
+        model=result["model"],
+        latency_ms=result["latency_ms"],
+    )
 
 
 @app.post("/v0.2/respond/stream")

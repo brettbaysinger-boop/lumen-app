@@ -29,6 +29,13 @@ class Settings(BaseSettings):
     speech_model: str = "speaches-ai/Kokoro-82M-v1.0-ONNX"
     speech_voice: str = "af_heart"
 
+    # Image generation provider. Keep the endpoint configurable so image
+    # generation is a capability, not a hard-coded physical machine.
+    image_provider: str = "comfyui"
+    comfyui_url: str = ""
+    comfyui_workflow: str = ""
+    image_generation_timeout: int = Field(default=300, ge=30, le=1800)
+
     lumen_cors_origins: str = "http://localhost:8081,http://localhost:19006"
 
     @property

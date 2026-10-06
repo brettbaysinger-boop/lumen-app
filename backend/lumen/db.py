@@ -109,6 +109,28 @@ class SupabaseRepository:
         )
         return rows[0]
 
+    async def upload_storage(
+        self,
+        bucket: str,
+        path: str,
+        content: bytes,
+        content_type: str,
+    ):
+        url = (
+            self.base_url.removesuffix("/rest/v1")
+            + f"/storage/v1/object/{bucket}/{path}"
+        )
+        headers = {
+            "apikey": self.headers["apikey"],
+            "Authorization": self.headers["Authorization"],
+            "Content-Type": content_type,
+            "x-upsert": "false",
+        }
+        async with httpx.AsyncClient(timeout=60) as client:
+            response = await client.post(url, headers=headers, content=content)
+            response.raise_for_status()
+            return response.json() if response.content else {}
+
     async def touch_conversation(self, conversation_id: str, message_count_delta: int = 1):
         rows = await self._request(
             "GET", "conversations",
