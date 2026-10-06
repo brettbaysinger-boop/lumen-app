@@ -1,3 +1,5 @@
+import { SocialSignIn } from '@/components/SocialSignIn';
+import { initialSocialError } from '@/lib/social-auth';
 import { useState } from 'react';
 import { View, Text, TextInput, TouchableOpacity, ActivityIndicator, ScrollView } from 'react-native';
 import { Redirect } from 'expo-router';
@@ -15,7 +17,7 @@ export default function Login() {
   const [password, setPassword] = useState('');
   const [name, setName] = useState('');
   const [busy, setBusy] = useState(false);
-  const [notice, setNotice] = useState('');
+  const [notice, setNotice] = useState(initialSocialError);
   if (loading) return <View style={{ flex: 1, backgroundColor: c.neutral[950], justifyContent: 'center' }}><ActivityIndicator color={c.primary[400]} /></View>;
   if (session && !setupError) return <Redirect href="/" />;
   const submit = async () => {
@@ -41,6 +43,7 @@ export default function Login() {
       {setupError && <><Text style={{ color: c.neutral[100], fontSize: 16, fontFamily: 'Inter-Regular' }}>{setupError}</Text><TouchableOpacity onPress={retry}><Text style={{ color: c.primary[300], fontSize: 15, paddingVertical: 8, fontFamily: 'Inter-Regular' }}>Retry account setup</Text></TouchableOpacity>
         <TouchableOpacity onPress={() => supabase.auth.signOut()}><Text style={{ color: c.primary[300], fontSize: 15, paddingVertical: 8, fontFamily: 'Inter-Regular' }}>Sign out</Text></TouchableOpacity></>}
       {!session && <>
+        <SocialSignIn disabled={busy} onError={setNotice} onBusyChange={setBusy} />
         {signup && <TextInput style={{ backgroundColor: c.neutral[800], color: c.neutral[100], padding: 14, borderRadius: Radius.md, fontSize: 16, fontFamily: 'Inter-Regular' }} placeholder="Your name" placeholderTextColor={c.neutral[500]} value={name} onChangeText={setName} maxLength={100} accessibilityLabel="Your name" />}
         <TextInput style={{ backgroundColor: c.neutral[800], color: c.neutral[100], padding: 14, borderRadius: Radius.md, fontSize: 16, fontFamily: 'Inter-Regular' }} placeholder="Email" placeholderTextColor={c.neutral[500]} value={email} onChangeText={setEmail} autoCapitalize="none" keyboardType="email-address" autoComplete="email" accessibilityLabel="Email" />
         <TextInput style={{ backgroundColor: c.neutral[800], color: c.neutral[100], padding: 14, borderRadius: Radius.md, fontSize: 16, fontFamily: 'Inter-Regular' }} placeholder="Password (at least 8 characters)" placeholderTextColor={c.neutral[500]} value={password} onChangeText={setPassword} secureTextEntry autoComplete={signup ? 'new-password' : 'current-password'} accessibilityLabel="Password" />

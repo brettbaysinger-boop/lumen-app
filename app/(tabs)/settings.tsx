@@ -1,3 +1,4 @@
+import { SocialSignIn } from '@/components/SocialSignIn';
 import { ModelPicker } from '@/components/ModelPicker';
 import { useState, useCallback, useEffect, useMemo } from 'react';
 import {
@@ -182,12 +183,14 @@ export default function SettingsScreen() {
 
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Account</Text>
-          <Text style={styles.configLabel}>{session?.user.user_metadata?.display_name || 'User'}</Text>
+          <Text style={styles.configLabel}>{session?.user.user_metadata?.display_name || session?.user.user_metadata?.full_name || session?.user.user_metadata?.name || 'User'}</Text>
           <Text style={styles.configSubtext}>{session?.user.email}</Text>
           <TouchableOpacity onPress={async () => {
             const { error } = await supabase.auth.signOut();
             setAccountError(error?.message || null);
           }}><Text style={{ color: c.primary[300], paddingVertical: 16, fontFamily: 'Inter-Regular' }}>Sign out</Text></TouchableOpacity>
+          <Text style={styles.configSubtext}>Connect another sign-in to this account to keep your companion and memories.</Text>
+          <SocialSignIn link onError={setAccountError} onConnected={() => setAccountError('Account connection completed.')} />
           {!!accountError && <Text style={styles.configSubtext}>{accountError}</Text>}
           <Text style={styles.sectionTitle}>Companion Configuration</Text>
           {companion && <ModelPicker companionId={companion.id} />}

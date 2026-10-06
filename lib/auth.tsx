@@ -28,7 +28,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setReadyUserId(null);
     setError(null);
     if (!userId) return;
-    Promise.resolve(supabase.rpc('ensure_my_companion', { display_name: session?.user.user_metadata?.display_name || 'User' }))
+    Promise.resolve(supabase.rpc('ensure_my_companion', { display_name: session?.user.user_metadata?.display_name || session?.user.user_metadata?.full_name || session?.user.user_metadata?.name || 'User' }))
       .then(({ error: err }) => { if (active) { setError(err?.message || null); setReadyUserId(err ? null : userId); } })
       .catch(() => { if (active) setError('Could not set up your companion. Retry when the connection is restored.'); });
     return () => { active = false; };
