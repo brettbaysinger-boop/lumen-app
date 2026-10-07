@@ -2,12 +2,12 @@ const {chromium}=require(process.env.LUMEN_PLAYWRIGHT_MODULE || 'playwright');
 const assert=require('node:assert/strict');
 const http=require('node:http'),fs=require('node:fs'),path=require('node:path');
 const root=path.resolve('dist');
-const server=http.createServer((req,res)=>{let file=path.join(root,decodeURI(req.url.split('?')[0]));if(!fs.existsSync(file)||fs.statSync(file).isDirectory())file=path.join(root,'index.html');res.setHeader('Content-Type',file.endsWith('.js')?'application/javascript':file.endsWith('.css')?'text/css':file.endsWith('.html')?'text/html':'application/octet-stream');res.end(fs.readFileSync(file));});
+const server=require('./serve-web.cjs').createWebServer(root);
 const U='11111111-1111-4111-8111-111111111111',C='22222222-2222-4222-8222-222222222222',I='33333333-3333-4333-8333-333333333333';
 const user={id:U,aud:'authenticated',role:'authenticated',email:'test@example.test',user_metadata:{display_name:'Test'},app_metadata:{provider:'email'},created_at:'2026-10-06T00:00:00Z'};
 const companion={id:C,name:'Lumen',created_at:'2026-10-06T00:00:00Z',portrait_url:null,persona:{},conversation_model:'test'};
 const messages=Array.from({length:30},(_,i)=>({id:`message-${i}`,conversation_id:I,companion_id:C,role:i%2?'assistant':'user',content:`Message ${i}. `+(i%2?'A complete answer that should stay inside the conversation window. '.repeat(14):'Please continue our conversation.'),metadata:{},created_at:new Date(1791320000000+i*1000).toISOString()}));
-(async()=>{await new Promise(r=>server.listen(8765,'127.0.0.1',r));const browser=await chromium.launch({headless:true,args:['--no-sandbox']});const page=await browser.newPage({viewport:{width:1440,height:900}});page.on('pageerror',e=>console.log('ERROR',e.message));await page.addInitScript(({user})=>!sessionStorage.getItem('seeded') && (sessionStorage.setItem('seeded','yes'),localStorage.setItem('sb-127-auth-token',JSON.stringify({access_token:'test-token',refresh_token:'test',expires_at:Math.floor(Date.now()/1000)+36000,expires_in:36000,token_type:'bearer',user}))),{user});
+(async()=>{await new Promise(r=>server.listen(8765,'127.0.0.1',r));const browser=await chromium.launch({headless:true,args:['--no-sandbox','--use-fake-ui-for-media-stream','--use-fake-device-for-media-stream']});const page=await browser.newPage({viewport:{width:1440,height:900}});page.on('pageerror',e=>console.log('ERROR',e.message));await page.addInitScript(({user})=>!sessionStorage.getItem('seeded') && (sessionStorage.setItem('seeded','yes'),localStorage.setItem('sb-127-auth-token',JSON.stringify({access_token:'test-token',refresh_token:'test',expires_at:Math.floor(Date.now()/1000)+36000,expires_in:36000,token_type:'bearer',user}))),{user});
 await page.route('http://127.0.0.1:54321/**',async route=>{const req=route.request(),url=new URL(req.url()),resource=url.pathname.split('/').pop();let data=[];if(resource==='user')data=user;if(resource==='ensure_my_companion')data=C;if(resource==='companions')data=req.headers()['accept']?.includes('object')?companion:[companion];if(resource==='conversations')data=[{id:I,companion_id:C,title:'Long chat',last_message_at:'2026-10-06T00:00:00Z'}];if(resource==='messages')data=messages;if(resource==='companion_state')data=null;await route.fulfill({status:200,contentType:'application/json',body:JSON.stringify(data),headers:{'access-control-allow-origin':'*'}})});
 await page.route('http://127.0.0.1:8001/**',async route=>{
 const request=route.request();
@@ -38,6 +38,11 @@ await page.reload();await page.getByRole('link',{name:'Open source 1: Recipe sou
 await page.setViewportSize({width:390,height:844});
 const bounds=await page.getByLabel('Send message',{exact:true}).boundingBox();assert.ok(bounds.x+bounds.width<=390,'mobile send control stays within viewport');
 
+await page.getByLabel('Take a photo',{exact:true}).click();
+await page.getByRole('button',{name:'Take photo',exact:true}).click();
+await page.getByLabel('Remove photo',{exact:true}).waitFor();
+assert.equal(messages.some(m=>m.id==='photo-answer'),false,'camera capture stays in draft');
+await page.getByLabel('Remove photo',{exact:true}).click();
 const picker=page.waitForEvent('filechooser');
 await page.getByLabel('Attach photos',{exact:true}).click();
 await (await picker).setFiles({name:'label.png',mimeType:'image/png',buffer:Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jGAAAAABJRU5ErkJggg==','base64')});
@@ -55,4 +60,4 @@ await page.goto('http://127.0.0.1:8765/settings');
 await page.getByText('Sign out',{exact:true}).click();
 await page.waitForURL('**/login');
 assert.equal(await page.evaluate(()=>localStorage.getItem('sb-127-auth-token')),null,'expired/offline logout clears browser token');
-await browser.close();server.close();console.log('Photo draft, quick prompt, owner-scoped send, saved reply, mobile composer, vision status and logout passed.');})().catch(e=>{console.log(e);server.close();process.exit(1)});
+await browser.close();server.close();console.log('Production SPA routes, simulated camera capture, photo draft, owner-scoped send, saved reply, mobile controls and logout passed.');})().catch(e=>{console.log(e);server.close();process.exit(1)});

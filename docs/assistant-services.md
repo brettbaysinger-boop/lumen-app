@@ -541,3 +541,11 @@ The user should be able to think in natural language:
 
 The system should handle the underlying structure without making the user think
 like a database administrator.
+
+## Secure mobile access
+
+The HTTPS deployment checkpoint prepares private Tailscale HTTPS for the app,
+API and Supabase gateway, preserving the existing Google callback. The web service
+serves the exported build. Camera and microphone permissions can be requested
+from the HTTPS app on mobile; see `docs/tailnet-https.md` for installation and
+actual-device verification.

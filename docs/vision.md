@@ -53,8 +53,8 @@ Existing conversation-history/context limits still apply.
 Live browser camera capture requires a secure context such as HTTPS or localhost.
 Plain HTTP at a LAN IP, Tailscale IP, or MagicDNS hostname does not become secure
 merely because the network is private. The camera dialog explains this and offers
-file attachment. This checkpoint does not change Google redirects, Tailscale Serve,
-Supabase configuration, or the web service. A unified HTTPS deployment is separate.
+file attachment. The HTTPS deployment checkpoint in `docs/tailnet-https.md` prepares secure
+phone access through Tailscale Serve and a production web service.
 
 ## Install
 
