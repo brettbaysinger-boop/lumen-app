@@ -7,7 +7,7 @@ from pypdf import PdfWriter
 from pypdf.generic import DictionaryObject, NameObject, DecodedStreamObject
 from lumen.auth import AuthUser, require_user
 from lumen.config import Settings
-from lumen.documents import router, extract_worker, document_action, document_command
+from lumen.documents import router, extract_worker, document_action, document_command, MAX_UPLOAD
 from lumen.citations import normalize_citations
 
 C='11111111-1111-4111-8111-111111111111'
@@ -15,7 +15,7 @@ D='22222222-2222-4222-8222-222222222222'
 DOC={'id':D,'title':'Warranty.txt','kind':'text','page_count':1,'created_at':'now'}
 
 
-def pdf(text=None, encrypted=False, count=1):
+def pdf(text=None, encrypted=False, count=1, padding=0):
     writer=PdfWriter()
     for _ in range(count):
         page=writer.add_blank_page(width=200,height=200)
@@ -24,6 +24,7 @@ def pdf(text=None, encrypted=False, count=1):
             page[NameObject('/Resources')]=DictionaryObject({NameObject('/Font'):DictionaryObject({NameObject('/F1'):writer._add_object(font)})})
             stream=DecodedStreamObject();stream.set_data(f'BT /F1 12 Tf 20 40 Td ({text}) Tj ET'.encode())
             page[NameObject('/Contents')]=writer._add_object(stream)
+    if padding:writer.add_metadata({'/Comment':'x'*padding})
     if encrypted:writer.encrypt('password')
     buffer=io.BytesIO();writer.write(buffer);return buffer.getvalue()
 
@@ -34,6 +35,12 @@ class Extraction(unittest.TestCase):
         self.assertEqual(len(pages),2);self.assertIn('Labor',pages[1]['text'])
         pages=extract_worker(pdf('Warranty covers five years',count=2),'pdf')
         self.assertEqual(len(pages),2);self.assertIn('five years',pages[0]['text'])
+
+    def test_larger_than_old_limit_extracts_with_new_25mb_limit(self):
+        data=pdf('A larger document with selectable text.',padding=6*1024*1024)
+        self.assertGreater(len(data),5*1024*1024)
+        self.assertLess(len(data),MAX_UPLOAD)
+        self.assertIn('larger document',extract_worker(data,'pdf')[0]['text'])
 
     def test_scan_encryption_invalid_and_page_limit(self):
         for data in [pdf(),pdf('Secret text',encrypted=True),b'not a PDF',pdf(count=101)]:
@@ -75,6 +82,13 @@ class DocumentAPI(unittest.TestCase):
         self.assertNotIn('bytes',write.kwargs['json'])
         self.assertFalse(response.json()['existing'])
 
+    def test_upload_larger_than_old_limit_reaches_extraction_and_import(self):
+        self.db._request.side_effect=[[],[DOC]]
+        with patch('lumen.documents.extract_worker',return_value=[{'text':'Large file has readable text.'}]) as extract:
+            response=self.client.post(self.base+'/upload',files={'file':('Large.pdf',b'%PDF-'+b'x'*(6*1024*1024))})
+        self.assertEqual(response.status_code,200)
+        self.assertGreater(len(extract.call_args.args[0]),5*1024*1024)
+
     def test_duplicate_skips_extraction_and_write(self):
         self.db._request.return_value=[DOC]
         with patch('lumen.documents.extract_worker') as extract:
@@ -83,7 +97,7 @@ class DocumentAPI(unittest.TestCase):
         self.assertEqual(self.db._request.call_count,1)
 
     def test_unsupported_empty_oversized_and_extraction_errors(self):
-        for filename,data,status in [('photo.jpg',b'photo',415),('empty.txt',b'',413),('large.txt',b'x'*(5*1024*1024+1),413)]:
+        for filename,data,status in [('photo.jpg',b'photo',415),('empty.txt',b'',413),('large.txt',b'x'*(MAX_UPLOAD+1),413)]:
             self.assertEqual(self.client.post(self.base+'/upload',files={'file':(filename,data)}).status_code,status)
         with patch('lumen.documents.extract_worker',side_effect=ValueError('Scanned PDF needs OCR')):
             self.assertEqual(self.client.post(self.base+'/upload',files={'file':('scan.pdf',b'%PDF-1.4')}).status_code,422)

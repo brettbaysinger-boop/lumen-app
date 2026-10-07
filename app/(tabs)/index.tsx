@@ -22,7 +22,7 @@ import {
   ChevronLeft,
   Volume2,
   Square,
-  ImagePlus,
+  Paperclip,
   PanelLeft,
   Camera,
   Globe,
@@ -66,6 +66,7 @@ export default function ChatScreen() {
   const [inputText, setInputText] = useState('');
   const [pendingDocument, setPendingDocument] = useState<PrivateDocument | null>(null);
   const [documentBusy, setDocumentBusy] = useState(false);
+  const [showAttachments, setShowAttachments] = useState(false);
   const [sending, setSending] = useState(false);
   const sendBusyRef = useRef(false);
   const memoryWindowRef = useRef<string | null>(null);
@@ -689,14 +690,21 @@ export default function ChatScreen() {
           </TouchableOpacity>)}
         </View>}
         <View style={{ paddingHorizontal: 16, paddingBottom: 6 }}>
-          <View style={{ flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 8 }}>
-            {companion && <DocumentAttachment companionId={companion.id} disabled={sending || voiceBusy || documentBusy || !!pendingImages.length}
-              onSelect={setPendingDocument} onBusy={setDocumentBusy} />}
-            <TouchableOpacity accessibilityRole="button" accessibilityLabel="Open document library" disabled={sending || voiceBusy || documentBusy}
-              onPress={() => router.push('/documents')} style={{ padding: 10 }}>
-              <Text style={{ color: colors.primary[300] }}>Document library</Text>
+          {showAttachments && <View style={{ flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 8, padding: 8, borderRadius: 12, backgroundColor: colors.neutral[900] }}>
+            <TouchableOpacity accessibilityRole="button" accessibilityLabel="Attach photos" disabled={sending || voiceBusy || documentBusy || !!pendingDocument || pendingImages.length >= 4}
+              onPress={() => { setShowAttachments(false); void attachPhotos(); }} style={{ padding: 10 }}>
+              <Text style={{ color: colors.primary[300] }}>Photo</Text>
             </TouchableOpacity>
-          </View>
+            {companion && <DocumentAttachment companionId={companion.id} disabled={sending || voiceBusy || documentBusy || !!pendingImages.length}
+              onSelect={document => { setPendingDocument(document); setShowAttachments(false); }} onBusy={setDocumentBusy} />}
+            <TouchableOpacity accessibilityRole="button" accessibilityLabel="Open document library" disabled={sending || voiceBusy || documentBusy}
+              onPress={() => { setShowAttachments(false); router.push('/documents'); }} style={{ padding: 10 }}>
+              <Text style={{ color: colors.primary[300] }}>Saved documents</Text>
+            </TouchableOpacity>
+            <TouchableOpacity accessibilityRole="button" accessibilityLabel="Close attachment menu" disabled={documentBusy} onPress={() => setShowAttachments(false)} style={{ padding: 10 }}>
+              <Text style={{ color: colors.neutral[300] }}>Close</Text>
+            </TouchableOpacity>
+          </View>}
           {pendingDocument && <View style={{ padding: 12, borderRadius: 12, backgroundColor: colors.neutral[900], gap: 8 }}>
             <Text style={{ color: colors.neutral[100] }}>Using document: {pendingDocument.title}</Text>
             <Text style={{ color: colors.neutral[400], fontSize: 12 }}>Your next questions use this document. Remove it to return to ordinary chat. Extracted text is saved in your document library.</Text>
@@ -716,11 +724,13 @@ export default function ChatScreen() {
           </TouchableOpacity>
           <TouchableOpacity
             style={styles.inputButton}
-            onPress={attachPhotos}
-            disabled={sending || voiceBusy || documentBusy || !!pendingDocument || pendingImages.length >= 4}
-            accessibilityLabel="Attach photos"
+            onPress={() => setShowAttachments(open => !open)}
+            disabled={sending || voiceBusy || documentBusy}
+            accessibilityRole="button"
+            accessibilityState={{ expanded: showAttachments }}
+            accessibilityLabel="Attach files"
           >
-            <ImagePlus color={sending || voiceBusy ? colors.neutral[500] : colors.primary[400]} size={22} strokeWidth={2} />
+            <Paperclip color={sending || voiceBusy ? colors.neutral[500] : colors.primary[400]} size={22} strokeWidth={2} />
           </TouchableOpacity>
           <TouchableOpacity style={styles.inputButton} accessibilityLabel="Take a photo" disabled={sending || voiceBusy || documentBusy || !!pendingDocument || pendingImages.length >= 4} onPress={() => setShowCamera(true)}>
             <Camera color={sending || voiceBusy || pendingImages.length >= 4 ? colors.neutral[500] : colors.primary[400]} size={21} strokeWidth={1.6} />

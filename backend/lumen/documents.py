@@ -13,9 +13,9 @@ from .auth import AuthUser, require_user
 from .config import get_settings
 from .db import SupabaseRepository
 from .citations import normalize_citations
+from .document_extract import MAX_UPLOAD
 
 router = APIRouter(prefix='/v0.6/documents', tags=['private-documents'])
-MAX_UPLOAD = 5 * 1024 * 1024
 
 
 class DocumentQuery(BaseModel):
@@ -66,7 +66,7 @@ async def upload_document(companion_id: UUID, file: UploadFile = File(...), user
         kind = 'pdf' if suffix == '.pdf' else 'text'
         data = await file.read(MAX_UPLOAD + 1)
         if not data or len(data) > MAX_UPLOAD:
-            raise HTTPException(413,'Choose a nonempty file under 5 MB.')
+            raise HTTPException(413,'Choose a nonempty file up to 25 MB.')
         title = re.sub(r'[\x00-\x1f]', '', filename).strip()[:180] or 'Untitled document'
         digest = hashlib.sha256(data).hexdigest()
         existing = await db._request('GET','documents',params={'companion_id':f'eq.{companion_id}',

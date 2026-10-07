@@ -5,7 +5,7 @@ import { Redirect, router, useFocusEffect } from 'expo-router';
 import { useAuth } from '@/lib/auth';
 import { useCompanion } from '@/hooks/useCompanion';
 import { useTheme } from '@/lib/theme-context';
-import { documentRequest, type PrivateDocument, type DocumentHit } from '@/lib/documents';
+import { documentRequest, MAX_DOCUMENT_BYTES, type PrivateDocument, type DocumentHit } from '@/lib/documents';
 import { DocumentSources } from '@/components/DocumentSources';
 
 export default function DocumentsScreen() {
@@ -24,7 +24,7 @@ export default function DocumentsScreen() {
   },[companion?.id]));
   const upload = async (file: File) => {
     if (!companion) return;
-    if (file.size > 5*1024*1024) {setError('Choose a file under 5 MB.');return;}
+    if (file.size > MAX_DOCUMENT_BYTES) {setError('Choose a file up to 25 MB.');return;}
     setBusy(true);setError('');setNotice('');
     try {
       const body = new FormData();body.append('file',file);
@@ -54,7 +54,7 @@ export default function DocumentsScreen() {
   return <SafeAreaView style={{flex:1,backgroundColor:c.neutral[950]}}><ScrollView contentContainerStyle={{padding:20,gap:16,width:'100%',maxWidth:900,alignSelf:'center'}}>
     {button('Back to conversation',()=>router.dismissTo('/'))}
     <Text style={{color:c.neutral[100],fontSize:28}}>Your documents</Text>
-    <Text style={{color:c.neutral[300],lineHeight:23}}>Import PDFs with selectable text, TXT or Markdown files. Up to 5 MB and 100 pages. Scanned PDFs need OCR first.</Text>
+    <Text style={{color:c.neutral[300],lineHeight:23}}>Import PDFs with selectable text, TXT or Markdown files. Up to 25 MB and 100 pages. Scanned PDFs need OCR first.</Text>
     <Text style={{color:c.neutral[400],lineHeight:22}}>Only extracted text is saved privately for this companion. Original files are not retained. Deleting an import removes its indexed text; earlier quoted chat replies remain.</Text>
     {Platform.OS === 'web' ? <>
       {createElement('input',{ref:input,type:'file',accept:'.pdf,.txt,.md',style:{display:'none'},onChange:(event:React.ChangeEvent<HTMLInputElement>)=>{const file=event.target.files?.[0];event.target.value='';if(file)void upload(file);}})}

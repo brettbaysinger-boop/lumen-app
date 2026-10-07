@@ -1,12 +1,12 @@
 # Private document imports
 
-Use **Attach document** immediately above the chat prompt to import a PDF/TXT/MD
+Use the **paperclip** between web search and camera, then **Attach document**, to import a PDF/TXT/MD
 file. Its filename appears in the prompt, with Explain document and Remove controls.
 Press Send to ask a natural question about that selected file. Empty text defaults
 to a plain-language explanation. Attachment/import never sends a chat message
 automatically. Extracted text is saved in the private document library.
 
-**Document library** beside the attachment control opens **Your documents**, also
+**Saved documents** in the paperclip menu opens **Your documents**, also
 accessible from the conversation header and Settings. Each imported file has an
 **Explain this document** button that selects it and prepares a chat draft.
 Import a PDF with selectable text, UTF-8 TXT,
@@ -53,13 +53,14 @@ search; web queries use the separately configured search provider.
 | Limit | Value |
 | --- | --- |
 | File types | PDF, TXT, MD |
-| Upload size | Up to 5 MiB |
+| Upload size | Up to 25 MiB |
 | Documents | Up to 100 per companion |
 | Pages | Up to 100 per document |
 | Extracted text | Up to 50,000 characters per page; 1,000,000 per document |
 | Query | 2–500 characters |
 | Retrieved excerpts | Up to 5 across-library search results; 6 for a selected document |
 | Search chunks | 2,000 characters, overlapping by 200 |
+| Browser upload deadline | 120 seconds; other document requests 45 seconds |
 | Extraction worker | 512 MiB address space, 15 CPU seconds, 25-second wall deadline |
 
 PDF page references preserve the original page order, including blank pages.
@@ -111,10 +112,10 @@ The existing backup script includes the new public tables automatically.
 
 Verify on the host:
 
-1. Use Attach document at the chat prompt to import a small selectable-text PDF.
+1. Use paperclip → Attach document at the chat prompt to import a small selectable-text PDF.
    Confirm the filename appears and nothing sends automatically.
 2. Click Explain document, then Send; inspect its page reference.
-3. Use Document library to reopen the saved file through Explain this document.
+3. Use paperclip → Saved documents to reopen the saved file through Explain this document.
 4. Search a distinctive phrase; open the source page and check its number/text.
 5. Ask companion, confirm the draft, then Send; inspect the cited page.
 6. Reload and confirm the answer and source cards persist.

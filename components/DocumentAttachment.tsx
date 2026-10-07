@@ -2,7 +2,7 @@ import { createElement, useRef, useState } from 'react';
 import { View, Text, Pressable, Platform, ActivityIndicator } from 'react-native';
 import { FilePlus } from 'lucide-react-native';
 import { useTheme } from '@/lib/theme-context';
-import { documentRequest, type PrivateDocument } from '@/lib/documents';
+import { documentRequest, MAX_DOCUMENT_BYTES, type PrivateDocument } from '@/lib/documents';
 
 export function DocumentAttachment({ companionId, disabled, onSelect, onBusy }: {
   companionId: string; disabled: boolean; onSelect: (document: PrivateDocument) => void;
@@ -13,7 +13,7 @@ export function DocumentAttachment({ companionId, disabled, onSelect, onBusy }: 
   const [busy, setBusy] = useState(false), [error, setError] = useState('');
   const upload = async (file: File) => {
     setError('');
-    if (file.size > 5 * 1024 * 1024) { setError('Choose a document under 5 MB.'); return; }
+    if (file.size > MAX_DOCUMENT_BYTES) { setError('Choose a document up to 25 MB.'); return; }
     setBusy(true); onBusy(true);
     try {
       const body = new FormData(); body.append('file', file);

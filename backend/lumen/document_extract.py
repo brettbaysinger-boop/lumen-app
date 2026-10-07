@@ -4,6 +4,8 @@ import json
 import re
 import sys
 
+MAX_UPLOAD = 25 * 1024 * 1024
+
 
 def clean(text):
     return re.sub(r'[\x00-\x08\x0b\x0e-\x1f]', '', text).strip()
@@ -39,9 +41,9 @@ if __name__ == '__main__':
         import resource
         resource.setrlimit(resource.RLIMIT_AS, (512 * 1024 * 1024, 512 * 1024 * 1024))
         resource.setrlimit(resource.RLIMIT_CPU, (15, 15))
-        data = sys.stdin.buffer.read(5 * 1024 * 1024 + 1)
-        if len(data) > 5 * 1024 * 1024:
-            raise ValueError('Use a file under 5 MB.')
+        data = sys.stdin.buffer.read(MAX_UPLOAD + 1)
+        if len(data) > MAX_UPLOAD:
+            raise ValueError('Use a file up to 25 MB.')
         print(json.dumps({'pages':extract(data, sys.argv[1])}))
     except ValueError as exc:
         print(json.dumps({'error':str(exc)}))

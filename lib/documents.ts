@@ -1,4 +1,5 @@
 import { authHeaders } from './auth';
+export const MAX_DOCUMENT_BYTES = 25 * 1024 * 1024;
 export interface PrivateDocument { id: string; title: string; kind: string; page_count: number; created_at: string }
 export interface DocumentSource { number: number; document_id: string; title: string; page: number; excerpt: string }
 export interface DocumentHit { document_id: string; title: string; page: number; content: string }
@@ -7,7 +8,7 @@ export async function documentRequest<T>(companion: string, path = '', method = 
   const base = process.env.EXPO_PUBLIC_LUMEN_API_URL?.trim().replace(/\/+$/, '');
   if (!base) throw new Error('Lumen API address is missing.');
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 45000);
+  const timer = setTimeout(() => controller.abort(), path === '/upload' ? 120000 : 45000);
   const form = typeof FormData !== 'undefined' && body instanceof FormData;
   try {
     const response = await fetch(`${base}/v0.6/documents/companions/${encodeURIComponent(companion)}${path}`, {
