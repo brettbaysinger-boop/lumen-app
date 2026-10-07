@@ -61,15 +61,15 @@ output. Do not expose backend secrets in pasted configuration.
 Google, X, Apple, GitHub, Microsoft, and Facebook sign-in remain in the UI;
 buttons appear only when local Supabase reports that provider enabled.
 
-The next requested capabilities are not implemented yet:
+Account support is now implemented in the next development checkpoint. It uses
+an explicit backend account-ID allowlist, a dedicated `/support` screen, limited
+account records, ban removal, recovery email requests, and a service-only audit
+table. Passwords and recovery links are not returned to the support account.
+Users choose passwords through `/recover`. Support is disabled until configured.
+See `docs/support-admin.md` for activation and mail delivery requirements.
 
-- Account-support admin: a server-controlled role and dedicated UI restricted
-  to account email/ID, account state, unlock actions, and user-delivered recovery.
-  No chat, memory, photo, document, or companion browsing; no impersonation,
-  recovery-token display, or administrator-selected user passwords. Record
-  support actions in an audit log. Keep service-role secrets server-side.
-  Test cross-user data isolation for the support role. The machine operator's
-  database, Mailpit, and filesystem privileges remain separate from this UI.
+The remaining requested capabilities are not implemented yet:
+
 - Optional “Hey [companion name]”: local wake-word detection with a visible
   listening indicator, microphone permissions, mute control, and suppression
   during companion speech. Start with an open-app mode; closed-app/background

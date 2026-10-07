@@ -29,6 +29,8 @@ class Settings(BaseSettings):
     transcription_model: str = "Systran/faster-distil-whisper-small.en"
     speech_model: str = "speaches-ai/Kokoro-82M-v1.0-ONNX"
     speech_voice: str = "af_heart"
+    support_admin_user_ids: str = ""
+    support_recovery_redirect_url: str = ""
 
     # Image generation provider. Keep the endpoint configurable so image
     # generation is a capability, not a hard-coded physical machine.

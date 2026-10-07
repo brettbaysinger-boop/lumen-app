@@ -17,6 +17,13 @@ async function scalar(sql, args = []) { return Object.values((await db.query(sql
   try {
     await db.exec(`CREATE ROLE anon; CREATE ROLE authenticated; CREATE ROLE service_role BYPASSRLS;
       CREATE SCHEMA auth;
+      CREATE SCHEMA storage;
+      CREATE TABLE storage.buckets(id text PRIMARY KEY,name text,public boolean,file_size_limit bigint,allowed_mime_types text[]);
+      CREATE TABLE storage.objects(id uuid PRIMARY KEY DEFAULT gen_random_uuid(),bucket_id text,name text);
+      CREATE FUNCTION storage.foldername(name text) RETURNS text[] LANGUAGE sql AS $$SELECT string_to_array(name,'/')$$;
+      ALTER TABLE storage.objects ENABLE ROW LEVEL SECURITY;
+      GRANT USAGE ON SCHEMA storage TO authenticated;
+      GRANT SELECT,INSERT,UPDATE,DELETE ON storage.objects TO authenticated;
       CREATE FUNCTION auth.uid() RETURNS uuid LANGUAGE sql AS
       $$ SELECT nullif(current_setting('request.jwt.claim.sub', true),'')::uuid $$;
       GRANT USAGE ON SCHEMA public,auth TO anon,authenticated,service_role;
@@ -37,6 +44,7 @@ async function scalar(sql, args = []) { return Object.values((await db.query(sql
     }
     await assert.rejects(db.query("SELECT ensure_my_companion('Intruder')"), /permission denied/);
     await as('authenticated', A);
+    await assert.rejects(db.query('SELECT * FROM support_audit'), /permission denied/, 'support audit is not exposed through a browser session');
     const companionA = await scalar("SELECT ensure_my_companion('Alice')");
     assert.equal(await scalar("SELECT ensure_my_companion('Alice')"), companionA, 'idempotent provision');
     assert.equal(await scalar('SELECT count(*) FROM companions'), 1, 'unowned legacy hidden');

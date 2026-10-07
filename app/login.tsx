@@ -2,7 +2,7 @@ import { SocialSignIn } from '@/components/SocialSignIn';
 import { initialSocialError } from '@/lib/social-auth';
 import { useState } from 'react';
 import { View, Text, TextInput, TouchableOpacity, ActivityIndicator, ScrollView } from 'react-native';
-import { Redirect } from 'expo-router';
+import { Redirect, router } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth';
@@ -51,6 +51,7 @@ export default function Login() {
           <Text style={{ color: c.neutral[0], fontSize: 16, fontFamily: 'Inter-SemiBold' }}>{busy ? 'Please wait…' : signup ? 'Create account' : 'Sign in'}</Text>
         </TouchableOpacity>
         <TouchableOpacity onPress={() => { setSignup(!signup); setNotice(''); }} disabled={busy}><Text style={{ color: c.primary[300], fontSize: 15, paddingVertical: 8, fontFamily: 'Inter-Regular' }}>{signup ? 'Already have an account? Sign in' : 'Create an account'}</Text></TouchableOpacity>
+        {!signup && <TouchableOpacity onPress={() => router.push('/recover')} disabled={busy}><Text style={{ color: c.primary[300], paddingVertical: 8 }}>Forgot password?</Text></TouchableOpacity>}
       </>}
       {!!notice && <Text accessibilityRole="alert" style={{ color: c.neutral[100], fontSize: 16, fontFamily: 'Inter-Regular' }}>{notice}</Text>}
     </ScrollView>

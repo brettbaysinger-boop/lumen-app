@@ -1,5 +1,6 @@
 import { SocialSignIn } from '@/components/SocialSignIn';
 import { ModelPicker } from '@/components/ModelPicker';
+import { SupportEntry } from '@/components/SupportEntry';
 import { useState, useCallback, useEffect, useMemo } from 'react';
 import {
   View,
@@ -192,6 +193,7 @@ export default function SettingsScreen() {
             setAccountError(error?.message || null);
           }}><Text style={{ color: c.primary[300], paddingVertical: 16, fontFamily: 'Inter-Regular' }}>Sign out</Text></TouchableOpacity>
           <Text style={styles.configSubtext}>Connect another sign-in to this account to keep your companion and memories.</Text>
+          <SupportEntry />
           <SocialSignIn link onError={setAccountError} onConnected={() => setAccountError('Account connection completed.')} />
           {!!accountError && <Text style={styles.configSubtext}>{accountError}</Text>}
           <Text style={styles.sectionTitle}>Companion Configuration</Text>
