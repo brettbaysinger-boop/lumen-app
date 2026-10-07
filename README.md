@@ -269,6 +269,8 @@ Start here, then use the specialized documents for detail:
 - `docs/assistant-services.md` — everyday assistant and My Day architecture
 - `docs/image-generation.md` — local image generation and visual identity
 - `docs/chat-and-natural-memory.md` — streaming chat and natural memory
+- `docs/documents.md` — private PDF/text imports, search, and page references
+- `docs/web-research.md` — public web excerpts and cited answers
 - `docs/model-picker.md` — companion conversation-model selection
 - `docs/social-login.md` — local Supabase social authentication
 - `ACCOUNTS.md` — account ownership and isolation

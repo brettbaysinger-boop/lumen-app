@@ -1,0 +1,41 @@
+const assert=require('node:assert/strict'),fs=require('node:fs');
+const {PGlite}=require(process.env.LUMEN_PGLITE_MODULE || '@electric-sql/pglite');
+const A='11111111-1111-4111-8111-111111111111',B='22222222-2222-4222-8222-222222222222';
+const CA='33333333-3333-4333-8333-333333333333',CB='44444444-4444-4444-8444-444444444444';
+(async()=>{
+ const db=new PGlite();
+ try {
+  await db.exec(`CREATE ROLE authenticated;CREATE ROLE anon;CREATE ROLE service_role BYPASSRLS;
+   CREATE SCHEMA auth;GRANT USAGE ON SCHEMA auth TO authenticated;
+   CREATE FUNCTION auth.uid() RETURNS uuid LANGUAGE sql AS $$SELECT nullif(current_setting('request.jwt.claim.sub',true),'')::uuid$$;
+   CREATE TABLE public.companions(id uuid PRIMARY KEY,owner_user_id uuid NOT NULL);
+   INSERT INTO public.companions VALUES('${CA}','${A}'),('${CB}','${B}');
+   ALTER TABLE public.companions ENABLE ROW LEVEL SECURITY;
+   GRANT SELECT ON public.companions TO authenticated;
+   CREATE POLICY owner ON public.companions TO authenticated USING(owner_user_id=auth.uid());`);
+  await db.exec(fs.readFileSync('supabase/migrations/20261007050000_private_documents.sql','utf8'));
+  const identity=async user=>{await db.exec('RESET ROLE;SET ROLE authenticated;');await db.query("SELECT set_config('request.jwt.claim.sub',$1,false)",[user]);};
+  const ingest=(companion,hash,pages)=>db.query('SELECT * FROM public.import_document($1,$2,$3,$4,$5)',[companion,'Refrigerator warranty.txt',hash,'text',JSON.stringify(pages)]);
+  await identity(A);
+  const first=await ingest(CA,'a'.repeat(64),[{text:'The refrigerator warranty covers parts for five years. Labor is excluded.'},{text:'Contact the service department for refrigerator repairs.'}]);
+  const id=first.rows[0].id;
+  const repeated=await ingest(CA,'a'.repeat(64),[{text:'Duplicate upload'}]);assert.equal(repeated.rows[0].id,id);
+  const hits=await db.query('SELECT * FROM public.search_documents($1,$2)',[CA,'refrigerator warranty']);
+  assert.ok(hits.rows.length);assert.equal(hits.rows[0].page,1);assert.match(hits.rows[0].content,/five years/);
+  await assert.rejects(ingest(CA,'c'.repeat(64),[{text:'valid first page'},{text:'x'.repeat(50001)}]));
+  assert.equal((await db.query('SELECT count(*)::int n FROM public.documents')).rows[0].n,1,'failed imports leave no partial document');
+  await identity(B);
+  for(const table of ['documents','document_pages','document_chunks'])assert.equal((await db.query(`SELECT count(*)::int n FROM public.${table}`)).rows[0].n,0,table+' stays private');
+  await assert.rejects(db.query('SELECT * FROM public.search_documents($1,$2)',[CA,'warranty']),/Companion not found/);
+  await assert.rejects(ingest(CA,'d'.repeat(64),[{text:'A malicious cross-account insert'}]),/Companion not found/);
+  assert.equal((await db.query('DELETE FROM public.documents WHERE id=$1 RETURNING id',[id])).rows.length,0);
+  await ingest(CB,'a'.repeat(64),[{text:'Bob has his own private warranty.'}]);
+  await identity(A);
+  assert.equal((await db.query('SELECT count(*)::int n FROM public.documents')).rows[0].n,1);
+  await db.query('DELETE FROM public.documents WHERE id=$1',[id]);
+  for(const table of ['document_pages','document_chunks'])assert.equal((await db.query(`SELECT count(*)::int n FROM public.${table}`)).rows[0].n,0,'delete cascades to '+table);
+  await db.exec('RESET ROLE;SET ROLE anon;');
+  await assert.rejects(db.query('SELECT * FROM public.documents'),/permission denied/);
+  console.log('Document SQL: import/search, page references, duplicates, atomic rollback, account isolation, deletion and anonymous denial passed.');
+ } finally {await db.close();}
+})().catch(error=>{console.error(error);process.exit(1);});

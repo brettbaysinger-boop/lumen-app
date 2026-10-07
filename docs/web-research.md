@@ -10,7 +10,9 @@ endpoint continues to return search results only. Chat performs synthesis.
 
 Try `Search the web: compare three skillet ribeye recipes and explain their
 differences`. The answer includes numbered references such as `[1]`, clickable
-inline and in the source cards. Each card distinguishes **Page excerpt read**
+inline and in the source cards. Grouped references such as `[1, 2]` are checked
+member by member and normalized to `[1] [2]`; historical grouped references also
+render as individual source links. Each card distinguishes **Page excerpt read**
 from **Search snippet**. The reply states how many page excerpts were read.
 Source cards, retrieval status/time, and the answer survive conversation reload.
 Page bodies and excerpts are not stored in message metadata.

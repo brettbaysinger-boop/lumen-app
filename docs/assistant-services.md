@@ -101,12 +101,21 @@ follow-up increment.
 
 The gold/silver visual redesign, appearance controls, companion identity,
 Helios voice selection, and camera capture are also in the development build.
-Camera interpretation, closed-app notifications, and external calendar actions
-remain planned. This checkpoint has not been deployed to main-llm-video.
+Camera interpretation and private HTTPS mobile microphone/camera access have
+been verified on main-llm-video. Closed-app notifications and external calendar
+actions remain planned. Subsequent increments state their own deployment status.
 
 Detailed acceptance criteria and installation notes for this checkpoint are in
 `docs/assistant/ROADMAP.md` and `docs/assistant/INSTALL.md`; the root roadmap
 remains the unified product roadmap.
+
+### Private document retrieval checkpoint
+
+The Take 2 feature line supports explicit PDF/TXT/Markdown imports, owner-scoped
+full-text search, local cited answers and page inspection. Imports are scoped to
+the companion. Deleting an import removes its indexed text, while prior quoted
+chat replies remain. See `docs/documents.md` for limits and deployment. OCR,
+semantic document search and connected drives remain future work.
 
 ### Remember what matters
 

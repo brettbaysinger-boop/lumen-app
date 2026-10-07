@@ -1,3 +1,4 @@
+import { router } from 'expo-router';
 import { SocialSignIn } from '@/components/SocialSignIn';
 import { ModelPicker } from '@/components/ModelPicker';
 import { SupportEntry } from '@/components/SupportEntry';
@@ -195,6 +196,7 @@ export default function SettingsScreen() {
           }}><Text style={{ color: c.primary[300], paddingVertical: 16, fontFamily: 'Inter-Regular' }}>Sign out</Text></TouchableOpacity>
           <Text style={styles.configSubtext}>Connect another sign-in to this account to keep your companion and memories.</Text>
           <SupportEntry />
+          <TouchableOpacity accessibilityRole="button" onPress={() => router.push('/documents')}><Text style={{color:c.primary[300],paddingVertical:12}}>Your documents</Text></TouchableOpacity>
           <SocialSignIn link onError={setAccountError} onConnected={() => setAccountError('Account connection completed.')} />
           {!!accountError && <Text style={styles.configSubtext}>{accountError}</Text>}
           <Text style={styles.sectionTitle}>Companion Configuration</Text>

@@ -30,6 +30,7 @@ import {
 import { CameraCapture } from '@/components/CameraCapture';
 import { CompanionPortrait } from '@/components/CompanionPortrait';
 import { DayActionCard } from '@/components/DayActionCard';
+import { DocumentSources } from '@/components/DocumentSources';
 import { WebSources, CitationText } from '@/components/WebSources';
 import { requestKey, type DayItem } from '@/lib/my-day';
 import { router, useLocalSearchParams, useFocusEffect } from 'expo-router';
@@ -261,7 +262,7 @@ export default function ChatScreen() {
   useEffect(() => {
     if (routeParams.draft && !sending && !voiceBusy) {
       setInputText(routeParams.draft.slice(0, 64000));
-      router.setParams({ draft: undefined });
+      router.setParams({ draft: '' });
     }
   }, [routeParams.draft, sending, voiceBusy]);
 
@@ -435,6 +436,9 @@ export default function ChatScreen() {
           </View>
         </View>
         <View style={styles.headerStatus}>
+          <TouchableOpacity accessibilityRole="button" accessibilityLabel="Open your documents" disabled={sending || voiceBusy} onPress={() => router.push('/documents')}>
+            <Text style={{color:colors.primary[300],fontSize:12}}>Documents</Text>
+          </TouchableOpacity>
           <Text style={styles.statusText}>
             {sending ? 'Thinking…' : 'Conversation'}
           </Text>
@@ -537,6 +541,7 @@ export default function ChatScreen() {
               </Text>
               {item.role === 'assistant' && item.metadata?.my_day_item != null && <DayActionCard item={item.metadata.my_day_item as DayItem} />}
               {item.role === 'assistant' && item.metadata?.web_search != null && <WebSources value={item.metadata.web_search} />}
+              {item.role === 'assistant' && item.metadata?.document_sources != null && <DocumentSources value={item.metadata.document_sources} companionId={item.companion_id} />}
               {item.role === 'assistant' && item.metadata?.timings_ms != null && (
                 <View>
                   <TouchableOpacity onPress={() => setExpandedActivity(expandedActivity === item.id ? null : item.id)}>

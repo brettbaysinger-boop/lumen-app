@@ -5,7 +5,8 @@ export function CitationText({ content, value }: { content: string; value: unkno
   const { colors: c } = useTheme();
   const sources = value && typeof value === 'object' ? (value as { sources?: unknown }).sources : null;
   if (!Array.isArray(sources)) return <>{content}</>;
-  return <>{content.split(/(\[\d+\])/).map((part, index) => {
+  const normalized = content.replace(/\[(\d+(?:\s*[,;]\s*\d+)+)\]/g, (_, group: string) => group.split(/\s*[,;]\s*/).map(number => `[${number}]`).join(' '));
+  return <>{normalized.split(/(\[\d+\])/).map((part, index) => {
     const number = /^\[(\d+)\]$/.exec(part)?.[1];
     const source = number ? sources.find(s => s && s.number === Number(number)) : null;
     if (!source || typeof source.url !== 'string' || typeof source.title !== 'string') return part;

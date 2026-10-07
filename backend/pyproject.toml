@@ -9,6 +9,7 @@ dependencies = [
   "httpx>=0.28,<1",
   "pydantic-settings>=2.7,<3",
   "python-multipart>=0.0.20,<1",
+  "pypdf>=6.4,<7",
 ]
 
 [project.optional-dependencies]

@@ -2,6 +2,7 @@
 import json
 import re
 from .web_pages import retrieve_sources
+from .citations import normalize_citations
 
 
 async def research_answer(action, provider, model, emit=None):
@@ -32,10 +33,11 @@ async def research_answer(action, provider, model, emit=None):
         # Buffer until citation checks finish; never stream an unchecked partial answer.
         answer = await provider.generate(model, messages, temperature=0.2)
         content = answer.get('content', '').strip()
-        citations = {int(n) for n in re.findall(r'\[(\d+)\]', content)}
         allowed = {source['number'] for source in results['sources']}
-        if not content or not citations or not citations <= allowed or re.search(r'https?://', content, re.I):
+        content = normalize_citations(content, allowed)
+        if re.search(r'https?://', content, re.I):
             raise ValueError('Answer did not use valid source citations')
+        answer['content'] = content
     except Exception:
         results['answer_status'] = 'fallback'
         action['content'] = ('I found sources, but couldn’t produce an answer with usable citations. '

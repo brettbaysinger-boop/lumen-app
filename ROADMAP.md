@@ -544,10 +544,14 @@ status; photo drafts offer Describe, Read text, Explain, and Meal ideas. See
 `docs/vision.md` for limits and verification. Live camera access on remote browsers
 requires HTTPS.
 
+Private PDF/TXT/Markdown import, lexical retrieval, and cited page references are
+implemented on the Take 2 feature line; see `docs/documents.md`. Original files
+are not retained. Live deployment verification is pending for this increment.
+
 Further multimodal work includes:
 
 - automatic reuse of earlier uploaded or generated images
-- documents
+- OCR and richer document layout
 - audio
 - video
 
