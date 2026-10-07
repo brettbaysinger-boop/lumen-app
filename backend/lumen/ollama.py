@@ -44,6 +44,19 @@ class OllamaProvider:
             return sorted({m["name"] for m in response.json().get("models", [])
                            if isinstance(m.get("name"), str)})
 
+    async def supports_vision(self, model: str) -> bool | None:
+        # Unknown capability never means permission to send an image.
+        try:
+            async with httpx.AsyncClient(timeout=5) as client:
+                response = await client.post(f"{self.base_url}/api/show", json={"model": model})
+                response.raise_for_status()
+                capabilities = response.json().get("capabilities")
+                if not isinstance(capabilities, list):
+                    return None
+                return "vision" in capabilities
+        except (httpx.HTTPError, ValueError, AttributeError):
+            return None
+
     async def structured(self, model: str, messages: list[dict], schema: dict) -> str:
         async with httpx.AsyncClient(timeout=60) as client:
             response = await client.post(f"{self.base_url}/api/chat", json={

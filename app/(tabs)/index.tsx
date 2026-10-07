@@ -646,6 +646,16 @@ export default function ChatScreen() {
           colors={colors}
           disabled={sending}
         />
+        {pendingImages.length > 0 && <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 12, paddingHorizontal: 20, paddingBottom: 8 }}>
+          {[
+            ['Describe', 'Describe what you can see in this photo.'],
+            ['Read text', 'Transcribe the visible text in this photo. Mark anything unreadable instead of guessing.'],
+            ['Explain', 'Explain this photo or document in plain language. Separate visible facts from interpretation.'],
+            ['Meal ideas', 'Suggest a meal using the ingredients you can identify in this photo. Ask about anything unclear.'],
+          ].map(([label, prompt]) => <TouchableOpacity key={label} accessibilityRole="button" disabled={sending} onPress={() => setInputText(prompt)}>
+            <Text style={{ color: colors.primary[300], fontSize: 12 }}>{label}</Text>
+          </TouchableOpacity>)}
+        </View>}
         <View style={styles.inputContainer}>
           <TouchableOpacity style={styles.inputButton} accessibilityLabel="Search the web" disabled={sending || voiceBusy} onPress={() => setInputText(text => /^search (?:the )?web:/i.test(text) ? text : `Search the web: ${text}`)}>
             <Globe color={colors.primary[400]} size={21} strokeWidth={1.6} />

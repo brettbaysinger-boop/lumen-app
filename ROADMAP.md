@@ -536,13 +536,17 @@ currently named `aiLumen-llm-video`.
 
 ---
 
-## 16. Multimodal understanding — Future
+## 16. Multimodal understanding — Photo checkpoint implemented
 
-Expand conversation inputs to include:
+Owner-scoped uploaded photos and camera captures now reach the selected Ollama
+conversation model when it reports vision support. The model picker shows support
+status; photo drafts offer Describe, Read text, Explain, and Meal ideas. See
+`docs/vision.md` for limits and verification. Live camera access on remote browsers
+requires HTTPS.
 
-- uploaded images
-- generated images
-- camera images explicitly supplied by the user
+Further multimodal work includes:
+
+- automatic reuse of earlier uploaded or generated images
 - documents
 - audio
 - video

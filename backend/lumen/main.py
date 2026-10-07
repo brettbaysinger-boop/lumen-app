@@ -110,7 +110,8 @@ async def companion_models(companion_id: str, user: AuthUser = Depends(require_u
         models = await OllamaProvider(settings).list_models()
     except Exception as exc:
         raise HTTPException(status_code=502, detail="Could not list Ollama models") from exc
-    return {"models": models, "selected": companion.get("conversation_model"),
+    vision = await OllamaProvider(settings).supports_vision(companion.get("conversation_model") or settings.conversation_model)
+    return {"vision": vision, "models": models, "selected": companion.get("conversation_model"),
             "effective": companion.get("conversation_model") or settings.conversation_model,
             "default": settings.conversation_model,
             "memory_model": settings.memory_observation_model or companion.get("conversation_model") or settings.conversation_model}

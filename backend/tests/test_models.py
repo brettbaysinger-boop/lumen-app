@@ -15,7 +15,7 @@ class ModelRoutes(unittest.TestCase):
     def setUp(self):
         self.db = Mock(get_companion=AsyncMock(return_value={'conversation_model': None}),
                        _request=AsyncMock(return_value=[{'id': 'mine'}]))
-        self.provider = Mock(list_models=AsyncMock(return_value=['chat-a', 'chat-b']))
+        self.provider = Mock(list_models=AsyncMock(return_value=['chat-a', 'chat-b']), supports_vision=AsyncMock(return_value=True))
         self.patches = [patch('lumen.main.settings', settings),
                         patch('lumen.main.SupabaseRepository', return_value=self.db),
                         patch('lumen.main.OllamaProvider', return_value=self.provider)]
@@ -30,6 +30,8 @@ class ModelRoutes(unittest.TestCase):
     def test_list_effective_and_memory_models(self):
         response = self.client.get('/v0.2/companions/mine/models')
         self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.json()['vision'])
+        self.provider.supports_vision.assert_awaited_once_with('default-chat')
         self.assertEqual(response.json()['effective'], 'default-chat')
         self.assertEqual(response.json()['memory_model'], 'extractor')
 

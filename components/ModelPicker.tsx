@@ -29,7 +29,8 @@ export function ModelPicker({ companionId, compact = false, disabled = false }: 
     setBusy(true); setError('');
     try {
       const saved = await modelRequest(companionId, model);
-      setOptions(previous => previous ? { ...previous, ...saved } : previous);
+      setOptions(previous => previous ? { ...previous, ...saved, vision: null } : previous);
+      void modelRequest(companionId).then(setOptions).catch(() => {});
       setOpen(false);
     } catch (e) { setError(e instanceof Error ? e.message : 'Could not save model.'); }
     finally { setBusy(false); }
@@ -42,6 +43,7 @@ export function ModelPicker({ companionId, compact = false, disabled = false }: 
       </Text>
     </TouchableOpacity>
     {!compact && <Text style={{ color: c.neutral[400], marginTop: 6 }}>Applies to the next reply. Memories and history stay with your companion.</Text>}
+    {!compact && <Text style={{ color: c.neutral[400], marginTop: 6 }}>Photo understanding: {options?.vision === true ? 'Ready with this model' : options?.vision === false ? 'Select a model with vision support' : 'Support not confirmed'}</Text>}
     <Modal visible={open} transparent animationType="fade" onRequestClose={() => { if (!busy) setOpen(false); }}>
       <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'center', padding: 24 }}>
         <View style={{ backgroundColor: c.neutral[900], padding: 20, borderRadius: 16, maxHeight: '85%', width: '100%', maxWidth: 600, alignSelf: 'center' }}>
