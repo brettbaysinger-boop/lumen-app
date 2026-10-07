@@ -9,14 +9,14 @@ export async function signOutThisBrowser(): Promise<void> {
     return;
   }
   supabase.auth.stopAutoRefresh();
-  let timer: ReturnType<typeof setTimeout> | undefined;
+  let timer: number | undefined;
   try {
     await Promise.race([
       supabase.auth.signOut({ scope: 'local' }).catch(() => {}),
-      new Promise(resolve => { timer = setTimeout(resolve, 5000); }),
+      new Promise(resolve => { timer = window.setTimeout(resolve, 5000); }),
     ]);
   } finally {
-    clearTimeout(timer);
+    window.clearTimeout(timer);
     const url = process.env.EXPO_PUBLIC_SUPABASE_URL;
     if (!url) throw new Error('Supabase address is missing.');
     const key = `sb-${new URL(url).hostname.split('.')[0]}-auth-token`;

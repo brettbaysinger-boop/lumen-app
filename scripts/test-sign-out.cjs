@@ -5,7 +5,7 @@ async function test(signOut){
  const values=new Map([['sb-100-auth-token','stale'],['sb-100-auth-token-code-verifier','verifier'],['sb-100-auth-token-user','user'],['lumen-theme','gold-dark'],['sb-other-auth-token','other-app']]);
  let destination,stopped=false;
  const sandbox={exports:{},require:()=>({supabase:{auth:{stopAutoRefresh(){stopped=true;},signOut:async options=>{assert.equal(options.scope,'local');return signOut();}}}}),
-  window:{location:{replace(value){destination=value;}}},localStorage:{removeItem:key=>values.delete(key)},URL,
+  window:{setTimeout:callback=>setTimeout(callback,5),clearTimeout,location:{replace(value){destination=value;}}},localStorage:{removeItem:key=>values.delete(key)},URL,
   process:{env:{EXPO_PUBLIC_SUPABASE_URL:'http://100.75.227.45:54321'}},
   setTimeout:callback=>setTimeout(callback,5),clearTimeout};
  vm.runInNewContext(code,sandbox);await sandbox.exports.signOutThisBrowser();
