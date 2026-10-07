@@ -14,7 +14,7 @@ await page.route('http://127.0.0.1:8001/**',async route=>{
 const request=route.request();
 if(request.url().includes('/v0.6/documents/')){
  const pathname=new URL(request.url()).pathname;let result=documents;
- if(pathname.endsWith('/upload')){assert.match(request.headers()['content-type'],/multipart\/form-data/);assert.ok(request.postDataBuffer().includes(Buffer.from('Warranty covers parts for five years.')));documents=[{id:D,title:'Warranty.txt',kind:'text',page_count:1,created_at:'now'}];result={...documents[0],existing:false};}
+ if(pathname.endsWith('/upload')){assert.match(request.headers()['content-type'],/multipart\/form-data/);assert.ok(request.postDataBuffer().includes(Buffer.from('Warranty covers parts for five years.')));documents=[{id:D,title:request.postDataBuffer().includes(Buffer.from('filename="PSU.pdf"'))?'PSU.pdf':'Warranty.txt',kind:'text',page_count:1,created_at:'now'}];result={...documents[0],existing:false};}
  else if(pathname.endsWith('/search'))result=[{document_id:D,title:'Warranty.txt',page:1,content:'Warranty covers parts for five years. Labor is excluded.'}];
  else if(pathname.includes('/pages/'))result={title:'Warranty.txt',page:1,content:'Warranty covers parts for five years. Labor is excluded.'};
  else if(request.method()==='DELETE'){documents=[];result={deleted:true};}
@@ -22,10 +22,11 @@ if(request.url().includes('/v0.6/documents/')){
 }
 if(request.url().endsWith('/respond/stream')){
 const body=request.postDataJSON();assert.equal(body.conversation_id,I,'continue the same thread');
-if(body.message.startsWith('Search my documents:')){
- messages.push({id:'doc-user',conversation_id:I,companion_id:C,role:'user',content:body.message,metadata:{},created_at:new Date().toISOString()},
- {id:'doc-answer',conversation_id:I,companion_id:C,role:'assistant',content:'Parts are covered for five years. [1]',metadata:{document_sources:[{number:1,document_id:D,title:'Warranty.txt',page:1,excerpt:'Warranty covers parts for five years. Labor is excluded.'}]},created_at:new Date().toISOString()});
- await route.fulfill({status:200,contentType:'application/x-ndjson',body:JSON.stringify({type:'done',response:{conversation_id:I,message_id:'doc-answer',content:messages.at(-1).content}})+'\n',headers:{'access-control-allow-origin':'*'}});return;
+if(body.document_id || body.message.startsWith('Search my documents:')){
+if(body.document_id)assert.equal(body.document_id,D,'selected document ID is sent separately from the natural question');
+ messages.push({id:body.document_id?'selected-doc-user':'doc-user',conversation_id:I,companion_id:C,role:'user',content:body.message,metadata:{},created_at:new Date().toISOString()},
+ {id:body.document_id?'selected-doc-answer':'doc-answer',conversation_id:I,companion_id:C,role:'assistant',content:body.document_id?'Attached PSU document explained. [1]':'Parts are covered for five years. [1]',metadata:{document_sources:[{number:1,document_id:D,title:'Warranty.txt',page:1,excerpt:'Warranty covers parts for five years. Labor is excluded.'}]},created_at:new Date().toISOString()});
+ await route.fulfill({status:200,contentType:'application/x-ndjson',body:JSON.stringify({type:'done',response:{conversation_id:I,message_id:messages.at(-1).id,content:messages.at(-1).content}})+'\n',headers:{'access-control-allow-origin':'*'}});return;
 }
 
 messages.push({id:'message-30',conversation_id:I,companion_id:C,role:'user',content:body.message,metadata:{},created_at:new Date().toISOString()},
@@ -68,8 +69,25 @@ await page.locator('[aria-label="Send message"]:visible').click();
 await page.getByText('Parts are covered for five years. [1]',{exact:true}).waitFor();
 await page.reload();await page.getByRole('button',{name:'Read document source 1: Warranty.txt, page 1',exact:true}).waitFor();
 assert.equal(await page.locator('textarea[placeholder="Message Lumen…"]:visible').inputValue(),'','sent document draft does not return on reload');
-await page.getByLabel('Open your documents',{exact:true}).click();
-await page.getByRole('button',{name:'Delete Warranty.txt',exact:true}).click();
+const chatPicker=page.waitForEvent('filechooser');
+await page.getByRole('button',{name:'Attach document',exact:true}).click();
+await(await chatPicker).setFiles({name:'PSU.pdf',mimeType:'application/pdf',buffer:Buffer.from('%PDF-1.4\nWarranty covers parts for five years.')});
+await page.getByText('Using document: PSU.pdf',{exact:true}).waitFor();
+const beforeDirect=messages.length;
+await page.getByRole('button',{name:'Explain document',exact:true}).click();
+assert.equal(messages.length,beforeDirect,'attaching and preparing explanation never sends a message');
+assert.equal(await page.locator('textarea[placeholder="Message Lumen…"]:visible').inputValue(),'Explain this document in plain language.');
+await page.locator('[aria-label="Send message"]:visible').click();
+await page.getByText('Attached PSU document explained. [1]',{exact:true}).waitFor();
+assert.equal(messages.at(-2).content,'Explain this document in plain language.');
+await page.getByRole('button',{name:'Remove document from prompt',exact:true}).click();
+await page.getByText('Using document: PSU.pdf',{exact:true}).waitFor({state:'detached'});
+await page.getByRole('button',{name:'Open document library',exact:true}).click();
+await page.getByRole('button',{name:'Explain this document',exact:true}).click();
+await page.getByText('Using document: PSU.pdf',{exact:true}).waitFor();
+await page.getByRole('button',{name:'Remove document from prompt',exact:true}).click();
+await page.getByRole('button',{name:'Open document library',exact:true}).click();
+await page.getByRole('button',{name:'Delete PSU.pdf',exact:true}).click();
 await page.getByRole('button',{name:'Keep document',exact:true}).waitFor();
 await page.getByRole('button',{name:'Delete extracted text',exact:true}).click();
 await page.getByText('Imported text · 0',{exact:true}).waitFor();
@@ -78,4 +96,4 @@ await page.goto('http://127.0.0.1:8765/settings');
 await page.getByText('Sign out',{exact:true}).click();
 await page.waitForURL('**/login');
 assert.equal(await page.evaluate(()=>localStorage.getItem('sb-127-auth-token')),null,'expired/offline logout clears browser token');
-await browser.close();server.close();console.log('Grouped web citations, document upload/search/page inspection, draft-only chat question, saved document citations, deletion and mobile logout passed.');})().catch(e=>{console.log(e);server.close();process.exit(1)});
+await browser.close();server.close();console.log('Prompt PDF attachment, natural document explanation, selected ID transport, removal, grouped web citations, document upload/search/page inspection, draft-only chat question, saved document citations, deletion and mobile logout passed.');})().catch(e=>{console.log(e);server.close();process.exit(1)});

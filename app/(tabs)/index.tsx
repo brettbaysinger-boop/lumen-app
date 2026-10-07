@@ -30,6 +30,8 @@ import {
 import { CameraCapture } from '@/components/CameraCapture';
 import { CompanionPortrait } from '@/components/CompanionPortrait';
 import { DayActionCard } from '@/components/DayActionCard';
+import { DocumentAttachment } from '@/components/DocumentAttachment';
+import { documentRequest, type PrivateDocument } from '@/lib/documents';
 import { DocumentSources } from '@/components/DocumentSources';
 import { WebSources, CitationText } from '@/components/WebSources';
 import { requestKey, type DayItem } from '@/lib/my-day';
@@ -49,7 +51,7 @@ import type { Companion, Conversation, Message } from '@/types/database';
 
 export default function ChatScreen() {
   const { colors } = useTheme();
-  const routeParams = useLocalSearchParams<{ conversation?: string; draft?: string }>();
+  const routeParams = useLocalSearchParams<{ conversation?: string; draft?: string; document?: string }>();
   const turnKey = useRef<{ text: string; id: string } | null>(null);
   const { width: screenWidth } = useWindowDimensions();
   const isMobile = screenWidth < 600;
@@ -62,6 +64,8 @@ export default function ChatScreen() {
   const [activeConversation, setActiveConversation] = useState<Conversation | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
   const [inputText, setInputText] = useState('');
+  const [pendingDocument, setPendingDocument] = useState<PrivateDocument | null>(null);
+  const [documentBusy, setDocumentBusy] = useState(false);
   const [sending, setSending] = useState(false);
   const sendBusyRef = useRef(false);
   const memoryWindowRef = useRef<string | null>(null);
@@ -262,12 +266,29 @@ export default function ChatScreen() {
   useEffect(() => {
     if (routeParams.draft && !sending && !voiceBusy) {
       setInputText(routeParams.draft.slice(0, 64000));
+      if (!routeParams.document && /^Search my documents:/i.test(routeParams.draft)) setPendingDocument(null);
       router.setParams({ draft: '' });
     }
-  }, [routeParams.draft, sending, voiceBusy]);
+  }, [routeParams.draft, routeParams.document, sending, voiceBusy]);
+
+  useEffect(() => {
+    if (!routeParams.document || !companion) return;
+    let active = true;
+    setDocumentBusy(true);
+    documentRequest<PrivateDocument[]>(companion.id).then(documents => {
+      if (!active) return;
+      const selected = documents.find(document => document.id === routeParams.document);
+      if (selected) setPendingDocument(selected);
+      else setError('This document is no longer available.');
+      setDocumentBusy(false);
+      router.setParams({ document: '' });
+    }).catch(error => { if (active) { setError(error.message); setDocumentBusy(false); } });
+    return () => { active = false; };
+  }, [routeParams.document, companion?.id]);
 
   const createConversation = useCallback(async () => {
-    if (!companion || sending || voicePhaseRef.current !== 'idle') return;
+    if (!companion || sending || documentBusy || voicePhaseRef.current !== 'idle') return;
+    setPendingDocument(null);
     const { data, error: err } = await supabase
       .from('conversations')
       .insert({
@@ -285,7 +306,7 @@ export default function ChatScreen() {
     setConversations((prev) => [newConv, ...prev]);
     setActiveConversation(newConv);
     setShowSidebar(false);
-  }, [companion, sending]);
+  }, [companion, sending, documentBusy]);
 
   const attachPhotos = useCallback(async () => {
     setError(null);
@@ -305,7 +326,8 @@ export default function ChatScreen() {
   const sendMessage = useCallback(async () => {
     const userId = session?.user.id;
     if (
-      (!inputText.trim() && !pendingImages.length) ||
+      (!inputText.trim() && !pendingImages.length && !pendingDocument) ||
+      documentBusy ||
       !companion ||
       !userId ||
       sendBusyRef.current ||
@@ -316,7 +338,7 @@ export default function ChatScreen() {
 
     sendBusyRef.current = true;
     memoryWindowRef.current = new Date().toISOString();
-    const text = inputText.trim();
+    const text = inputText.trim() || (pendingDocument ? 'Explain this document in plain language.' : '');
     setPendingQuestion(text);
     setLiveReply('');
     setActivity(`${companion.name} thinking…`);
@@ -324,7 +346,8 @@ export default function ChatScreen() {
     setMemoryQuestions([]);
     if (!turnKey.current || turnKey.current.text !== text) turnKey.current = { text, id: requestKey() };
     const images = pendingImages;
-    const wantsImage = !images.length && isImageRequest(text);
+    const document = pendingDocument;
+    const wantsImage = !document && !images.length && isImageRequest(text);
     setInputText('');
     setPendingImages([]);
     setSending(true);
@@ -360,6 +383,7 @@ export default function ChatScreen() {
             if (event.type === 'reset') setLiveReply('');
           },
           turnKey.current.id,
+          document?.id,
         );
       }
       const { data, error: refreshError } = await supabase
@@ -389,7 +413,7 @@ export default function ChatScreen() {
       setActivity('');
       setCreatingImage(false);
     }
-  }, [inputText, pendingImages, companion, session?.user.id, sending, activeConversation, loadMessages]);
+  }, [inputText, pendingImages, pendingDocument, documentBusy, companion, session?.user.id, sending, activeConversation, loadMessages]);
 
   useEffect(() => {
     if (messages.length > 0) {
@@ -436,7 +460,7 @@ export default function ChatScreen() {
           </View>
         </View>
         <View style={styles.headerStatus}>
-          <TouchableOpacity accessibilityRole="button" accessibilityLabel="Open your documents" disabled={sending || voiceBusy} onPress={() => router.push('/documents')}>
+          <TouchableOpacity accessibilityRole="button" accessibilityLabel="Open your documents" disabled={sending || voiceBusy || documentBusy} onPress={() => router.push('/documents')}>
             <Text style={{color:colors.primary[300],fontSize:12}}>Documents</Text>
           </TouchableOpacity>
           <Text style={styles.statusText}>
@@ -528,6 +552,7 @@ export default function ChatScreen() {
                 item.role === 'user' ? styles.messageBubbleUser : styles.messageBubbleAI,
               ]}
             >
+              {!!item.metadata?.document_title && <Text style={{ color: colors.primary[300], marginBottom: 8 }}>Document: {String(item.metadata.document_title)}</Text>}
               <MessageImages attachments={readAttachments(item.metadata)} colors={colors} />
               <Text
                 style={[
@@ -663,19 +688,41 @@ export default function ChatScreen() {
             <Text style={{ color: colors.primary[300], fontSize: 12 }}>{label}</Text>
           </TouchableOpacity>)}
         </View>}
+        <View style={{ paddingHorizontal: 16, paddingBottom: 6 }}>
+          <View style={{ flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 8 }}>
+            {companion && <DocumentAttachment companionId={companion.id} disabled={sending || voiceBusy || documentBusy || !!pendingImages.length}
+              onSelect={setPendingDocument} onBusy={setDocumentBusy} />}
+            <TouchableOpacity accessibilityRole="button" accessibilityLabel="Open document library" disabled={sending || voiceBusy || documentBusy}
+              onPress={() => router.push('/documents')} style={{ padding: 10 }}>
+              <Text style={{ color: colors.primary[300] }}>Document library</Text>
+            </TouchableOpacity>
+          </View>
+          {pendingDocument && <View style={{ padding: 12, borderRadius: 12, backgroundColor: colors.neutral[900], gap: 8 }}>
+            <Text style={{ color: colors.neutral[100] }}>Using document: {pendingDocument.title}</Text>
+            <Text style={{ color: colors.neutral[400], fontSize: 12 }}>Your next questions use this document. Remove it to return to ordinary chat. Extracted text is saved in your document library.</Text>
+            <View style={{ flexDirection: 'row', gap: 24 }}>
+              <TouchableOpacity accessibilityRole="button" disabled={sending || documentBusy} onPress={() => setInputText('Explain this document in plain language.')}>
+                <Text style={{ color: colors.primary[300] }}>Explain document</Text>
+              </TouchableOpacity>
+              <TouchableOpacity accessibilityRole="button" accessibilityLabel="Remove document from prompt" disabled={sending || documentBusy} onPress={() => setPendingDocument(null)}>
+                <Text style={{ color: colors.neutral[300] }}>Remove</Text>
+              </TouchableOpacity>
+            </View>
+          </View>}
+        </View>
         <View style={styles.inputContainer}>
-          <TouchableOpacity style={styles.inputButton} accessibilityLabel="Search the web" disabled={sending || voiceBusy} onPress={() => setInputText(text => /^search (?:the )?web:/i.test(text) ? text : `Search the web: ${text}`)}>
+          <TouchableOpacity style={styles.inputButton} accessibilityLabel="Search the web" disabled={sending || voiceBusy || documentBusy || !!pendingDocument} onPress={() => setInputText(text => /^search (?:the )?web:/i.test(text) ? text : `Search the web: ${text}`)}>
             <Globe color={colors.primary[400]} size={21} strokeWidth={1.6} />
           </TouchableOpacity>
           <TouchableOpacity
             style={styles.inputButton}
             onPress={attachPhotos}
-            disabled={sending || voiceBusy || pendingImages.length >= 4}
+            disabled={sending || voiceBusy || documentBusy || !!pendingDocument || pendingImages.length >= 4}
             accessibilityLabel="Attach photos"
           >
             <ImagePlus color={sending || voiceBusy ? colors.neutral[500] : colors.primary[400]} size={22} strokeWidth={2} />
           </TouchableOpacity>
-          <TouchableOpacity style={styles.inputButton} accessibilityLabel="Take a photo" disabled={sending || voiceBusy || pendingImages.length >= 4} onPress={() => setShowCamera(true)}>
+          <TouchableOpacity style={styles.inputButton} accessibilityLabel="Take a photo" disabled={sending || voiceBusy || documentBusy || !!pendingDocument || pendingImages.length >= 4} onPress={() => setShowCamera(true)}>
             <Camera color={sending || voiceBusy || pendingImages.length >= 4 ? colors.neutral[500] : colors.primary[400]} size={21} strokeWidth={1.6} />
           </TouchableOpacity>
           <TextInput
@@ -692,7 +739,7 @@ export default function ChatScreen() {
               }
             } } : {})}
             maxLength={64000}
-            editable={!sending && !voiceBusy}
+            editable={!sending && !voiceBusy && !documentBusy}
           />
           <TouchableOpacity
             style={styles.inputButton}
@@ -707,11 +754,11 @@ export default function ChatScreen() {
           <TouchableOpacity
             style={[
               styles.sendButton,
-              ((!inputText.trim() && !pendingImages.length) || sending || voiceBusy) && styles.sendButtonDisabled,
+              ((!inputText.trim() && !pendingImages.length && !pendingDocument) || sending || voiceBusy || documentBusy) && styles.sendButtonDisabled,
             ]}
             accessibilityLabel="Send message"
             onPress={sendMessage}
-            disabled={(!inputText.trim() && !pendingImages.length) || sending || voiceBusy}
+            disabled={(!inputText.trim() && !pendingImages.length && !pendingDocument) || sending || voiceBusy || documentBusy}
           >
             {sending ? (
               <ActivityIndicator size="small" color={colors.neutral[0]} />

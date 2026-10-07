@@ -82,6 +82,7 @@ async def respond(request: RespondRequest, background_tasks: BackgroundTasks, us
                 request.conversation_id,
                 request.message,
                 request.attachments,
+                document_id=str(request.document_id) if request.document_id else None,
             )
         if response.observation_message_id:
             background_tasks.add_task(observe, settings, user.token, response.observation_message_id)
@@ -267,6 +268,7 @@ async def respond_stream(request: RespondRequest, background_tasks: BackgroundTa
                         request.conversation_id,
                         request.message,
                         request.attachments,
+                        document_id=str(request.document_id) if request.document_id else None,
                         emit=queue.put,
                     )
                 if result.observation_message_id:

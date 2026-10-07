@@ -22,6 +22,7 @@ class RespondRequest(BaseModel):
     companion_id: str
     conversation_id: str | None = None
     message: str = Field(min_length=1, max_length=64000)
+    document_id: UUID | None = None
     attachments: list[Attachment] = Field(default_factory=list, max_length=4)
 
 

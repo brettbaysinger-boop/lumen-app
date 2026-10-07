@@ -94,6 +94,7 @@ export async function respondToMessage(
   attachments: MessageAttachment[] = [],
   onEvent?: (event: { type: string; text: string }) => void,
   turnKey?: string,
+  documentId?: string,
 ): Promise<RespondResponse> {
   const baseUrl = process.env.EXPO_PUBLIC_LUMEN_API_URL?.trim().replace(/\/+$/, '');
   if (!baseUrl) {
@@ -105,7 +106,7 @@ export async function respondToMessage(
     const response = await fetch(`${baseUrl}${onEvent && Platform.OS === "web" ? "/v0.2/respond/stream" : "/v0.1/respond"}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', ...await authHeaders() },
-      body: JSON.stringify({ companion_id: companionId, conversation_id: conversationId, message, attachments, timezone: userTimezone(), request_id: turnKey || requestKey() }),
+      body: JSON.stringify({ companion_id: companionId, conversation_id: conversationId, message, attachments, document_id: documentId, timezone: userTimezone(), request_id: turnKey || requestKey() }),
       signal: controller.signal,
     });
     if (onEvent && Platform.OS === 'web' && response.ok) {

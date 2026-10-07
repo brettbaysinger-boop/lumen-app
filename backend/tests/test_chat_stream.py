@@ -67,7 +67,7 @@ class StreamRouteTests(unittest.TestCase):
             with TestClient(app) as client, patch('lumen.main.CognitionRuntime',return_value=runtime):
                 self.assertEqual(client.post('/v0.2/respond/stream',json={'companion_id':'c','message':'hello'}).status_code,404)
             runtime.db.get_companion.return_value={'id':'c'}
-            async def reply(*args, emit):
+            async def reply(*args, emit, document_id=None):
                 await emit({'type':'delta','text':'Hello'})
                 return RespondResponse(conversation_id='chat',message_id='m',content='Hello',model='local',provider='ollama',latency_ms=1,memory_count=0)
             runtime.respond=reply

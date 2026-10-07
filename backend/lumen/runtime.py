@@ -3,7 +3,7 @@ from uuid import uuid4
 from .my_day import handle_action
 from .web_search import web_action
 from .web_research import research_answer
-from .documents import document_action, document_command
+from .documents import document_action, document_command, selected_document
 from .vision import load_images, VisionError
 
 from .config import Settings
@@ -21,13 +21,18 @@ class CognitionRuntime:
         self.provider = OllamaProvider(settings)
 
     async def respond(self, companion_id: str, conversation_id: str | None, user_message: str,
-                      attachments: list[Attachment] | None = None, emit=None) -> RespondResponse:
+                      attachments: list[Attachment] | None = None, emit=None, document_id: str | None = None) -> RespondResponse:
         attachments = attachments or []
+        if document_id and attachments:
+            raise ValueError("Send a document or photos in one turn, rather than both.")
         if any(not a.path.startswith(f"{self.user_id}/") for a in attachments):
             raise ValueError("Attachment not found")
         companion = await self.db.get_companion(companion_id)
         if not companion:
             raise ValueError(f"Companion {companion_id} not found")
+
+        if document_id:
+            await selected_document(self.db, companion_id, document_id)
 
         if conversation_id and not await self.db.get_conversation(conversation_id, companion_id):
             raise ValueError("Conversation not found for this companion")
@@ -77,11 +82,11 @@ class CognitionRuntime:
                     action = {"content": str(exc), "model": "vision-unavailable"}
         else:
             messages.append({"role": "user", "content": user_message})
-            action = await handle_action(self.db, companion_id, conversation_id, user_message,
+            action = None if document_id else await handle_action(self.db, companion_id, conversation_id, user_message,
                 getattr(self, 'timezone', 'UTC'), getattr(self, 'request_key', str(uuid4())), recent=recent)
-            if not action and document_command(user_message) is not None:
+            if not action and (document_id or document_command(user_message) is not None):
                 action = await document_action(self.db, companion_id, user_message, self.provider,
-                    companion.get('conversation_model') or self.settings.conversation_model, emit)
+                    companion.get('conversation_model') or self.settings.conversation_model, emit, document_id=document_id)
             if not action:
                 action = await web_action(user_message)
         is_request, memory_content = memory_request(user_message, companion["name"])
@@ -157,7 +162,8 @@ class CognitionRuntime:
             "companion_id": companion_id,
             "role": "user",
             "content": user_message,
-            "metadata": {"attachments": [a.model_dump() for a in attachments]} if attachments else {},
+            "metadata": {**({"attachments": [a.model_dump() for a in attachments]} if attachments else {}),
+                         **({"document_id": document_id, "document_title": action.get("document_title")} if document_id else {})},
         })
         assistant_row = await self.db.create_message({
             "conversation_id": conversation_id,

@@ -169,3 +169,78 @@ class DocumentRuntime(unittest.IsolatedAsyncioTestCase):
         runtime.provider.generate_stream.assert_not_awaited()
         web.assert_not_awaited()
         self.assertEqual(runtime.db._request.call_count,1)
+
+
+class SelectedDocument(unittest.IsolatedAsyncioTestCase):
+    async def test_generic_explanation_reads_selected_document_without_keyword_search(self):
+        db=Mock(_request=AsyncMock(side_effect=[
+            [{'id':D,'title':'PSU table.pdf','page_count':1}],
+            [{'page':1,'content':'RTX 5070 with Ryzen 7: recommended PSU 750W.'}]]))
+        provider=Mock(generate=AsyncMock(return_value={'content':'The table recommends a PSU. [1]',
+            'model':'selected','latency_ms':1,'tokens_in':1,'tokens_out':1}))
+        result=await document_action(db,C,'Explain the attached document',provider,'selected',document_id=D)
+        self.assertEqual(result['document_title'],'PSU table.pdf')
+        self.assertIn('RTX 5070',str(provider.generate.call_args))
+        self.assertIn('1 of 1 document pages',result['content'])
+        self.assertEqual(db._request.call_args_list[0].kwargs['params']['companion_id'],f'eq.{C}')
+        self.assertTrue(all(call.args[0]=='GET' for call in db._request.call_args_list))
+
+    async def test_unavailable_document_rejected_before_page_read_and_model(self):
+        db=Mock(_request=AsyncMock(return_value=[]));provider=Mock(generate=AsyncMock())
+        with self.assertRaises(ValueError):
+            await document_action(db,C,'Explain this',provider,'model',document_id=D)
+        self.assertEqual(db._request.call_count,1);provider.generate.assert_not_awaited()
+
+    async def test_selected_document_excerpts_are_bounded_and_relevant(self):
+        db=Mock(_request=AsyncMock(side_effect=[
+            [{'id':D,'title':'Manual.pdf','page_count':10}],
+            [{'page':i,'content':('Warranty covers five years.' if i==10 else 'Introduction and overview. ')*200} for i in range(1,11)]]))
+        provider=Mock(generate=AsyncMock(return_value={'content':'Warranty lasts five years. [1]',
+            'model':'local','latency_ms':1,'tokens_in':1,'tokens_out':1}))
+        result=await document_action(db,C,'What does the warranty cover?',provider,'model',document_id=D)
+        self.assertEqual(result['document_sources'][0]['page'],10)
+        self.assertLessEqual(len(result['document_sources']),6)
+        self.assertTrue(all(len(source['excerpt'])<=2000 for source in result['document_sources']))
+
+    def test_request_validates_document_id(self):
+        from lumen.schemas import RespondRequest
+        from pydantic import ValidationError
+        with self.assertRaises(ValidationError):
+            RespondRequest(companion_id=C,message='Explain',document_id='bad-id')
+
+
+class SelectedDocumentRuntime(unittest.IsolatedAsyncioTestCase):
+    async def test_selected_document_chat_persists_attachment_and_page_sources(self):
+        from lumen.runtime import CognitionRuntime
+        from types import SimpleNamespace
+        settings=Settings(supabase_url='http://db',supabase_service_role_key='service',
+                          ollama_url='http://ollama',conversation_model='default')
+        runtime=CognitionRuntime(settings,'owner-token','owner')
+        runtime.db=Mock(get_companion=AsyncMock(return_value={'name':'Lumen','conversation_model':'selected'}),
+            get_conversation=AsyncMock(return_value={'id':'conversation'}), get_state=AsyncMock(return_value={}),
+            get_relevant_memories=AsyncMock(return_value=[{'subject':'user','content':'PRIVATE-MEMORY'}]),
+            get_recent_messages=AsyncMock(return_value=[{'role':'user','content':'PRIVATE-HISTORY'}]),
+            get_profile=AsyncMock(return_value={}), create_message=AsyncMock(side_effect=[{'id':'u'},{'id':'a'}]),
+            touch_conversation=AsyncMock(), _request=AsyncMock(side_effect=[
+                [{'id':D,'title':'Warranty','page_count':2}],
+                [{'id':D,'title':'Warranty','page_count':2}],
+                [{'page':2,'content':'Parts covered for five years.'}]]))
+        runtime.provider=SimpleNamespace(name='ollama',generate=AsyncMock(return_value={
+            'content':'Parts are covered for five years. [1]','model':'selected','latency_ms':5,
+            'tokens_in':10,'tokens_out':15}),generate_stream=AsyncMock())
+        with patch('lumen.runtime.handle_action',AsyncMock(return_value=None)), \
+             patch('lumen.runtime.web_action',AsyncMock()) as web:
+            result=await runtime.respond(C,'conversation','Explain this document',emit=AsyncMock(),document_id=D)
+        metadata=runtime.db.create_message.call_args_list[1].args[0]['metadata']
+        self.assertEqual(metadata['document_sources'][0]['page'],2)
+        self.assertEqual(result.model,'selected')
+        self.assertIsNone(result.observation_message_id)
+        self.assertEqual(runtime.provider.generate.call_args.args[0],'selected')
+        for private in ['PRIVATE-MEMORY','PRIVATE-HISTORY','owner-token']:
+            self.assertNotIn(private,str(runtime.provider.generate.call_args))
+        runtime.provider.generate_stream.assert_not_awaited()
+        web.assert_not_awaited()
+        self.assertEqual(runtime.db._request.call_count,3)
+        user_metadata=runtime.db.create_message.call_args_list[0].args[0]['metadata']
+        self.assertEqual(user_metadata['document_id'],D)
+        self.assertEqual(user_metadata['document_title'],'Warranty')

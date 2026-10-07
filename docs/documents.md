@@ -1,15 +1,27 @@
 # Private document imports
 
-This Take 2 checkpoint adds a **Your documents** screen, accessible from the
-conversation header and Settings. Import a PDF with selectable text, UTF-8 TXT,
+Use **Attach document** immediately above the chat prompt to import a PDF/TXT/MD
+file. Its filename appears in the prompt, with Explain document and Remove controls.
+Press Send to ask a natural question about that selected file. Empty text defaults
+to a plain-language explanation. Attachment/import never sends a chat message
+automatically. Extracted text is saved in the private document library.
+
+**Document library** beside the attachment control opens **Your documents**, also
+accessible from the conversation header and Settings. Each imported file has an
+**Explain this document** button that selects it and prepares a chat draft.
+Import a PDF with selectable text, UTF-8 TXT,
 or Markdown file, search its extracted text, and open a result's source page.
 Phone and desktop browsers support the file picker. Native app imports are not
 included in this release.
 
 **Ask companion** prepares `Search my documents: QUESTION` in the conversation
 draft. Press Send to ask the selected local conversation model to answer from
-matching excerpts with numbered document and page references. Ordinary chat does
-not silently search documents. `Ask my documents: QUESTION` also works.
+matching excerpts with numbered document and page references.
+Ordinary chat without a selected document does
+not silently search documents. A selected document remains active for follow-up
+questions until removed, a new conversation is created, or the chat screen reloads.
+The user-message history records its document title and ID.
+`Ask my documents: QUESTION` also works.
 No matches produces an explicit message rather than an invented answer.
 
 ## Storage and ownership
@@ -46,7 +58,7 @@ search; web queries use the separately configured search provider.
 | Pages | Up to 100 per document |
 | Extracted text | Up to 50,000 characters per page; 1,000,000 per document |
 | Query | 2–500 characters |
-| Retrieved excerpts | Up to 5 |
+| Retrieved excerpts | Up to 5 across-library search results; 6 for a selected document |
 | Search chunks | 2,000 characters, overlapping by 200 |
 | Extraction worker | 512 MiB address space, 15 CPU seconds, 25-second wall deadline |
 
@@ -60,6 +72,14 @@ Search uses PostgreSQL English full-text ranking with OR matching between query
 terms. It is lexical retrieval, not embeddings or semantic search. Specific
 words from the document work best; unrelated excerpts may rank when a question
 contains common terms. There is no filesystem crawl or connected drive access.
+
+Selected-file questions bypass the full-text search requirement: the server checks
+that the document belongs to the requested companion, reads its saved pages, and
+supplies up to six 2,000-character excerpts to the selected local model. Distinct
+question words rank chunks; generic explanations can use the initial chunks. This
+is bounded excerpt review, not a guaranteed whole-document summary. The reply
+states how many excerpts and pages were used. Empty/irrelevant excerpts must not
+be presented as complete coverage. Photos and a document cannot share one turn.
 
 PDF extraction runs in a separate bounded process using pypdf. It reads uploaded
 bytes and does not execute embedded scripts or follow document links. This is a
@@ -91,12 +111,15 @@ The existing backup script includes the new public tables automatically.
 
 Verify on the host:
 
-1. Import a small selectable-text PDF or TXT file through Your documents.
-2. Search a distinctive phrase; open the source page and check its number/text.
-3. Ask companion, confirm the draft, then Send; inspect the cited page.
-4. Reload and confirm the answer and source cards persist.
-5. Reimport the same file; confirm it is recognized as already imported.
-6. Delete the import; confirm search no longer returns its text.
+1. Use Attach document at the chat prompt to import a small selectable-text PDF.
+   Confirm the filename appears and nothing sends automatically.
+2. Click Explain document, then Send; inspect its page reference.
+3. Use Document library to reopen the saved file through Explain this document.
+4. Search a distinctive phrase; open the source page and check its number/text.
+5. Ask companion, confirm the draft, then Send; inspect the cited page.
+6. Reload and confirm the answer and source cards persist.
+7. Reimport the same file; confirm it is recognized as already imported.
+8. Delete the import; confirm search no longer returns its text.
 
 If reverting application code, retain the document tables unless intentionally
 removing user data. Dropping the migration's tables is destructive.

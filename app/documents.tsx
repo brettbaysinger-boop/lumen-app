@@ -74,6 +74,7 @@ export default function DocumentsScreen() {
     {documents.map(doc=><View key={doc.id} style={{padding:16,borderRadius:12,backgroundColor:c.neutral[900],gap:8}}>
       <Text style={{color:c.neutral[100]}}>{doc.title}</Text>
       <Text style={{color:c.neutral[400]}}>{doc.page_count} page{doc.page_count===1?'':'s'} · {doc.kind}</Text>
+      {button('Explain this document',()=>router.dismissTo({pathname:'/',params:{document:doc.id,draft:'Explain this document in plain language.'}}))}
       {deleting===doc.id ? <View style={{flexDirection:'row',gap:24}}>{button('Delete extracted text',()=>void remove(doc.id))}{button('Keep document',()=>setDeleting(''))}</View>
         : button(`Delete ${doc.title}`,()=>setDeleting(doc.id))}
     </View>)}
