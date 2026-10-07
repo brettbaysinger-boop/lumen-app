@@ -75,7 +75,10 @@ The remaining requested capabilities are not implemented yet:
   during companion speech. Start with an open-app mode; closed-app/background
   listening requires platform-specific work. Do not use continuous cloud speech
   recognition for the self-hosted default.
-- Internet tools: optional search and page retrieval through a configurable
+- Internet tools: explicit local SearXNG search with saved source cards is
+  implemented in the next checkpoint (`docs/web-search.md`). Full page retrieval,
+  answer synthesis from retrieved pages, download workflows, and camera vision
+  remain future work. The target is optional search and page retrieval through a configurable
   provider (self-hosted search supported), cited results, download review for
   printable CAD/STL files, and local vision for camera questions. Web content
   must remain untrusted tool data, without access to authentication secrets or

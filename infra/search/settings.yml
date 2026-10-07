@@ -1,0 +1,8 @@
+use_default_settings: true
+server:
+  limiter: false
+  secret_key: "overridden-by-SEARXNG_SECRET"
+search:
+  formats:
+    - html
+    - json

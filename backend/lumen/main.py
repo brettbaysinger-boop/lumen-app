@@ -32,6 +32,7 @@ from .images import (
 from .voice import router as voice_router
 from .my_day import router as my_day_router
 from .support import router as support_router
+from .web_search import router as web_router
 
 settings = get_settings()
 runtime = CognitionRuntime(settings)
@@ -40,6 +41,7 @@ app = FastAPI(title="Lumen Cognition API", version="0.1.0")
 app.include_router(voice_router)
 app.include_router(my_day_router)
 app.include_router(support_router)
+app.include_router(web_router)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origins,

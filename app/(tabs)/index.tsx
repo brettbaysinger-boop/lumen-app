@@ -25,10 +25,12 @@ import {
   ImagePlus,
   PanelLeft,
   Camera,
+  Globe,
 } from 'lucide-react-native';
 import { CameraCapture } from '@/components/CameraCapture';
 import { CompanionPortrait } from '@/components/CompanionPortrait';
 import { DayActionCard } from '@/components/DayActionCard';
+import { WebSources } from '@/components/WebSources';
 import { requestKey, type DayItem } from '@/lib/my-day';
 import { router, useLocalSearchParams, useFocusEffect } from 'expo-router';
 import { supabase } from '@/lib/supabase';
@@ -532,6 +534,7 @@ export default function ChatScreen() {
                 {item.content}
               </Text>
               {item.role === 'assistant' && item.metadata?.my_day_item != null && <DayActionCard item={item.metadata.my_day_item as DayItem} />}
+              {item.role === 'assistant' && item.metadata?.web_search != null && <WebSources value={item.metadata.web_search} />}
               {item.role === 'assistant' && item.metadata?.timings_ms != null && (
                 <View>
                   <TouchableOpacity onPress={() => setExpandedActivity(expandedActivity === item.id ? null : item.id)}>
@@ -644,6 +647,9 @@ export default function ChatScreen() {
           disabled={sending}
         />
         <View style={styles.inputContainer}>
+          <TouchableOpacity style={styles.inputButton} accessibilityLabel="Search the web" disabled={sending || voiceBusy} onPress={() => setInputText(text => /^search (?:the )?web:/i.test(text) ? text : `Search the web: ${text}`)}>
+            <Globe color={colors.primary[400]} size={21} strokeWidth={1.6} />
+          </TouchableOpacity>
           <TouchableOpacity
             style={styles.inputButton}
             onPress={attachPhotos}

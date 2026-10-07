@@ -1,6 +1,7 @@
 import { SocialSignIn } from '@/components/SocialSignIn';
 import { ModelPicker } from '@/components/ModelPicker';
 import { SupportEntry } from '@/components/SupportEntry';
+import { signOutThisBrowser } from '@/lib/sign-out';
 import { useState, useCallback, useEffect, useMemo } from 'react';
 import {
   View,
@@ -189,8 +190,8 @@ export default function SettingsScreen() {
           <Text style={styles.configLabel}>{session?.user.user_metadata?.display_name || session?.user.user_metadata?.full_name || session?.user.user_metadata?.name || 'User'}</Text>
           <Text style={styles.configSubtext}>{session?.user.email}</Text>
           <TouchableOpacity onPress={async () => {
-            const { error } = await supabase.auth.signOut();
-            setAccountError(error?.message || null);
+            try { await signOutThisBrowser(); }
+            catch (error) { setAccountError(error instanceof Error ? error.message : 'Could not clear this device’s session.'); }
           }}><Text style={{ color: c.primary[300], paddingVertical: 16, fontFamily: 'Inter-Regular' }}>Sign out</Text></TouchableOpacity>
           <Text style={styles.configSubtext}>Connect another sign-in to this account to keep your companion and memories.</Text>
           <SupportEntry />

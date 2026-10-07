@@ -31,6 +31,7 @@ class Settings(BaseSettings):
     speech_voice: str = "af_heart"
     support_admin_user_ids: str = ""
     support_recovery_redirect_url: str = ""
+    web_search_url: str = ""
 
     # Image generation provider. Keep the endpoint configurable so image
     # generation is a capability, not a hard-coded physical machine.
