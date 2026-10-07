@@ -59,18 +59,19 @@ class SearchRoutes(unittest.TestCase):
         for query in [' ','x'*501]:self.assertEqual(self.client.post(f'/v0.5/web/companions/{C}/search',json={'query':query}).status_code,422)
 
 class WebAction(unittest.IsolatedAsyncioTestCase):
-    async def test_chat_search_persists_sources_without_model_or_memory_extraction(self):
+    async def test_chat_search_persists_sources_and_research_without_memory_extraction(self):
         from lumen.runtime import CognitionRuntime
         from types import SimpleNamespace
-        settings=SimpleNamespace(ollama_url='http://local',supabase_url='http://db',supabase_service_role_key='test',memory_observations_enabled=True)
+        settings=SimpleNamespace(ollama_url='http://local',supabase_url='http://db',supabase_service_role_key='test',memory_observations_enabled=True,conversation_model='chat')
         runtime=CognitionRuntime(settings,'token','owner')
         runtime.db=Mock(get_companion=AsyncMock(return_value={'id':C,'name':'Lumen'}),get_conversation=AsyncMock(return_value={'id':C}),
             get_state=AsyncMock(return_value={}),get_relevant_memories=AsyncMock(return_value=[]),get_recent_messages=AsyncMock(return_value=[]),get_profile=AsyncMock(return_value={}),
             create_message=AsyncMock(side_effect=[{'id':'user-message'},{'id':'assistant-message'}]),touch_conversation=AsyncMock())
         runtime.provider=SimpleNamespace(name='ollama',generate=AsyncMock(),generate_stream=AsyncMock())
         results={'query':'dinner','sources':[{'number':1,'title':'Recipe','url':'https://example.com','snippet':'A recipe'}],'warnings':[],'provider':'searxng'}
-        with patch('lumen.web_search.search_web',AsyncMock(return_value=results)):
+        with patch('lumen.web_search.search_web',AsyncMock(return_value=results)), patch('lumen.runtime.research_answer',AsyncMock(return_value=None)) as research:
             response=await runtime.respond(C,C,'Search the web: dinner')
+        research.assert_awaited_once()
         self.assertEqual(response.model,'web-search');self.assertIsNone(response.observation_message_id)
         metadata=runtime.db.create_message.call_args.args[0]['metadata'];self.assertEqual(metadata['web_search'],results)
         runtime.provider.generate.assert_not_awaited();runtime.provider.generate_stream.assert_not_awaited()

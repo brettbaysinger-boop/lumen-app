@@ -76,8 +76,9 @@ The remaining requested capabilities are not implemented yet:
   listening requires platform-specific work. Do not use continuous cloud speech
   recognition for the self-hosted default.
 - Internet tools: explicit local SearXNG search with saved source cards is
-  implemented in the next checkpoint (`docs/web-search.md`). Full page retrieval,
-  answer synthesis from retrieved pages and download workflows remain future work.
+  implemented (`docs/web-search.md`). The research checkpoint reads bounded public
+  page excerpts and synthesizes cited answers (`docs/web-research.md`). Whole-page
+  coverage and download workflows remain future work.
   Local photo understanding is connected for selected models reporting vision
   capability; see `docs/vision.md`. The target is optional search and page retrieval through a configurable
   provider (self-hosted search supported), cited results, download review for

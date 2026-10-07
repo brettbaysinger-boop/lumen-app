@@ -12,13 +12,13 @@ not included. SearXNG forwards searches to external engines; this is not offline
 search. Its configured providers receive search terms. Sources and queries are
 saved in the user's existing owner-scoped conversation.
 
-This first release returns up to six title/snippet/link results, with clickable
-source cards. It does not read full articles, summarize retrieved pages with an
-LLM, download files, execute STL/CAD assets, or identify photos. Partial-engine
-failures are indicated. Snippets may be incomplete or inaccurate; linked pages
-remain untrusted external content. The source service supplies rankings; Lumen
-does not establish authority from ranking alone. Camera vision is the next
-separate capability.
+The current chat checkpoint answers from bounded public page excerpts and search
+snippets with clickable numbered citations. Source cards say whether an excerpt
+was read or only a snippet was available. See `web-research.md` for retrieval,
+network safeguards, model grounding limits, and installation. The raw search
+endpoint continues to return up to six title/snippet/link results only. Search
+rankings alone do not establish authority. File downloads and CAD/STL execution
+remain future work; photo understanding is documented in `vision.md`.
 
 ## Install
 

@@ -30,7 +30,7 @@ import {
 import { CameraCapture } from '@/components/CameraCapture';
 import { CompanionPortrait } from '@/components/CompanionPortrait';
 import { DayActionCard } from '@/components/DayActionCard';
-import { WebSources } from '@/components/WebSources';
+import { WebSources, CitationText } from '@/components/WebSources';
 import { requestKey, type DayItem } from '@/lib/my-day';
 import { router, useLocalSearchParams, useFocusEffect } from 'expo-router';
 import { supabase } from '@/lib/supabase';
@@ -351,7 +351,7 @@ export default function ChatScreen() {
             : 'I wanted to share this photo with you.'),
           attachments,
           (event) => {
-            if (event.type === 'activity') setActivity(`${companion.name} thinking…`);
+            if (event.type === 'activity') setActivity(event.text || `${companion.name} thinking…`);
             if (event.type === 'delta') {
               setActivity(`${companion.name} thinking…`);
               setLiveReply(reply => reply + event.text);
@@ -531,7 +531,9 @@ export default function ChatScreen() {
                   item.role === 'user' ? styles.messageTextUser : styles.messageTextAI,
                 ]}
               >
-                {item.content}
+                {item.role === 'assistant' && item.metadata?.web_search
+                  ? <CitationText content={item.content} value={item.metadata.web_search} />
+                  : item.content}
               </Text>
               {item.role === 'assistant' && item.metadata?.my_day_item != null && <DayActionCard item={item.metadata.my_day_item as DayItem} />}
               {item.role === 'assistant' && item.metadata?.web_search != null && <WebSources value={item.metadata.web_search} />}
