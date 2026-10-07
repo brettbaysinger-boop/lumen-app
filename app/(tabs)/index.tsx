@@ -37,6 +37,7 @@ import { respondToMessage, generateImage, isImageRequest } from '@/lib/cognition
 import { pickImages, uploadImage, removeStoredFiles, MediaError, type PickedImage } from '@/lib/media';
 import { MessageImages, PendingAttachments, readAttachments } from '@/components/ChatAttachments';
 import { recordMicrophone, transcribeRecording, playReply, type RecordingHandle } from '@/lib/voice';
+import { ConversationList, type ConversationListHandle } from '@/components/ConversationList';
 import { useTheme } from '@/lib/theme-context';
 import { Spacing, Radius, Typography, type ExtendedThemeColors } from '@/lib/theme';
 import { StateGlow } from '@/components/StateGlow';
@@ -73,7 +74,7 @@ export default function ChatScreen() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [showSidebar, setShowSidebar] = useState(false);
-  const flatListRef = useRef<FlatList<Message>>(null);
+  const flatListRef = useRef<ConversationListHandle>(null);
   const [voicePhase, setVoicePhase] = useState<'idle' | 'starting' | 'recording' | 'transcribing'>('idle');
   const [playingId, setPlayingId] = useState<string | null>(null);
   const voicePhaseRef = useRef(voicePhase);
@@ -492,7 +493,7 @@ export default function ChatScreen() {
         </TouchableOpacity>
       )}
 
-      <FlatList
+      <ConversationList
         ref={flatListRef}
         data={messages}
         ListFooterComponent={sending ? <View style={{ gap: 12, padding: 16 }}>

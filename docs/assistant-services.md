@@ -19,6 +19,22 @@ The goal is for the companion to help naturally.
 
 ### Post-deployment priorities (October 6)
 
+The next browser patch fixes a reproduced ten-message rendering ceiling in the
+conversation list. A thirty-message fixture loaded all rows from the database,
+but FlatList displayed only its initial ten rows. Disabling virtualization alone
+did not resolve it. Browser conversations now use a bounded ScrollView for all
+loaded messages, while native clients retain FlatList. Verification covers all
+thirty messages, continuing to send in the same conversation, reloading, a
+390-pixel mobile viewport, and reaching the earliest message. Composer bounds
+remain inside the viewport. This fixes display/rendering, not model context.
+Very large histories still need paginated loading to avoid rendering an entire
+archive at once and to work beyond the database response page limit.
+
+Browser regression: export web with review-only localhost API configuration,
+then run `node scripts/test-chat-scroll.cjs` with Playwright installed in the
+test environment, or set `LUMEN_PLAYWRIGHT_MODULE` to its installed module path.
+The script uses mocked authentication/database/API responses, not a live LAN.
+
 Long-message and speech fixes are implemented in the next patch: composer and
 API prompts accept 64,000 characters, generated replies have a configurable
 8,192-token ceiling, and foreground generation/request timeouts allow longer
