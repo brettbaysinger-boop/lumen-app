@@ -1,8 +1,10 @@
+import type { DocumentSource } from './documents';
 import { authHeaders } from './auth';
 export type DayKind = 'task' | 'reminder' | 'note' | 'list' | 'project' | 'goal';
 export interface DayItem {
  id: string; companion_id: string; kind: DayKind; title: string; body: string;
  checklist: { text: string; done: boolean }[]; status: 'open' | 'done' | 'archived';
+ source_documents?: DocumentSource[];
  due_at: string | null; timezone: string; source_conversation_id: string | null; created_at: string;
 }
 export interface DayAlert { id: string; item_id: string; title: string; due_at: string; seen_at: string | null }

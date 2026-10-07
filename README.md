@@ -270,6 +270,7 @@ Start here, then use the specialized documents for detail:
 - `docs/image-generation.md` — local image generation and visual identity
 - `docs/chat-and-natural-memory.md` — streaming chat and natural memory
 - `docs/documents.md` — private PDF/text imports, search, and page references
+- `docs/document-actions.md` — reviewed document checklists, notes and follow-up reminders
 - `docs/web-research.md` — public web excerpts and cited answers
 - `docs/model-picker.md` — companion conversation-model selection
 - `docs/social-login.md` — local Supabase social authentication

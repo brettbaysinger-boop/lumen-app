@@ -546,7 +546,13 @@ requires HTTPS.
 
 Private PDF/TXT/Markdown import, lexical retrieval, and cited page references are
 implemented on the Take 2 feature line; see `docs/documents.md`. Original files
-are not retained. Live deployment verification is pending for this increment.
+are not retained. Mobile Tailscale PDF/photo understanding was verified at
+`ea6a562` and tagged `lumen-take2-mobile-documents-20261006`.
+
+Reviewed document-to-checklist/note/follow-up drafts are now implemented on the
+feature line, with source pages, explicit Save, reminder time selection, and
+Undo/Restore. See `docs/document-actions.md`. Local checks passed; deployment
+host verification of this new action increment remains pending.
 
 Further multimodal work includes:
 

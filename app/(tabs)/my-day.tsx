@@ -3,6 +3,7 @@ import { View, Text, ScrollView, Pressable, TextInput, Modal, ActivityIndicator,
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { Plus, Search, Check, Circle } from 'lucide-react-native';
+import { DocumentSources } from '@/components/DocumentSources';
 import { useTheme } from '@/lib/theme-context';
 import { useAuth } from '@/lib/auth';
 import { useCompanion } from '@/hooks/useCompanion';
@@ -81,6 +82,7 @@ export default function MyDayScreen() {
   <View style={{flexDirection:'row',justifyContent:'space-between'}}><Pressable onPress={()=>setShowDone(!showDone)}><Text style={{color:c.primary[300],fontSize:12}}>{showDone?'Show open items':'Show completed / archived'}</Text></Pressable><Pressable onPress={()=>void load()}><Text style={{color:c.neutral[400],fontSize:12}}>{loading?'Loading…':'Refresh'}</Text></Pressable></View>
   {visible.map(item=><View key={item.id} style={{backgroundColor:c.neutral[900],borderWidth:1,borderColor:c.neutral[800],borderRadius:18,padding:18,gap:12}}>
    <View style={{flexDirection:'row',gap:12,alignItems:'flex-start'}}><Pressable disabled={busy} accessibilityLabel={`${item.status==='open'?'Complete':'Reopen'} ${item.title}`} onPress={()=>void change(item,{status:item.status==='open'?'done':'open'})} style={{padding:4}}>{item.status==='done'?<Check size={20} color={c.primary[400]}/>:<Circle size={20} color={c.neutral[400]}/>}</Pressable><View style={{flex:1}}><Text style={{color:c.primary[300],fontSize:10,letterSpacing:1}}>{item.kind.toUpperCase()} · {item.status.toUpperCase()}</Text><Text style={{...textStyle,fontSize:18,lineHeight:25,marginTop:8}}>{item.title}</Text></View></View>
+   {!!item.source_documents?.length&&<DocumentSources value={item.source_documents} companionId={item.companion_id}/>}
    {!!item.body&&<Text style={{color:c.neutral[300],lineHeight:23}}>{item.body}</Text>}
    {!!item.due_at&&<Text style={{color:new Date(item.due_at).getTime()<Date.now()&&item.status==='open'?c.warning[300]:c.neutral[400],fontSize:12}}>{new Date(item.due_at).getTime()<Date.now()&&item.status==='open'?'Due · ':''}{new Date(item.due_at).toLocaleString()}</Text>}
    {item.checklist.map((check,index)=><Pressable key={index} disabled={busy} accessibilityRole="checkbox" accessibilityState={{checked:check.done}} onPress={()=>void change(item,{checklist:item.checklist.map((row,i)=>i===index?{...row,done:!row.done}:row)})} style={{flexDirection:'row',gap:10,paddingVertical:5}}>{check.done?<Check color={c.primary[400]} size={18}/>:<Circle color={c.neutral[400]} size={18}/>}<Text style={{color:check.done?c.neutral[500]:c.neutral[200],textDecorationLine:check.done?'line-through':'none',flex:1}}>{check.text}</Text></Pressable>)}

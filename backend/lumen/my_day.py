@@ -29,6 +29,14 @@ class CheckItem(BaseModel):
     done: bool = False
 
 
+class DocumentSource(BaseModel):
+    number: int = Field(ge=1,le=6)
+    document_id: UUID
+    title: str = Field(min_length=1,max_length=180)
+    page: int = Field(ge=1,le=100)
+    excerpt: str = Field(max_length=2000)
+
+
 class DayItemCreate(BaseModel):
     kind: Kind
     title: str = Field(min_length=1, max_length=300)
@@ -38,6 +46,7 @@ class DayItemCreate(BaseModel):
     timezone: str = Field(default='UTC', max_length=100)
     request_key: UUID
     source_conversation_id: UUID | None = None
+    source_documents: list[DocumentSource] = Field(default_factory=list,max_length=6)
 
     _timezone = field_validator('timezone')(valid_timezone)
 
@@ -93,6 +102,10 @@ async def companion_db(companion_id: str, user: AuthUser):
 async def create_item(db, companion_id: str, payload: DayItemCreate):
     if payload.source_conversation_id and not await db.get_conversation(str(payload.source_conversation_id), companion_id):
         raise HTTPException(404, 'Conversation not found.')
+    for source in payload.source_documents:
+        rows = await db._request('GET','documents',params={'id':f'eq.{source.document_id}',
+            'companion_id':f'eq.{companion_id}','select':'id','limit':'1'})
+        if not rows: raise HTTPException(404,'A source document is unavailable for this companion.')
     data = payload.model_dump(mode='json')
     rows = await db._request('POST', 'my_day_items', params={'on_conflict': 'companion_id,request_key'},
         headers={'Prefer': 'resolution=ignore-duplicates,return=representation'}, json={**data,'companion_id': companion_id})

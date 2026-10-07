@@ -117,6 +117,12 @@ the companion. Deleting an import removes its indexed text, while prior quoted
 chat replies remain. See `docs/documents.md` for limits and deployment. OCR,
 semantic document search and connected drives remain future work.
 
+Document action drafts now offer review/edit/save controls for source-linked
+checklists, notes and follow-up reminders. Drafting does not save an item;
+reminders require a user-selected future time. Saved items retain page references
+and support Undo/Restore. See `docs/document-actions.md` for persistence, ownership
+checks and deployment; host verification of this increment remains pending.
+
 ### Remember what matters
 
 Example:

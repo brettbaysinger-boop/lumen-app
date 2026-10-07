@@ -30,6 +30,7 @@ import {
 import { CameraCapture } from '@/components/CameraCapture';
 import { CompanionPortrait } from '@/components/CompanionPortrait';
 import { DayActionCard } from '@/components/DayActionCard';
+import { DocumentActionDraft } from '@/components/DocumentActionDraft';
 import { DocumentAttachment } from '@/components/DocumentAttachment';
 import { documentRequest, type PrivateDocument } from '@/lib/documents';
 import { DocumentSources } from '@/components/DocumentSources';
@@ -567,6 +568,7 @@ export default function ChatScreen() {
               </Text>
               {item.role === 'assistant' && item.metadata?.my_day_item != null && <DayActionCard item={item.metadata.my_day_item as DayItem} />}
               {item.role === 'assistant' && item.metadata?.web_search != null && <WebSources value={item.metadata.web_search} />}
+              {item.role === 'assistant' && item.metadata?.document_action_draft != null && <DocumentActionDraft value={item.metadata.document_action_draft} companionId={item.companion_id} messageId={item.id} />}
               {item.role === 'assistant' && item.metadata?.document_sources != null && <DocumentSources value={item.metadata.document_sources} companionId={item.companion_id} />}
               {item.role === 'assistant' && item.metadata?.timings_ms != null && (
                 <View>
@@ -715,6 +717,10 @@ export default function ChatScreen() {
               <TouchableOpacity accessibilityRole="button" accessibilityLabel="Remove document from prompt" disabled={sending || documentBusy} onPress={() => setPendingDocument(null)}>
                 <Text style={{ color: colors.neutral[300] }}>Remove</Text>
               </TouchableOpacity>
+            </View>
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 20 }}>
+              {[['Draft checklist','Create a preparation checklist from this document.'],['Draft note','Draft a note with the important details and exclusions from this document.'],['Draft follow-up','Draft a follow-up reminder about this document.']].map(([label,prompt]) =>
+                <TouchableOpacity key={label} accessibilityRole="button" disabled={sending || documentBusy} onPress={()=>setInputText(prompt)}><Text style={{color:colors.primary[300]}}>{label}</Text></TouchableOpacity>)}
             </View>
           </View>}
         </View>

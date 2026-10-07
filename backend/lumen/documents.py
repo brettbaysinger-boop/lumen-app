@@ -14,6 +14,7 @@ from .config import get_settings
 from .db import SupabaseRepository
 from .citations import normalize_citations
 from .document_extract import MAX_UPLOAD
+from .document_actions import action_kind, prepare_draft
 
 router = APIRouter(prefix='/v0.6/documents', tags=['private-documents'])
 
@@ -158,6 +159,11 @@ async def document_action(db, companion_id, text, provider, model, emit=None, do
     if not hits:
         return {'content':'No matching document text was found. Upload a document or try specific words from it.','model':'document-search'}
     sources = [{'number':i+1,'document_id':hit['document_id'],'title':hit['title'],'page':hit['page'],'excerpt':hit['content']} for i,hit in enumerate(hits[:6])]
+    kind = action_kind(query)
+    if kind:
+        result = await prepare_draft(provider, model, query, sources, kind)
+        if document: result['document_title'] = document['title']
+        return result
     fallback = 'Here are matching document excerpts:\n\n' + '\n\n'.join(f"[{s['number']}] {s['title']} · page {s['page']}\n{s['excerpt']}" for s in sources)
     try:
         answer = await provider.generate(model,[{'role':'system','content':
