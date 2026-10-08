@@ -63,3 +63,10 @@ calendar appointments are separate delivery milestones, not implied features.
 - A camera attachment is not understood until a vision provider actually runs.
 - Facial animation, consciousness, and proactive personality do not substitute
   for correct scheduling, retrieval, or clear user control.
+
+## Ongoing-goal increment
+
+Workstream #8 now includes practice setup, linked chat sessions, saved progress,
+vocabulary and next steps. Host verification is pending. Recurring delivery,
+multilingual speech and milestones remain separate increments. The direct-JSON
+fast-note fix has been verified and tagged by the user.

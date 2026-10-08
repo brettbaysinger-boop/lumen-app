@@ -465,6 +465,7 @@ export default function ChatScreen() {
           <TouchableOpacity accessibilityRole="button" accessibilityLabel="Open your documents" disabled={sending || voiceBusy || documentBusy} onPress={() => router.push('/documents')}>
             <Text style={{color:colors.primary[300],fontSize:12}}>Documents</Text>
           </TouchableOpacity>
+          <TouchableOpacity accessibilityRole="button" accessibilityLabel="Open goals and practice" disabled={sending || voiceBusy} onPress={()=>router.push({pathname:'/goals',params:{goal:activeConversation?.goal_item_id||''}})}><Text style={{color:colors.primary[300],fontSize:12}}>Practice</Text></TouchableOpacity>
           <Text style={styles.statusText}>
             {sending ? 'Thinking…' : 'Conversation'}
           </Text>

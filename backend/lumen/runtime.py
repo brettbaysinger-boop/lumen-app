@@ -1,6 +1,7 @@
 import logging
 from uuid import uuid4
 from .my_day import handle_action
+from .goals import practice_context
 from .web_search import web_action
 from .web_research import research_answer
 from .documents import document_action, document_command, selected_document
@@ -34,7 +35,8 @@ class CognitionRuntime:
         if document_id:
             await selected_document(self.db, companion_id, document_id)
 
-        if conversation_id and not await self.db.get_conversation(conversation_id, companion_id):
+        conversation = await self.db.get_conversation(conversation_id, companion_id) if conversation_id else None
+        if conversation_id and not conversation:
             raise ValueError("Conversation not found for this companion")
         if not conversation_id:
             conversation = await self.db.create_conversation(
@@ -51,8 +53,11 @@ class CognitionRuntime:
         profile = await self.db.get_profile(self.user_id) if getattr(self, "user_id", None) else None
         system = self._build_system_prompt(companion, state, memories, profile)
         messages = [{"role": "system", "content": system}]
-        for message in reversed(recent):
-            messages.append({"role": message["role"], "content": message["content"]})
+        practice = bool(conversation and conversation.get("goal_item_id"))
+        if practice:
+            messages.append(await practice_context(self.db,companion_id,conversation))
+        for message in reversed(recent[:8] if practice else recent):
+            messages.append({"role": message["role"], "content": message["content"][:1500] if practice else message["content"]})
         vision_used = False
         action = None
         if attachments:
@@ -179,7 +184,7 @@ class CognitionRuntime:
         await self.db.touch_conversation(conversation_id, 2)
 
         observation_message_id = None
-        if not attachments and not action and memory_status == "none" and getattr(self.settings, "memory_observations_enabled", False) is True:
+        if not practice and not attachments and not action and memory_status == "none" and getattr(self.settings, "memory_observations_enabled", False) is True:
             try:
                 await self.db._request("POST", "memory_observations",
                     headers={"Prefer": "resolution=ignore-duplicates"},

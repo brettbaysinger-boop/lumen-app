@@ -123,4 +123,4 @@ Note drafting now requests `think:false` to reserve output for JSON on models
 that permit disabling thinking, and uses a title/body-only schema. Safe response
 metrics (content length, token count, completion reason) and validation error
 codes identify empty/truncated output or rejected fields without logging source
-text or model content. This change requires another host verification.
+text or model content. On October 7, the user verified the direct-JSON note fix at `63e3e62`, reported a major speed improvement, and pushed the branch and `lumen-take2-note-json-20261007` tag. The speed gain is user-reported, not a measured benchmark.

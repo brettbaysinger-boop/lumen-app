@@ -36,3 +36,14 @@
   rebuild with the user's existing `.env` before local deployment.
 - Live reminder delivery, actual Supabase migrations, Ollama chat, Helios, native
   hardware, and closed-app push have not been exercised on the user's machines.
+
+## Goals & practice checkpoint
+
+182 backend tests pass. Goal checks cover scopes, profiles, explicit finish,
+idempotency, bounded context and suppressed automatic observations. Actual SQL
+migrations verify start/resume atomicity, immutable preference snapshots,
+completion/new sessions, privacy and deletion. Mobile-sized production-export
+checks cover goal setup, linked draft chat, resume, failed finish/retry and saved
+progress reload. Host tutoring/voice quality is not established by these tests.
+
+On October 7, the user verified the direct-JSON note fix at `63e3e62`, reported a major speed improvement, and pushed the branch and `lumen-take2-note-json-20261007` tag. The speed gain is user-reported, not a measured benchmark.

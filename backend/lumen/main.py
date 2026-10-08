@@ -35,6 +35,7 @@ from .support import router as support_router
 from .web_search import router as web_router
 from .documents import router as document_router
 from .document_actions import router as document_action_router
+from .goals import router as goals_router
 
 settings = get_settings()
 runtime = CognitionRuntime(settings)
@@ -46,6 +47,7 @@ app.include_router(support_router)
 app.include_router(web_router)
 app.include_router(document_router)
 app.include_router(document_action_router)
+app.include_router(goals_router)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origins,

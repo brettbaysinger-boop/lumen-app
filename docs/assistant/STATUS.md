@@ -9,7 +9,7 @@
 | 5 | Help when stuck | Work on it together sends saved context into a chat draft | Saved step-by-step work sessions and progress updates |
 | 6 | Use the camera practically | Mobile HTTPS camera, microphone, local vision routing and photo understanding verified by user | OCR and richer layout extraction |
 | 7 | Communication help | Existing model can draft/rehearse; notes persist drafts | Draft workflow, revisions, optional confirmed external sending |
-| 8 | Ongoing goals | Project/goal records and checklist progress | Sessions, milestones, lessons, routine scheduling |
+| 8 | Ongoing goals | Projects/goals, practice preferences, linked sessions and explicit saved progress | Milestones, multilingual speech, routine scheduling |
 | 9 | Find own information | Private PDF/text import, cited answers/page inspection, prompt attachment and library access | Semantic retrieval, OCR, connected drives |
 | 10 | Shared fun | Existing persistent conversations, creative prompts, project/goal notes | Story/session bookmarks and repeatable activities |
 
@@ -31,11 +31,21 @@ below were reported by the user, not performed directly from this workspace.
 
 ## Next work
 
-- Verify the updated note shortcut on the host after rebuilding the web export.
-- A later short-note attempt failed again; the earlier success does not establish
-  reliability. The note-only schema/thinking-mode follow-up and safe diagnostics
-  require host verification. See `../document-actions.md`.
+- The direct-JSON note fix was subsequently verified fast and working by the user
+  at `63e3e62`, then pushed/tagged. See `../document-actions.md`.
+- Goals & practice is implemented and locally checked; host verification of goal
+  setup, tutoring, progress saving and next-session continuity is pending.
 - Improve reliability across more real documents/models; retain citation checks.
-- Continue goals/routines and saved work sessions.
+- Extend practice into milestones and routine delivery after host verification.
 - Closed-app reminder delivery, recurring schedules, calendars and wake-word
   activation remain future increments, not features of this checkpoint.
+
+## Latest ongoing-goal increment
+
+Goals & practice provides goal preferences, one open linked chat per goal,
+explicit progress/correction/vocabulary notes, and bounded prior-session context.
+Spanish presets support everyday or customer conversations. Duration and cadence
+are preferences, not timers or scheduled notifications. See
+`../goals-and-practice.md`.
+
+On October 7, the user verified the direct-JSON note fix at `63e3e62`, reported a major speed improvement, and pushed the branch and `lumen-take2-note-json-20261007` tag. The speed gain is user-reported, not a measured benchmark.

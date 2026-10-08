@@ -28,6 +28,7 @@ export interface Companion {
 }
 
 export interface Conversation {
+  goal_item_id?: string | null;
   id: string;
   companion_id: string;
   title: string;

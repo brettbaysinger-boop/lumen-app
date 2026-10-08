@@ -735,3 +735,15 @@ The system should increasingly be able to:
 
 The repo, not any individual chat session, should remain the authoritative
 record of what is implemented and what comes next.
+
+## October 7 evening checkpoint — ongoing goals
+
+On October 7, the user verified the direct-JSON note fix at `63e3e62`, reported a major speed improvement, and pushed the branch and `lumen-take2-note-json-20261007` tag. The speed gain is user-reported, not a measured benchmark.
+
+Workstream #8 now has Goals & practice: level/focus/time/rhythm preferences,
+atomic session/chat creation, resume, explicit progress/corrections/vocabulary and
+next-step notes, and bounded continuity into a new session. Local backend, SQL
+and mobile-sized browser checks cover persistence and ownership; actual host
+verification is pending. See `docs/goals-and-practice.md`. Recurring notifications,
+multilingual speech evaluation, milestones and full-course semantic recall remain
+future work.

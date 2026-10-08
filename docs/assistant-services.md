@@ -567,3 +567,13 @@ API and Supabase gateway, preserving the existing Google callback. The web servi
 serves the exported build. Camera and microphone permissions can be requested
 from the HTTPS app on mobile; see `docs/tailnet-https.md` for installation and
 actual-device verification.
+
+### October 7: ongoing practice and fast-note checkpoint
+
+On October 7, the user verified the direct-JSON note fix at `63e3e62`, reported a major speed improvement, and pushed the branch and `lumen-take2-note-json-20261007` tag. The speed gain is user-reported, not a measured benchmark.
+
+Goals & practice now links a My Day goal to focused chat sessions and explicitly
+saved progress, corrections, vocabulary and next steps. New sessions use bounded
+prior notes and user-selected practice preferences. Spanish is the first preset.
+Cadence does not schedule notifications; minutes do not run a timer. Host
+verification of this new increment is pending; see `docs/goals-and-practice.md`.

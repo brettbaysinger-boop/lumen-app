@@ -24,10 +24,12 @@ October 7 checkpoint: the user verified Google login across local/LAN/Tailscale,
 mobile HTTPS microphone/camera/photo understanding, web research, photo/PDF
 attachment analysis, and document actions. Checklist generation, note
 review/edit/save to My Day, and a scheduled follow-up reminder were confirmed.
-Draft note now uses the verified short three-detail prompt. See
+The direct-JSON note fix at `63e3e62` was verified working with a major reported
+speed improvement and pushed/tagged. Goals & practice now adds saved preferences,
+linked practice chats and explicit progress notes; host verification is pending. See
 `docs/assistant/STATUS.md` for remaining work.
 
-Current local verification: 174 backend tests, TypeScript validation, clean web
+Current local verification: 182 backend tests, TypeScript validation, clean web
 export, and document-action database/browser checks. Deployment reports and
 automated checks are recorded separately in `docs/assistant/VALIDATION.md`.
 
@@ -282,6 +284,7 @@ Start here, then use the specialized documents for detail:
 - `docs/chat-and-natural-memory.md` — streaming chat and natural memory
 - `docs/documents.md` — private PDF/text imports, search, and page references
 - `docs/document-actions.md` — reviewed document checklists, notes and follow-up reminders
+- `docs/goals-and-practice.md` — goal setup, Spanish practice sessions and saved progress
 - `docs/web-research.md` — public web excerpts and cited answers
 - `docs/model-picker.md` — companion conversation-model selection
 - `docs/social-login.md` — local Supabase social authentication
