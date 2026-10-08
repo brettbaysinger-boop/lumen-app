@@ -71,3 +71,13 @@ working eggs capture/list read. These inputs now have regression coverage. The
 fix also guards generated list/note save claims and replaces unrelated-memory
 fallbacks with a no-save reply. Local checks: 200 backend tests, typecheck and
 clean web export. The user reported the fix working on October 8 at `6e1260e`; no new migration.
+
+## October 8: help when stuck
+
+Workstream #5 adds editable small-step drafts from explicit chat requests. Saving
+creates a My Day project; the card shows one unfinished step with durable
+completion and reload continuity. Duplicate completions cannot advance the next
+step. No timer, automatic scheduling, or external work is performed.
+Local checks: 207 backend tests, typecheck, clean web export, migration/RPC privacy
+and persistence checks, and a mobile-sized mocked browser flow. Actual-device
+and local-model testing are pending. See `../getting-unstuck.md`.

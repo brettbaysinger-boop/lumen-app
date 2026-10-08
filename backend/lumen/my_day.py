@@ -39,6 +39,7 @@ class DocumentSource(BaseModel):
 
 class DayItemCreate(BaseModel):
     kind: Kind
+    step_mode: bool = False
     title: str = Field(min_length=1, max_length=300)
     body: str = Field(default='', max_length=12000)
     checklist: list[CheckItem] = Field(default_factory=list, max_length=100)
@@ -58,6 +59,8 @@ class DayItemCreate(BaseModel):
 
     @model_validator(mode='after')
     def check_schedule(self):
+        if self.step_mode and self.kind != 'project':
+            raise ValueError('Small-step mode requires a project.')
         if self.kind == 'reminder' and self.due_at is None:
             raise ValueError('Choose a reminder date and time.')
         if self.due_at and self.due_at.tzinfo is None:
@@ -308,3 +311,25 @@ async def handle_action(db, companion_id, conversation_id, text, zone, request_k
     if item.get('due_at'):
         detail=' for '+datetime.fromisoformat(item['due_at'].replace('Z','+00:00')).astimezone(ZoneInfo(zone)).strftime('%b %d at %I:%M %p')+' ('+zone+')'
     return {'content':f"Saved your {item['kind']}: {item['title']}{detail}. You can edit, complete, or undo it in My Day.",'item':item}
+
+class StepFinish(BaseModel):
+    index: int = Field(ge=0, le=99)
+    text: str = Field(min_length=1, max_length=300)
+
+@router.get('/companions/{companion_id}/items/{item_id}')
+async def get_item(companion_id: UUID, item_id: UUID, user: AuthUser = Depends(require_user)):
+    db = await companion_db(str(companion_id),user)
+    rows = await db._request('GET','my_day_items',params={'id':f'eq.{item_id}','companion_id':f'eq.{companion_id}','limit':'1'})
+    if not rows: raise HTTPException(404,'Item not found.')
+    return rows[0]
+
+@router.post('/companions/{companion_id}/items/{item_id}/step')
+async def finish_step(companion_id: UUID, item_id: UUID, payload: StepFinish, user: AuthUser = Depends(require_user)):
+    db = await companion_db(str(companion_id),user)
+    try:
+        rows = await db._request('POST','rpc/finish_small_step',json={'p_companion_id':str(companion_id),
+            'p_item_id':str(item_id),'p_index':payload.index,'p_text':payload.text})
+    except Exception:
+        raise HTTPException(409,'Could not confirm progress. Reload this plan before retrying.')
+    if not rows: raise HTTPException(404,'Small-step plan not found.')
+    return rows[0]

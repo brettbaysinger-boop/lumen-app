@@ -31,6 +31,7 @@ import { CameraCapture } from '@/components/CameraCapture';
 import { CompanionPortrait } from '@/components/CompanionPortrait';
 import { PracticeSavedCard } from '@/components/PracticeSavedCard';
 import { DayActionCard } from '@/components/DayActionCard';
+import { UnstuckDraft } from '@/components/UnstuckDraft';
 import { DocumentActionDraft } from '@/components/DocumentActionDraft';
 import { DocumentAttachment } from '@/components/DocumentAttachment';
 import { documentRequest, type PrivateDocument } from '@/lib/documents';
@@ -571,6 +572,7 @@ export default function ChatScreen() {
               {item.role === 'assistant' && item.metadata?.goal_session != null && <PracticeSavedCard value={item.metadata.goal_session}/> }
               {item.role === 'assistant' && item.metadata?.my_day_item != null && <DayActionCard item={item.metadata.my_day_item as DayItem} />}
               {item.role === 'assistant' && item.metadata?.web_search != null && <WebSources value={item.metadata.web_search} />}
+              {item.role === 'assistant' && item.metadata?.unstuck_draft != null && <UnstuckDraft value={item.metadata.unstuck_draft} companionId={item.companion_id} messageId={item.id}/> }
               {item.role === 'assistant' && item.metadata?.document_action_draft != null && <DocumentActionDraft value={item.metadata.document_action_draft} companionId={item.companion_id} messageId={item.id} />}
               {item.role === 'assistant' && item.metadata?.document_sources != null && <DocumentSources value={item.metadata.document_sources} companionId={item.companion_id} />}
               {item.role === 'assistant' && item.metadata?.timings_ms != null && (

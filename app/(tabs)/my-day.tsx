@@ -3,6 +3,7 @@ import { View, Text, ScrollView, Pressable, TextInput, Modal, ActivityIndicator,
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { Plus, Search, Check, Circle } from 'lucide-react-native';
+import { SmallStepCard } from '@/components/SmallStepCard';
 import { DocumentSources } from '@/components/DocumentSources';
 import { useTheme } from '@/lib/theme-context';
 import { useAuth } from '@/lib/auth';
@@ -76,7 +77,7 @@ export default function MyDayScreen() {
   </View>
   <View style={{backgroundColor:c.neutral[900],padding:16,borderRadius:14,gap:8}}>
    <Text style={{...textStyle,fontSize:16}}>Capture from chat</Text>
-   <Text style={{color:c.neutral[300],lineHeight:23}}>Try “add milk, eggs to my shopping list”, “save a gift idea: a book for Sarah”, or “take a note: ask about the warranty”. Then edit or check off your items here.</Text>
+   <Text style={{color:c.neutral[300],lineHeight:23}}>Try “add milk, eggs to my shopping list”, “save a gift idea: a book for Sarah”, or “take a note: ask about the warranty”. Then edit or check off your items here. Feeling stuck? Try “help me get unstuck: my desk is covered in paperwork”.</Text>
    <Pressable accessibilityRole="button" onPress={()=>router.push('/')}><Text style={{color:c.primary[300]}}>Open conversation</Text></Pressable>
   </View>
   <View style={{gap:10}}><Text style={{...textStyle,fontSize:16}}>Find something you saved</Text><View style={{flexDirection:'row',gap:8,alignItems:'center'}}><TextInput accessibilityLabel="Search your information" placeholder="Movie, recommendation, note…" placeholderTextColor={c.neutral[500]} value={query} onChangeText={setQuery} onSubmitEditing={()=>void search()} style={[field,{flex:1,minWidth:0}]}/><Pressable accessibilityLabel="Search saved information" onPress={()=>void search()} style={{padding:12}}>{searching?<ActivityIndicator color={c.primary[400]}/>:<Search color={c.primary[400]} size={20}/>}</Pressable></View>
@@ -90,9 +91,10 @@ export default function MyDayScreen() {
    <View style={{flexDirection:'row',gap:12,alignItems:'flex-start'}}><Pressable disabled={busy} accessibilityLabel={`${item.status==='open'?'Complete':'Reopen'} ${item.title}`} onPress={()=>void change(item,{status:item.status==='open'?'done':'open'})} style={{padding:4}}>{item.status==='done'?<Check size={20} color={c.primary[400]}/>:<Circle size={20} color={c.neutral[400]}/>}</Pressable><View style={{flex:1}}><Text style={{color:c.primary[300],fontSize:10,letterSpacing:1}}>{item.kind.toUpperCase()} · {item.status.toUpperCase()}</Text><Text style={{...textStyle,fontSize:18,lineHeight:25,marginTop:8}}>{item.title}</Text></View></View>
    {item.kind==='goal'&&<Pressable accessibilityRole="button" onPress={()=>router.push({pathname:'/goals',params:{goal:item.id}})}><Text style={{color:c.primary[300]}}>Practice this goal</Text></Pressable>}
    {!!item.source_documents?.length&&<DocumentSources value={item.source_documents} companionId={item.companion_id}/>}
+   {item.step_mode&&<SmallStepCard item={item} onChange={value=>setItems(previous=>previous.map(row=>row.id===value.id?value:row))}/>}
    {!!item.body&&<Text style={{color:c.neutral[300],lineHeight:23}}>{item.body}</Text>}
    {!!item.due_at&&<Text style={{color:new Date(item.due_at).getTime()<Date.now()&&item.status==='open'?c.warning[300]:c.neutral[400],fontSize:12}}>{new Date(item.due_at).getTime()<Date.now()&&item.status==='open'?'Due · ':''}{new Date(item.due_at).toLocaleString()}</Text>}
-   {item.checklist.map((check,index)=><Pressable key={index} disabled={busy} accessibilityRole="checkbox" accessibilityState={{checked:check.done}} onPress={()=>void change(item,{checklist:item.checklist.map((row,i)=>i===index?{...row,done:!row.done}:row)})} style={{flexDirection:'row',gap:10,paddingVertical:5}}>{check.done?<Check color={c.primary[400]} size={18}/>:<Circle color={c.neutral[400]} size={18}/>}<Text style={{color:check.done?c.neutral[500]:c.neutral[200],textDecorationLine:check.done?'line-through':'none',flex:1}}>{check.text}</Text></Pressable>)}
+   {!item.step_mode&&item.checklist.map((check,index)=><Pressable key={index} disabled={busy} accessibilityRole="checkbox" accessibilityState={{checked:check.done}} onPress={()=>void change(item,{checklist:item.checklist.map((row,i)=>i===index?{...row,done:!row.done}:row)})} style={{flexDirection:'row',gap:10,paddingVertical:5}}>{check.done?<Check color={c.primary[400]} size={18}/>:<Circle color={c.neutral[400]} size={18}/>}<Text style={{color:check.done?c.neutral[500]:c.neutral[200],textDecorationLine:check.done?'line-through':'none',flex:1}}>{check.text}</Text></Pressable>)}
    <View style={{flexDirection:'row',flexWrap:'wrap',gap:20}}><Pressable onPress={()=>edit(item)}><Text style={{color:c.primary[300],fontSize:12}}>Edit / reschedule</Text></Pressable><Pressable onPress={()=>router.push({pathname:'/',params:{draft:`Help me work on this ${item.kind}: ${item.title}.\n${item.body}\n${item.checklist.filter(x=>!x.done).map(x=>x.text).join('\n')}\nLet's choose one small next step.`}})}><Text style={{color:c.primary[300],fontSize:12}}>Work on it together</Text></Pressable><Pressable disabled={busy} onPress={()=>void change(item,{status:item.status==='archived'?'open':'archived'})}><Text style={{color:c.neutral[400],fontSize:12}}>{item.status==='archived'?'Restore':'Archive'}</Text></Pressable></View>
   </View>)}
   {!visible.length&&!loading&&<Text style={{color:c.neutral[400],lineHeight:24}}>Nothing here yet. Add an item, or tell {companion?.name||'your companion'}: “add a task: call the mechanic”.</Text>}

@@ -1,6 +1,7 @@
 import logging
 from uuid import uuid4
 from .my_day import handle_action
+from .unstuck import unstuck_action, unstuck_request
 from .goals import practice_context
 from .goal_actions import save_practice,save_session_request
 from .web_search import web_action
@@ -92,6 +93,9 @@ class CognitionRuntime:
             if not document_id and save_session_request(user_message,companion["name"]):
                 action = await save_practice(self.db,companion_id,conversation,user_message,self.provider,
                 companion.get("conversation_model") or self.settings.conversation_model,companion["name"],emit)
+            if not action and not document_id and unstuck_request(user_message,companion["name"]) is not None:
+                action = await unstuck_action(user_message,companion["name"],self.provider,
+                    companion.get("conversation_model") or self.settings.conversation_model)
             if not action:
                 action = None if document_id else await handle_action(self.db, companion_id, conversation_id, user_message,
                 getattr(self, 'timezone', 'UTC'), getattr(self, 'request_key', str(uuid4())), recent=recent, companion_name=companion["name"])
@@ -183,7 +187,7 @@ class CognitionRuntime:
             "tokens_in": result["tokens_in"],
             "tokens_out": result["tokens_out"],
             "latency_ms": result["latency_ms"],
-            "metadata": {"provider": self.provider.name, "runtime": "v0.1", "memory_status": memory_status, "memory_subject": saved_subject, "timings_ms": result.get("timings_ms", {}), "my_day_item": action.get("item") if action else None, "pending_reminder": action.get("pending_reminder") if action else None, "web_search": action.get("web_search") if action else None, "goal_session": action.get("goal_session") if action else None, "goal_summary_method": action.get("goal_summary_method") if action else None, "vision_used": vision_used, "document_sources": action.get("document_sources") if action else None, "document_action_draft": action.get("document_action_draft") if action else None},
+            "metadata": {"provider": self.provider.name, "runtime": "v0.1", "memory_status": memory_status, "memory_subject": saved_subject, "timings_ms": result.get("timings_ms", {}), "my_day_item": action.get("item") if action else None, "unstuck_draft": action.get("unstuck_draft") if action else None, "pending_reminder": action.get("pending_reminder") if action else None, "web_search": action.get("web_search") if action else None, "goal_session": action.get("goal_session") if action else None, "goal_summary_method": action.get("goal_summary_method") if action else None, "vision_used": vision_used, "document_sources": action.get("document_sources") if action else None, "document_action_draft": action.get("document_action_draft") if action else None},
         })
         await self.db.touch_conversation(conversation_id, 2)
 
