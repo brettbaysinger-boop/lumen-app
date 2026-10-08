@@ -48,9 +48,9 @@ Python or JavaScript runtime dependencies are needed.
 Local verification: 198 backend tests, TypeScript validation, clean web export,
 and `node scripts/test-capture-sql.cjs`. Database tests cover persisted appends,
 retry receipts, invalid-input rollback, ambiguous names, completed-list isolation,
-cross-companion rejection and owner/anonymous access. Actual-device validation
-for this increment is pending; browser visual behavior has not been separately
-verified for this increment.
+cross-companion rejection and owner/anonymous access. After deploying `6e1260e`, the user reported the corrected capture flow working
+on October 8. This is user-reported deployment verification. Browser visual
+behavior has not been separately checked by automation for this increment.
 
 On mobile: add milk, then eggs; show the list; open My Day and check off milk;
 reload; add a gift idea and a quick note; verify both persist after reloading.
@@ -63,4 +63,4 @@ read did work. Regression checks now cover the three exact input forms and their
 persisted receipts. Generated “added” and “taken a note” claims are checked, and
 repeated unsupported save claims produce a no-save response rather than dumping
 unrelated memories. Missing gift/note content asks for clarification. The fix
-requires no migration; host retesting is pending.
+requires no migration. On October 8, the user reported that the fix worked.
