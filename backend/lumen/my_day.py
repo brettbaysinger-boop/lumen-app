@@ -195,6 +195,22 @@ def parse_action(text: str, zone: str, now: datetime | None = None):
         else: return {'clarify':'When should I remind you? Try “remind me tomorrow at 9 am to call the mechanic” or “remind me in 30 minutes to stretch”.'}
         if due<=local: return {'clarify':'That time has already passed. Choose a future time.'}
         return {'kind':'reminder','title':title,'due_at':due.isoformat(),'timezone':zone}
+    # Explicit capture commands preserve the user's words; no model inference.
+    match = re.fullmatch(r'(?:add|put) (.+?) (?:to|on) my (.{1,80}?) list[.!]?', text, re.I | re.S)
+    if match:
+        title = match[2].strip().rstrip('.!').capitalize() + ' list'
+        return {'append_list': True, 'kind': 'list', 'title': title,
+                'checklist': [{'text': part.strip(), 'done': False} for part in match[1].split(',') if part.strip()]}
+    match = re.fullmatch(r'(?:show|read) (?:me )?my (.{1,80}?) list[?.!]*', text, re.I)
+    if match:
+        return {'read': 'list', 'title': match[1].strip().capitalize() + ' list'}
+    match = re.fullmatch(r'(?:save|add) (?:a |this )?gift idea\s*:\s*(.+)', text, re.I | re.S)
+    if match:
+        return {'append_list': True, 'kind': 'list', 'title': 'Gift ideas list',
+                'checklist': [{'text': match[1].strip(), 'done': False}]}
+    match = re.fullmatch(r'(?:remember this|take a note)\s*:\s*(.+)', text, re.I | re.S)
+    if match:
+        return {'kind': 'note', 'title': match[1].strip()[:90], 'body': match[1].strip()}
     patterns=[('task',r'add (?:a )?task\s*:\s*(.+)'),('note',r'(?:save|add) (?:a )?note\s*:\s*(.+)'),
               ('list',r'(?:make|create) (?:a )?(shopping|packing|.+?) list\s*:\s*(.+)'),
               ('project',r'(?:start|create) (?:a )?project\s*:\s*(.+)'),('goal',r'(?:set|create) (?:a )?goal\s*:\s*(.+)')]
@@ -235,6 +251,18 @@ async def handle_action(db, companion_id, conversation_id, text, zone, request_k
     if not command: return None
     if 'clarify' in command:
         return {'content':command['clarify'],'item':None,'pending_reminder':{'text':text,'expires_at':(datetime.now(timezone.utc)+timedelta(minutes=30)).isoformat()}}
+    if command.get('read') == 'list':
+        rows = await db._request('GET', 'my_day_items', params={
+            'companion_id': f'eq.{companion_id}', 'kind': 'eq.list', 'status': 'eq.open',
+            'order': 'created_at.desc', 'limit': '500'})
+        matches = [row for row in rows if row['title'].casefold() == command['title'].casefold()]
+        if len(matches) > 1:
+            return {'content': 'More than one open list has that name. Rename one in My Day so I can choose the right list.', 'item': None}
+        if not matches:
+            return {'content': 'No open list with that name was found. Add an item to create it, or check My Day for completed lists.', 'item': None}
+        item = matches[0]
+        lines = [f"• {'✓' if row['done'] else '○'} {row['text']}" for row in item['checklist']]
+        return {'content': item['title'] + ':\n' + ('\n'.join(lines) or 'This list is empty.'), 'item': None}
     if command.get('read')=='agenda':
         rows=await db._request('GET','my_day_items',params={'companion_id':f'eq.{companion_id}','status':'eq.open','order':'due_at.asc.nullslast,created_at.desc','limit':'50'})
         lines=[]
@@ -246,10 +274,21 @@ async def handle_action(db, companion_id, conversation_id, text, zone, request_k
         rows=await db._request('POST','rpc/search_my_information',json={'p_companion_id':companion_id,'p_query':command['query']})
         return {'content':'Here are matching saved sources:\n'+'\n'.join(f"• [{r['kind']}; source {r['id']}] {r['content']}" for r in rows) if rows else 'I couldn’t find a matching saved source. Try a shorter search phrase.','item':None}
     try:
-        payload=DayItemCreate(**command,request_key=request_key,source_conversation_id=conversation_id)
+        payload=DayItemCreate(**{k:v for k,v in command.items() if k != 'append_list'},request_key=request_key,source_conversation_id=conversation_id)
     except ValueError:
         return {'content':'That item is too long or incomplete. Shorten it or add it from My Day.','item':None}
-    item=await create_item(db,companion_id,payload)
+    if command.get('append_list'):
+        try:
+            rows = await db._request('POST', 'rpc/capture_list_items', json={
+                'p_companion_id': companion_id, 'p_conversation_id': conversation_id,
+                'p_request_key': request_key, 'p_title': payload.title,
+                'p_items': [row.model_dump() for row in payload.checklist]})
+            if not rows: raise RuntimeError('No saved list returned')
+            item = rows[0]
+        except Exception:
+            return {'content': 'I couldn’t confirm that list update. Check My Day before retrying. If more than one open list has that name, rename one first.', 'item': None}
+    else:
+        item=await create_item(db,companion_id,payload)
     detail=''
     if item.get('due_at'):
         detail=' for '+datetime.fromisoformat(item['due_at'].replace('Z','+00:00')).astimezone(ZoneInfo(zone)).strftime('%b %d at %I:%M %p')+' ('+zone+')'

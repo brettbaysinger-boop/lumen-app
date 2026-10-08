@@ -57,3 +57,11 @@ Typecheck and clean web export pass. The goals browser test adds completed-note
 edits and saved chat receipt/reload/navigation to the prior manual flow.
 
 On October 7, the user verified goal setup, practice, progress saving and continuity at `946b017`. After deploying `1006343`, the user reported that everything was working well, confirming the practice chat-save checkpoint. This is user-reported deployment verification; automated coverage is recorded separately.
+
+## October 8: everyday capture
+
+Explicit chat commands now append to named open lists, save gift ideas and capture
+quick notes in My Day. Saved cards expose the captured text and link to editing.
+Owner-scoped atomic appends retain retry receipts and reject ambiguous list names.
+Local verification: 198 backend tests, typecheck, clean web export and capture SQL
+checks. This increment awaits actual-device testing. See `../everyday-capture.md`.

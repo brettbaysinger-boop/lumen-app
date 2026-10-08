@@ -10,11 +10,14 @@ export function DayActionCard({ item }: { item: DayItem }) {
  return <View style={{ backgroundColor: c.neutral[900], borderColor: c.neutral[700], borderWidth: 1, borderRadius: 14, padding: 16, gap: 10, marginTop: 14 }}>
   <Text style={{ color: c.primary[300], fontSize: 11 }}>{item.kind.toUpperCase()} · {undone ? 'ARCHIVED' : 'SAVED'}</Text>
   <Text style={{ color: c.neutral[100], fontSize: 15 }}>{item.title}</Text>
+  {!!item.body && <Text style={{ color: c.neutral[300], lineHeight: 22 }}>{item.body}</Text>}
+  {item.checklist?.map((row, index) => <Text key={index} style={{ color: c.neutral[300], lineHeight: 22 }}>{row.done ? '✓' : '○'} {row.text}</Text>)}
+  {item.kind === 'list' && <Text style={{ color: c.neutral[400], fontSize: 11 }}>Saved list snapshot. Open My Day for the current list. Archive hides the whole list.</Text>}
   {!!item.due_at && <Text style={{ color: c.neutral[400], fontSize: 12 }}>{new Date(item.due_at).toLocaleString(undefined, { timeZone: item.timezone })} · {item.timezone}</Text>}
   {!!item.source_documents?.length && <DocumentSources value={item.source_documents} companionId={item.companion_id} />}
   {!!error && <Text style={{ color: c.error[300], fontSize: 12 }}>{error}</Text>}
   <View style={{ flexDirection: 'row', gap: 20 }}><Pressable onPress={() => router.push({ pathname: '/my-day', params: { item: item.id } })}><Text style={{ color: c.primary[300], fontSize: 12 }}>Open My Day</Text></Pressable>
-   <Pressable disabled={busy} onPress={async () => { setBusy(true); setError(''); try { await updateDayItem(item.companion_id, item.id, { status: undone ? 'open' : 'archived' }); setUndone(!undone); } catch { setError('Could not change this item. Open My Day to retry.'); } finally { setBusy(false); } }}><Text style={{ color: c.neutral[400], fontSize: 12 }}>{busy ? 'Saving…' : undone ? 'Restore' : 'Undo'}</Text></Pressable>
+   <Pressable disabled={busy} onPress={async () => { setBusy(true); setError(''); try { await updateDayItem(item.companion_id, item.id, { status: undone ? 'open' : 'archived' }); setUndone(!undone); } catch { setError('Could not change this item. Open My Day to retry.'); } finally { setBusy(false); } }}><Text style={{ color: c.neutral[400], fontSize: 12 }}>{busy ? 'Saving…' : undone ? 'Restore' : item.kind === 'list' ? 'Archive list' : 'Undo'}</Text></Pressable>
   </View>
  </View>;
 }

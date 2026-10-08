@@ -31,7 +31,7 @@ linked practice chats and explicit progress notes, verified by the user at
 the user reported this increment working after deploying `1006343`. See
 `docs/assistant/STATUS.md` for remaining work.
 
-Current local verification: 192 backend tests, TypeScript validation, clean web
+Current local verification: 198 backend tests, TypeScript validation, clean web
 export, and document-action database/browser checks. Deployment reports and
 automated checks are recorded separately in `docs/assistant/VALIDATION.md`.
 
@@ -312,3 +312,11 @@ As Lumen grows, preserve these boundaries:
 
 See `ROADMAP.md` for what is implemented, what is awaiting integration, and
 what comes next.
+
+## October 8: everyday capture
+
+Explicit chat commands now append to named open lists, save gift ideas and capture
+quick notes in My Day. Saved cards expose the captured text and link to editing.
+Owner-scoped atomic appends retain retry receipts and reject ambiguous list names.
+Local verification: 198 backend tests, typecheck, clean web export and capture SQL
+checks. This increment awaits actual-device testing. See `docs/everyday-capture.md`.

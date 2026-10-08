@@ -588,3 +588,11 @@ confirmed. Repeated saves reuse the record. Completed notes can be edited in
 Goals & practice. Summarization failure uses labeled excerpts; failed writes do
 not report success. Session notes remain separate from long-term memories.
 See `goals-and-practice.md`.
+
+## October 8: everyday capture
+
+Explicit chat commands now append to named open lists, save gift ideas and capture
+quick notes in My Day. Saved cards expose the captured text and link to editing.
+Owner-scoped atomic appends retain retry receipts and reject ambiguous list names.
+Local verification: 198 backend tests, typecheck, clean web export and capture SQL
+checks. This increment awaits actual-device testing. See `everyday-capture.md`.

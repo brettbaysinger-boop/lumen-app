@@ -58,3 +58,11 @@ Session summaries are generated only after explicit save intent. Save receipts
 follow confirmed writes; failed summarization uses labeled literal excerpts.
 192 backend tests pass, with mobile-sized browser coverage for editing and saved
 receipts. No new migration is required.
+
+## October 8: everyday capture
+
+Explicit chat commands now append to named open lists, save gift ideas and capture
+quick notes in My Day. Saved cards expose the captured text and link to editing.
+Owner-scoped atomic appends retain retry receipts and reject ambiguous list names.
+Local verification: 198 backend tests, typecheck, clean web export and capture SQL
+checks. This increment awaits actual-device testing. See `../everyday-capture.md`.
