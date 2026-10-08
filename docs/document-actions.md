@@ -40,7 +40,10 @@ while memory extraction keeps its existing defaults. A draft with invalid JSON
 or source citations gets one concise retry; valid fenced JSON is accepted.
 Transport failures do not retry automatically. Failure messages distinguish
 format/reference failures from model service errors and timeouts. API logs record
-only model, attempt and exception type, without document contents or model output.
+only model, attempt, draft kind, validation stage and exception type, without
+document contents or model output. Notes use a separate short-body schema with
+only title and body required; their optional checklist must be empty. Note retries
+ask for cited notes rather than checklist steps.
 The draft
 prompt treats document text as untrusted reference data, prohibits invented
 procedures and commitments, and requests only source-supported steps. Existing

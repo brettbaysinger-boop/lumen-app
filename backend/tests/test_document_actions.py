@@ -20,6 +20,23 @@ DRAFT={'title':'Prepare for the job','body':'Check access for the foundation wor
        'checklist':[{'text':'Confirm access to the foundation. [1]','done':True}]}
 
 class Generation(unittest.IsolatedAsyncioTestCase):
+    async def test_note_uses_note_schema_and_accepts_title_body_without_checklist(self):
+        provider=Mock(structured=AsyncMock(return_value=json.dumps({'title':'Job details','body':'Repairs are excluded. [1]'})))
+        result=await prepare_draft(provider,'local','Draft a note',[SOURCE],'note')
+        self.assertEqual(result['document_action_draft']['checklist'],[])
+        self.assertEqual(result['document_action_draft']['kind'],'note')
+        schema=provider.structured.call_args.args[2]
+        self.assertEqual(schema['required'],['title','body'])
+        self.assertEqual(schema['properties']['checklist']['maxItems'],0)
+
+    async def test_note_retry_requires_body_citations_and_remains_a_note(self):
+        provider=Mock(structured=AsyncMock(side_effect=[json.dumps({'title':'Details [1]','body':'Repairs are excluded.'}),json.dumps({'title':'Details','body':'Repairs are excluded. [1]'})]))
+        with self.assertLogs('lumen.document_actions',level='WARNING') as logs:
+            result=await prepare_draft(provider,'local','Draft a note',[SOURCE],'note')
+        self.assertEqual(result['document_action_draft']['kind'],'note')
+        self.assertIn('kind=note stage=body_citations',' '.join(logs.output))
+        self.assertIn('title and body only',provider.structured.call_args.args[1][-1]['content'])
+
     async def test_invalid_citations_retry_once_without_fabricating_references(self):
         provider=Mock(structured=AsyncMock(side_effect=[json.dumps({**DRAFT,'body':'Missing citations'}),json.dumps(DRAFT)]))
         result=await prepare_draft(provider,'local','Make a checklist',[SOURCE],'list')
