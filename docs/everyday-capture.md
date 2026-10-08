@@ -18,8 +18,10 @@ changing text, checking items off, completing and archiving.
 Comma-separated list entries are split into individual checklist items. Gift
 ideas remain one entry even when they contain commas. Commands preserve the
 user's wording; no model call or additional confirmation is needed for these
-explicit saves. Casual statements, quoted commands and negative requests do not
-trigger this capture parser. This first increment supports the command forms
+explicit saves. Standalone commands may include surrounding straight or smart quotes, a
+punctuated greeting, or the selected companion’s name. Gift ideas and quick notes
+accept a colon, period, comma or space before the content. Casual statements,
+commands embedded in reported speech and negative requests do not trigger captures. This first increment supports the command forms
 above, rather than arbitrary conversational references such as “save that”.
 
 List appends use an owner-scoped, invoker-rights transaction: lock, resolve the
@@ -52,3 +54,13 @@ verified for this increment.
 
 On mobile: add milk, then eggs; show the list; open My Day and check off milk;
 reload; add a gift idea and a quick note; verify both persist after reloading.
+
+## Reported input regression fix
+
+The first host test found that greeting-prefixed milk capture, a period-separated
+gift idea and a smart-quoted note bypassed the parser. The eggs command and list
+read did work. Regression checks now cover the three exact input forms and their
+persisted receipts. Generated “added” and “taken a note” claims are checked, and
+repeated unsupported save claims produce a no-save response rather than dumping
+unrelated memories. Missing gift/note content asks for clarification. The fix
+requires no migration; host retesting is pending.

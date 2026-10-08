@@ -596,3 +596,9 @@ quick notes in My Day. Saved cards expose the captured text and link to editing.
 Owner-scoped atomic appends retain retry receipts and reject ambiguous list names.
 Local verification: 198 backend tests, typecheck, clean web export and capture SQL
 checks. This increment awaits actual-device testing. See `everyday-capture.md`.
+
+Capture host testing found missed greeting, period and smart-quote forms despite
+working eggs capture/list read. These inputs now have regression coverage. The
+fix also guards generated list/note save claims and replaces unrelated-memory
+fallbacks with a no-save reply. Local checks: 200 backend tests, typecheck and
+clean web export. Host retesting of the fix is pending; no new migration.

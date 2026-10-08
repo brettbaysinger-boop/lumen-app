@@ -163,9 +163,22 @@ async def search(companion_id: UUID, q: str, user: AuthUser = Depends(require_us
     return await db._request('POST','rpc/search_my_information',json={'p_companion_id':str(companion_id),'p_query':q.strip()})
 
 
-def parse_action(text: str, zone: str, now: datetime | None = None):
+def capture_text(text: str, companion_name: str = 'Lumen') -> str:
+    """Strip only standalone command quotes, greetings and direct addresses."""
+    text = text.strip()
+    pairs = {'“': '”', '"': '"', "'": "'", '‘': '’'}
+    if len(text) > 2 and text[0] in pairs and text[-1] == pairs[text[0]]:
+        text = text[1:-1].strip()
+    name = re.escape(companion_name.strip())
+    text = re.sub(rf'^(?:good morning|good afternoon|good evening|hello|hi|hey)(?:\s+{name})?\s*[!.,]\s*', '', text, flags=re.I)
+    if name:
+        text = re.sub(rf'^{name}\s*[,!:]\s*', '', text, flags=re.I)
+    return re.sub(r'^please\s+', '', text, flags=re.I)
+
+
+def parse_action(text: str, zone: str, now: datetime | None = None, companion_name: str = 'Lumen'):
     """Conservative commands: never turn a casual statement into a commitment."""
-    text = re.sub(r'^\s*(?:please\s+)?', '', text.strip(), flags=re.I)
+    text = capture_text(text, companion_name)
     local = (now or datetime.now(timezone.utc)).astimezone(ZoneInfo(valid_timezone(zone)))
     if re.fullmatch(r"(?:what(?:'s| is) on my plate(?: today)?|show (?:me )?my (?:day|tasks)|what do i need to do today)[?.!]*",text,re.I):
         return {'read':'agenda'}
@@ -204,11 +217,11 @@ def parse_action(text: str, zone: str, now: datetime | None = None):
     match = re.fullmatch(r'(?:show|read) (?:me )?my (.{1,80}?) list[?.!]*', text, re.I)
     if match:
         return {'read': 'list', 'title': match[1].strip().capitalize() + ' list'}
-    match = re.fullmatch(r'(?:save|add) (?:a |this )?gift idea\s*:\s*(.+)', text, re.I | re.S)
+    match = re.fullmatch(r'(?:save|add) (?:a |this )?gift idea(?:\s*[:.,]\s*|\s+)(.+)', text, re.I | re.S)
     if match:
         return {'append_list': True, 'kind': 'list', 'title': 'Gift ideas list',
                 'checklist': [{'text': match[1].strip(), 'done': False}]}
-    match = re.fullmatch(r'(?:remember this|take a note)\s*:\s*(.+)', text, re.I | re.S)
+    match = re.fullmatch(r'(?:remember this|take a note)(?:\s*[:.,]\s*|\s+)(.+)', text, re.I | re.S)
     if match:
         return {'kind': 'note', 'title': match[1].strip()[:90], 'body': match[1].strip()}
     patterns=[('task',r'add (?:a )?task\s*:\s*(.+)'),('note',r'(?:save|add) (?:a )?note\s*:\s*(.+)'),
@@ -220,6 +233,8 @@ def parse_action(text: str, zone: str, now: datetime | None = None):
         if kind=='list':
             return {'kind':'list','title':match[1].capitalize()+' list','checklist':[{'text':part.strip(),'done':False} for part in match[2].split(',') if part.strip()]}
         return {'kind':kind,'title':match[1].strip()[:90] if kind=='note' else match[1].strip(),'body':match[1].strip() if kind=='note' else ''}
+    if re.match(r'(?:save|add) (?:a |this )?(?:gift idea|note)\b|take a note\b', text, re.I):
+        return {'clarify': 'What would you like to capture? Try “save a gift idea: a book for Dena” or “take a note: ask about the warranty”. Nothing has been saved yet.'}
     return None
 
 
@@ -244,13 +259,13 @@ def reminder_followup(text, recent, now=None):
     return text
 
 
-async def handle_action(db, companion_id, conversation_id, text, zone, request_key, recent=None):
-    text=reminder_followup(text,recent)
+async def handle_action(db, companion_id, conversation_id, text, zone, request_key, recent=None, companion_name="Lumen"):
+    text=reminder_followup(capture_text(text,companion_name),recent)
     if text=='cancel pending reminder': return {'content':'Okay, I haven’t saved that reminder.','item':None}
-    command=parse_action(text,zone)
+    command=parse_action(text,zone,companion_name=companion_name)
     if not command: return None
     if 'clarify' in command:
-        return {'content':command['clarify'],'item':None,'pending_reminder':{'text':text,'expires_at':(datetime.now(timezone.utc)+timedelta(minutes=30)).isoformat()}}
+        return {'content':command['clarify'],'item':None,**({'pending_reminder':{'text':text,'expires_at':(datetime.now(timezone.utc)+timedelta(minutes=30)).isoformat()}} if re.match(r'remind me\b',text,re.I) else {})}
     if command.get('read') == 'list':
         rows = await db._request('GET', 'my_day_items', params={
             'companion_id': f'eq.{companion_id}', 'kind': 'eq.list', 'status': 'eq.open',

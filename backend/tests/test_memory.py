@@ -55,7 +55,7 @@ class MemoryCommands(unittest.TestCase):
 
     def test_generated_save_claims_are_corrected(self):
         for text in ("I've noted that today is your birthday.", "I'll remember your birthday!",
-                     "I have saved your name.", "I’ve stored it in memory."):
+                     "I have saved your name.", "I’ve stored it in memory.", "I've added milk to your shopping list.", "I've taken that note for you."):
             self.assertTrue(has_save_claim(text))
         for text in ("Your favorite color is turquoise.", "The memory says you like coffee.", "I remember your favorite color is turquoise."):
             self.assertFalse(has_save_claim(text))
@@ -153,13 +153,14 @@ class MemoryFlow(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(r.provider.generate.await_count, 2)
         r.db.remember.assert_not_awaited()
 
-    async def test_repeated_bad_claim_falls_back_to_saved_facts(self):
+    async def test_repeated_bad_claim_does_not_dump_saved_facts(self):
         r = self.runtime()
         r.db.get_relevant_memories.return_value = [{"content": "my favorite color is turquoise", "type": "semantic"}]
         r.provider.generate.side_effect = [dict(content="I've saved your color.", model="test-model",
             latency_ms=1, tokens_in=1, tokens_out=1) for _ in range(2)]
         reply = await r.respond("companion", "chat", "Whose favorite color is turquoise?")
-        self.assertIn("my favorite color is turquoise", reply.content)
+        self.assertNotIn("my favorite color is turquoise", reply.content)
+        self.assertIn("haven’t saved or changed", reply.content)
         self.assertFalse(has_save_claim(reply.content))
         self.assertEqual(reply.memory_status, "none")
         self.assertEqual(r.provider.generate.await_count, 2)

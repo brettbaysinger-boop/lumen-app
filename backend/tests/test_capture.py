@@ -14,11 +14,17 @@ class CaptureParsing(unittest.TestCase):
         self.assertEqual(result['checklist'],[{'text':'milk','done':False},{'text':'eggs','done':False}])
         self.assertEqual(parse_action('save a gift idea: a book for Sarah','UTC')['title'],'Gift ideas list')
         self.assertEqual(parse_action('take a note: ask about warranty','UTC')['body'],'ask about warranty')
-    def test_no_implicit_or_quoted_actions(self):
+    def test_no_implicit_or_embedded_actions(self):
         for text in ['I need milk','Could we someday add milk to my shopping list?',
-                     'Do not add milk to my shopping list','"add milk to my shopping list"',
+                     'Do not add milk to my shopping list','He said "add milk to my shopping list"',
                      'How do I save a gift idea: a book?']:
             self.assertIsNone(parse_action(text,'UTC'),text)
+    def test_reported_greeting_period_and_smart_quotes(self):
+        self.assertEqual(parse_action('good morning lumen! Add milk to my shopping list','UTC')['checklist'][0]['text'],'milk')
+        self.assertEqual(parse_action('save a gift idea. a book for Dena','UTC')['checklist'][0]['text'],'a book for Dena')
+        self.assertEqual(parse_action('“Take a note: ask about the warranty”','UTC')['body'],'ask about the warranty')
+        self.assertEqual(parse_action('Hello Atlas! Add milk to my shopping list','UTC',companion_name='Atlas')['title'],'Shopping list')
+        self.assertIn('clarify',parse_action('save a gift idea','UTC'))
 
 class CaptureExecution(unittest.IsolatedAsyncioTestCase):
     async def test_append_uses_atomic_scoped_rpc(self):
@@ -46,3 +52,14 @@ class CaptureExecution(unittest.IsolatedAsyncioTestCase):
         db=Mock(_request=AsyncMock())
         result=await handle_action(db,C,I,'add '+'x'*301+' to my shopping list','UTC',K)
         self.assertIsNone(result['item']);db._request.assert_not_awaited()
+
+    async def test_reported_commands_all_return_persisted_receipts(self):
+        for text,kind in [('good morning lumen! Add milk to my shopping list','list'),
+                          ('save a gift idea. a book for Dena','list'),
+                          ('“Take a note: ask about the warranty”','note')]:
+            db=Mock(get_conversation=AsyncMock(return_value={'id':I}),
+                    _request=AsyncMock(return_value=[{'id':I,'kind':kind,'title':'Captured'}]))
+            result=await handle_action(db,C,I,text,'UTC',K)
+            self.assertEqual(result['item']['id'],I,text)
+            self.assertIn('Saved your',result['content'])
+            self.assertEqual(db._request.call_args.args[0],'POST')

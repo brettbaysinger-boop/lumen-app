@@ -94,7 +94,7 @@ class CognitionRuntime:
                 companion.get("conversation_model") or self.settings.conversation_model,companion["name"],emit)
             if not action:
                 action = None if document_id else await handle_action(self.db, companion_id, conversation_id, user_message,
-                getattr(self, 'timezone', 'UTC'), getattr(self, 'request_key', str(uuid4())), recent=recent)
+                getattr(self, 'timezone', 'UTC'), getattr(self, 'request_key', str(uuid4())), recent=recent, companion_name=companion["name"])
             if not action and (document_id or document_command(user_message) is not None):
                 action = await document_action(self.db, companion_id, user_message, self.provider,
                     companion.get('conversation_model') or self.settings.conversation_model, emit, document_id=document_id)
@@ -151,7 +151,7 @@ class CognitionRuntime:
                 # One retry with the same facts and question; don't replace a useful
                 # answer with an unrelated tutorial about saving memories.
                 rewrite_messages = [*messages, {"role": "system", "content":
-                    "Answer the user's last question directly using the supplied memories. "
+                    "Answer the user's last question directly. Use only relevant supplied context. "
                     "Use each memory subject label: user means the user; companion means you; "
                     "shared means both; unknown means ask for clarification. "
                     "Do not claim a save or promise to remember. Use wording such as "
@@ -164,9 +164,7 @@ class CognitionRuntime:
                     if result[key] is not None and original[key] is not None:
                         result[key] += original[key]
                 if has_save_claim(result["content"]):
-                    result["content"] = ("The saved facts available to me are:\n" +
-                        "\n".join("• [" + m.get("subject", "unknown") + "] " + m["content"] for m in memories)) if memories else (
-                        "I don't have a saved fact available that answers that question.")
+                    result["content"] = "I couldn’t produce a reliable reply. I haven’t saved or changed anything. Please try again; for a note, use ‘take a note:’ followed by the text."
 
         user_row = await self.db.create_message({
             "conversation_id": conversation_id,
