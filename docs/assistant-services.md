@@ -610,5 +610,14 @@ creates a My Day project; the card shows one unfinished step with durable
 completion and reload continuity. Duplicate completions cannot advance the next
 step. No timer, automatic scheduling, or external work is performed.
 Local checks: 207 backend tests, typecheck, clean web export, migration/RPC privacy
-and persistence checks, and a mobile-sized mocked browser flow. Actual-device
-and local-model testing are pending. See `getting-unstuck.md`.
+and persistence checks, and a mobile-sized mocked browser flow. On October 8, the user reported the deployed flow working at `eb7cea4`. See `getting-unstuck.md`.
+
+## October 8 verified-use checkpoint
+
+The user reported the small-step flow working after deploying `eb7cea4`, following
+the requested checks for draft review/save, step completion, reload continuity and
+My Day editing. The user also reported daily Lumen use with an active shopping
+list and reminders. This records continued practical use, not a measured reliability
+rate or verification of closed-app notification delivery. Local automated coverage
+remains 207 backend tests plus typecheck, clean web export, SQL and mobile-sized
+mocked browser checks. No application changes or new migration in this checkpoint.

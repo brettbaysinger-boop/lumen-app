@@ -60,7 +60,9 @@ My Day access. SQL covers owner and anonymous isolation, ordered updates, retry
 idempotency, stale step text, and archive/reopen behavior. Backend checks cover
 intent, schema limits, selected-model use, persisted draft metadata, no automatic
 My Day/memory write, authenticated draft saves, scopes and uncertain progress writes.
-Real model quality and actual-device deployment remain unverified for this increment.
+On October 8, after deploying `eb7cea4`, the user reported that the requested
+small-step flow worked. This is user-reported deployment validation with the local
+model, separate from automated checks; it is not a general model-quality benchmark.
 
 ## Offsite deployment
 
@@ -78,3 +80,13 @@ the connecting device. It does not change SSH, Google redirects, or Serve routes
 
 Test on mobile: request a paperwork plan, edit a step, save, complete the first
 step, reload, confirm the next step remains current, then edit/review it in My Day.
+
+## October 8 verified-use checkpoint
+
+The user reported the small-step flow working after deploying `eb7cea4`, following
+the requested checks for draft review/save, step completion, reload continuity and
+My Day editing. The user also reported daily Lumen use with an active shopping
+list and reminders. This records continued practical use, not a measured reliability
+rate or verification of closed-app notification delivery. Local automated coverage
+remains 207 backend tests plus typecheck, clean web export, SQL and mobile-sized
+mocked browser checks. No application changes or new migration in this checkpoint.
