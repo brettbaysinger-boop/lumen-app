@@ -83,4 +83,14 @@ async def practice_context(db,cid,conversation):
   'Reuse prior vocabulary and the latest saved next step when relevant. Avoid overwhelming lists. '
   'Do not claim proficiency, elapsed practice time, or progress that was not demonstrated. '
   'The time budget is a preference, not a timer. You cannot automatically save session progress or schedule routines. '
-  'The user records progress explicitly in Goals & practice.\n'+json.dumps(data)}
+  'An explicit request such as save our session is handled by the application, which confirms only after saving. '
+  'The user can also record or edit progress in Goals & practice. Do not promise to remember everything; '
+  'conversation history, practice notes and long-term memories are separate stores.\n'+json.dumps(data)}
+
+@router.patch('/companions/{cid}/{item_id}/sessions/{session_id}')
+async def edit_session(cid:UUID,item_id:UUID,session_id:UUID,payload:Finish,user:AuthUser=Depends(require_user)):
+ if not payload.summary.strip(): raise HTTPException(422,'Add a short progress note.')
+ db=await companion_db(str(cid),user);await goal(db,cid,item_id)
+ rows=await db._request('PATCH','goal_sessions',params={'id':f'eq.{session_id}','item_id':f'eq.{item_id}','companion_id':f'eq.{cid}','status':'eq.completed'},headers={'Prefer':'return=representation'},json={**payload.model_dump(),'summary':payload.summary.strip()})
+ if not rows: raise HTTPException(404,'Saved practice session not found.')
+ return rows[0]

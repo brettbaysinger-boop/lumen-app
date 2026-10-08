@@ -29,6 +29,7 @@ import {
 } from 'lucide-react-native';
 import { CameraCapture } from '@/components/CameraCapture';
 import { CompanionPortrait } from '@/components/CompanionPortrait';
+import { PracticeSavedCard } from '@/components/PracticeSavedCard';
 import { DayActionCard } from '@/components/DayActionCard';
 import { DocumentActionDraft } from '@/components/DocumentActionDraft';
 import { DocumentAttachment } from '@/components/DocumentAttachment';
@@ -567,6 +568,7 @@ export default function ChatScreen() {
                   ? <CitationText content={item.content} value={item.metadata.web_search} />
                   : item.content}
               </Text>
+              {item.role === 'assistant' && item.metadata?.goal_session != null && <PracticeSavedCard value={item.metadata.goal_session}/> }
               {item.role === 'assistant' && item.metadata?.my_day_item != null && <DayActionCard item={item.metadata.my_day_item as DayItem} />}
               {item.role === 'assistant' && item.metadata?.web_search != null && <WebSources value={item.metadata.web_search} />}
               {item.role === 'assistant' && item.metadata?.document_action_draft != null && <DocumentActionDraft value={item.metadata.document_action_draft} companionId={item.companion_id} messageId={item.id} />}

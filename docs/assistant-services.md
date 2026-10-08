@@ -577,3 +577,14 @@ saved progress, corrections, vocabulary and next steps. New sessions use bounded
 prior notes and user-selected practice preferences. Spanish is the first preset.
 Cadence does not schedule notifications; minutes do not run a timer. Host
 verification of this new increment is pending; see `docs/goals-and-practice.md`.
+
+## October 7: practice chat saves
+
+On October 7, the user verified goal setup, practice, progress saving and continuity at `946b017`. Explicit chat save and editable completed-session notes are implemented next, locally verified, and await a new host test.
+
+Explicit save-session requests now summarize the bounded practice transcript and
+finish the owned session, with a persisted chat receipt only after the write is
+confirmed. Repeated saves reuse the record. Completed notes can be edited in
+Goals & practice. Summarization failure uses labeled excerpts; failed writes do
+not report success. Session notes remain separate from long-term memories.
+See `goals-and-practice.md`.

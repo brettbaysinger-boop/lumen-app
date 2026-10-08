@@ -9,7 +9,7 @@
 | 5 | Help when stuck | Work on it together sends saved context into a chat draft | Saved step-by-step work sessions and progress updates |
 | 6 | Use the camera practically | Mobile HTTPS camera, microphone, local vision routing and photo understanding verified by user | OCR and richer layout extraction |
 | 7 | Communication help | Existing model can draft/rehearse; notes persist drafts | Draft workflow, revisions, optional confirmed external sending |
-| 8 | Ongoing goals | Projects/goals, practice preferences, linked sessions and explicit saved progress | Milestones, multilingual speech, routine scheduling |
+| 8 | Ongoing goals | Projects/goals, practice preferences, linked sessions, chat-requested saves and editable progress | Milestones, multilingual speech, routine scheduling |
 | 9 | Find own information | Private PDF/text import, cited answers/page inspection, prompt attachment and library access | Semantic retrieval, OCR, connected drives |
 | 10 | Shared fun | Existing persistent conversations, creative prompts, project/goal notes | Story/session bookmarks and repeatable activities |
 
@@ -33,8 +33,8 @@ below were reported by the user, not performed directly from this workspace.
 
 - The direct-JSON note fix was subsequently verified fast and working by the user
   at `63e3e62`, then pushed/tagged. See `../document-actions.md`.
-- Goals & practice is implemented and locally checked; host verification of goal
-  setup, tutoring, progress saving and next-session continuity is pending.
+- The user verified goal setup, practice, saving and next-session continuity at
+  `946b017`. Explicit chat-save receipts and editing saved notes await host testing.
 - Improve reliability across more real documents/models; retain citation checks.
 - Extend practice into milestones and routine delivery after host verification.
 - Closed-app reminder delivery, recurring schedules, calendars and wake-word
@@ -49,3 +49,12 @@ are preferences, not timers or scheduled notifications. See
 `../goals-and-practice.md`.
 
 On October 7, the user verified the direct-JSON note fix at `63e3e62`, reported a major speed improvement, and pushed the branch and `lumen-take2-note-json-20261007` tag. The speed gain is user-reported, not a measured benchmark.
+
+## Explicit chat-save increment
+
+On October 7, the user verified goal setup, practice, progress saving and continuity at `946b017`. Explicit chat save and editable completed-session notes are implemented next, locally verified, and await a new host test.
+
+Session summaries are generated only after explicit save intent. Save receipts
+follow confirmed writes; failed summarization uses labeled literal excerpts.
+192 backend tests pass, with mobile-sized browser coverage for editing and saved
+receipts. No new migration is required.

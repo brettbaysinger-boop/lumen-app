@@ -70,3 +70,14 @@ Workstream #8 now includes practice setup, linked chat sessions, saved progress,
 vocabulary and next steps. Host verification is pending. Recurring delivery,
 multilingual speech and milestones remain separate increments. The direct-JSON
 fast-note fix has been verified and tagged by the user.
+
+## October 7: practice chat saves
+
+On October 7, the user verified goal setup, practice, progress saving and continuity at `946b017`. Explicit chat save and editable completed-session notes are implemented next, locally verified, and await a new host test.
+
+Explicit save-session requests now summarize the bounded practice transcript and
+finish the owned session, with a persisted chat receipt only after the write is
+confirmed. Repeated saves reuse the record. Completed notes can be edited in
+Goals & practice. Summarization failure uses labeled excerpts; failed writes do
+not report success. Session notes remain separate from long-term memories.
+See `../goals-and-practice.md`.

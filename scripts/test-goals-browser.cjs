@@ -27,6 +27,7 @@ let goals=[],sessions=[],messages=[],conversations=[{id:I,companion_id:C,title:'
   if(url.pathname.includes('/v0.7/goals/')){
    const suffix=url.pathname.split('/companions/'+C)[1];result=goals;
    if(suffix.endsWith('/profile')){goals[0].goal_profile=req.postDataJSON();result=goals[0];}
+   else if(req.method()==='PATCH' && suffix.includes('/sessions/')){const id=suffix.split('/sessions/')[1];result=sessions.find(s=>s.id===id);Object.assign(result,req.postDataJSON());}
    else if(suffix.endsWith('/finish')){
     if(failFinish){failFinish=false;await route.fulfill({status:500,contentType:'application/json',body:JSON.stringify({detail:'Test save failed'})});return;}
     const id=suffix.split('/sessions/')[1].split('/')[0];const session=sessions.find(s=>s.id===id);Object.assign(session,req.postDataJSON(),{status:'completed',ended_at:'2026-10-08T03:00:00Z'});result=session;
@@ -37,6 +38,12 @@ let goals=[],sessions=[],messages=[],conversations=[{id:I,companion_id:C,title:'
   }
   if(url.pathname.endsWith('/respond/stream')){
    const body=req.postDataJSON();assert.ok(sessions.some(s=>s.conversation_id===body.conversation_id),'practice sends into the linked conversation');
+   if(body.message==='save our session'){
+    const session=sessions.find(s=>s.conversation_id===body.conversation_id);
+    Object.assign(session,{status:'completed',summary:'Practiced introductions',practice_notes:'Review me llamo',vocabulary:'hola; buenos días',next_step:'Practice greeting a customer',ended_at:'2026-10-08T03:00:00Z'});
+    messages.push({id:'save-user',companion_id:C,conversation_id:body.conversation_id,role:'user',content:body.message,metadata:{},created_at:new Date().toISOString()},{id:'save-receipt',companion_id:C,conversation_id:body.conversation_id,role:'assistant',content:'Saved this practice session.',metadata:{goal_session:{...session}},created_at:new Date().toISOString()});
+    await route.fulfill({status:200,contentType:'application/x-ndjson',body:JSON.stringify({type:'done',response:{conversation_id:body.conversation_id,message_id:'save-receipt',content:'Saved this practice session.'}})+'\n'});return;
+   }
    messages.push({id:'u-'+messages.length,companion_id:C,conversation_id:body.conversation_id,role:'user',content:body.message,metadata:{},created_at:new Date().toISOString()},{id:'a-'+messages.length,companion_id:C,conversation_id:body.conversation_id,role:'assistant',content:'Hola. Try introducing yourself.',metadata:{},created_at:new Date().toISOString()});
    await route.fulfill({status:200,contentType:'application/x-ndjson',body:JSON.stringify({type:'done',response:{conversation_id:body.conversation_id,message_id:messages.at(-1).id,content:messages.at(-1).content}})+'\n'});return;
   }
@@ -49,7 +56,7 @@ let goals=[],sessions=[],messages=[],conversations=[{id:I,companion_id:C,title:'
  await page.getByRole('button',{name:'Start practice',exact:true}).click();
  await page.waitForURL(url=>url.pathname==='/');await page.locator('textarea[placeholder="Message Lumen…"]:visible').waitFor();
  assert.equal(messages.length,0,'starting prepares a chat draft and does not send it');assert.equal(created,1);assert.match(sessions[0].profile.focus,/pest-control/);
- await page.getByLabel('Send message',{exact:true}).click();await page.getByText('Hola. Try introducing yourself.',{exact:true}).waitFor();
+ await page.locator('[aria-label="Send message"]:visible').click();await page.getByText('Hola. Try introducing yourself.',{exact:true}).waitFor();
  await page.getByRole('button',{name:'Open goals and practice',exact:true}).click();await page.waitForURL(url=>url.pathname==='/goals');await page.getByText('Save this session',{exact:true}).waitFor();
  await page.getByRole('button',{name:'Resume practice',exact:true}).click();await page.waitForURL(url=>url.pathname==='/');await page.locator('textarea[placeholder="Message Lumen…"]:visible').waitFor();assert.equal(created,1,'resume does not create another session');
  await page.getByRole('button',{name:'Open goals and practice',exact:true}).click();await page.waitForURL(url=>url.pathname==='/goals');
@@ -58,6 +65,18 @@ let goals=[],sessions=[],messages=[],conversations=[{id:I,companion_id:C,title:'
  await page.getByRole('button',{name:'Finish and save session',exact:true}).click();await page.getByText('Practiced introductions',{exact:true}).waitFor();assert.equal(sessions[0].status,'completed');
  await page.reload();await page.getByText('Practiced introductions',{exact:true}).waitFor();await page.getByText('Vocabulary: hola; buenos días',{exact:true}).waitFor();
  await page.getByRole('button',{name:'10 minutes',exact:true}).click();await page.getByRole('button',{name:'Start practice',exact:true}).click();await page.waitForURL(url=>url.pathname==='/');await page.locator('textarea[placeholder="Message Lumen…"]:visible').waitFor();assert.equal(created,2);assert.equal(sessions[0].profile.minutes,10);assert.equal(sessions[1].profile.minutes,5);
- const bounds=await page.getByLabel('Send message',{exact:true}).boundingBox();assert.ok(bounds.x+bounds.width<=390,'mobile send stays inside viewport');
- assert.deepEqual(errors,[]);console.log('Goal mobile browser: creation/preferences, linked chat draft, resume, failed finish/retry, saved progress reload and new-session profile snapshots passed.');
+ await page.getByRole('button',{name:'Open goals and practice',exact:true}).click();await page.waitForURL(url=>url.pathname==='/goals');
+ await page.getByRole('button',{name:'Edit session notes',exact:true}).click();
+ await page.getByRole('textbox',{name:'Session progress',exact:true}).fill('Edited introductions');
+ await page.getByRole('button',{name:'Save session edits',exact:true}).click();await page.getByText('Edited introductions',{exact:true}).waitFor();
+ assert.equal(sessions[1].summary,'Edited introductions');assert.equal(sessions[1].status,'completed');
+ await page.getByRole('button',{name:'Resume practice',exact:true}).click();await page.waitForURL(url=>url.pathname==='/');
+ await page.locator('textarea[placeholder="Message Lumen…"]:visible').fill('save our session');await page.locator('[aria-label="Send message"]:visible').click();
+ await page.getByText('PRACTICE SESSION · SAVED',{exact:true}).waitFor();
+ await page.reload();await page.getByText('PRACTICE SESSION · SAVED',{exact:true}).waitFor();
+ await page.getByRole('button',{name:'Review saved practice',exact:true}).click();await page.waitForURL(url=>url.pathname==='/goals');
+ assert.equal(sessions[0].status,'completed');
+ await page.getByRole('button',{name:'Back to conversation',exact:true}).click();await page.waitForURL(url=>url.pathname==='/');
+ const bounds=await page.locator('[aria-label="Send message"]:visible').boundingBox();assert.ok(bounds.x+bounds.width<=390,'mobile send stays inside viewport');
+ assert.deepEqual(errors,[]);console.log('Goal mobile browser: creation/preferences, linked chat draft, resume, failed finish/retry, saved progress reload and new-session profile snapshots, saved-note editing and chat receipt persistence passed.');
  }finally{await browser.close();server.close();}})().catch(error=>{console.error(error);server.close();process.exit(1)});

@@ -48,6 +48,18 @@ class GoalAPI(unittest.TestCase):
   self.assertEqual(self.client.post(self.base+f'/sessions/{S}/finish',json={'summary':'Fake'}).status_code,404)
   self.assertEqual(self.db._request.call_args.kwargs['params']['companion_id'],f'eq.{C}')
 
+ def test_saved_session_edit_is_scoped_and_cannot_reopen_or_change_identity(self):
+  path=self.base+f'/sessions/{S}'
+  self.db._request.side_effect=[[self.goal],[{'id':S,'status':'completed','summary':'Edited'}]]
+  self.assertEqual(self.client.patch(path,json={'summary':'Edited','next_step':'Greetings'}).status_code,200)
+  args=self.db._request.call_args
+  self.assertEqual(args.kwargs['params']['companion_id'],f'eq.{C}')
+  self.assertEqual(args.kwargs['params']['status'],'eq.completed')
+  self.assertNotIn('ended_at',args.kwargs['json'])
+  self.assertEqual(self.client.patch(path,json={'summary':'Edited','status':'open'}).status_code,422)
+  self.db._request.side_effect=[[self.goal],[]]
+  self.assertEqual(self.client.patch(path,json={'summary':'Edited'}).status_code,404)
+
 class GoalContext(unittest.IsolatedAsyncioTestCase):
  async def test_context_scopes_saved_progress_and_profile(self):
   db=Mock(_request=AsyncMock(side_effect=[[{'id':G,'title':'Learn Spanish','body':''}],[{'id':S,'status':'open','profile':{'minutes':5}}],[{'summary':'Introductions','vocabulary':'hola','next_step':'Greetings'}]]))
@@ -63,3 +75,12 @@ class GoalContext(unittest.IsolatedAsyncioTestCase):
    await r.respond(C,CHAT,'Let us practice')
   self.assertIn('Saved vocabulary: hola',[m['content'] for m in r.provider.generate.call_args.args[1]])
   r.db._request.assert_not_awaited();r.db.remember.assert_not_awaited()
+ async def test_explicit_save_in_runtime_persists_receipt_without_memory_write(self):
+  r=CognitionRuntime.__new__(CognitionRuntime);r.user_id='owner';r.settings=SimpleNamespace(conversation_model='local',memory_observations_enabled=True)
+  r.provider=Mock(name='ollama',generate=AsyncMock());r.provider.name='ollama'
+  r.db=Mock(get_companion=AsyncMock(return_value={'name':'Lumen'}),get_conversation=AsyncMock(return_value={'id':CHAT,'goal_item_id':G}),get_state=AsyncMock(return_value={}),get_relevant_memories=AsyncMock(return_value=[]),get_recent_messages=AsyncMock(return_value=[]),get_profile=AsyncMock(return_value={}),create_message=AsyncMock(return_value={'id':S}),touch_conversation=AsyncMock(),_request=AsyncMock(),remember=AsyncMock())
+  saved={'id':S,'item_id':G,'status':'completed','summary':'Introductions'}
+  with patch('lumen.runtime.practice_context',AsyncMock(return_value={'role':'system','content':'Practice'})),patch('lumen.runtime.save_practice',AsyncMock(return_value={'content':'Saved this practice session.','goal_session':saved,'model':'goal-session-action'})) as save:
+   await r.respond(C,CHAT,'lets call it a day. are you able to save the session for me?')
+  save.assert_awaited_once();r.provider.generate.assert_not_awaited();r.db.remember.assert_not_awaited();r.db._request.assert_not_awaited()
+  self.assertEqual(r.db.create_message.call_args_list[1].args[0]['metadata']['goal_session'],saved)

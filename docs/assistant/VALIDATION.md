@@ -47,3 +47,13 @@ checks cover goal setup, linked draft chat, resume, failed finish/retry and save
 progress reload. Host tutoring/voice quality is not established by these tests.
 
 On October 7, the user verified the direct-JSON note fix at `63e3e62`, reported a major speed improvement, and pushed the branch and `lumen-take2-note-json-20261007` tag. The speed gain is user-reported, not a measured benchmark.
+
+## Explicit chat-save checkpoint
+
+192 backend tests pass, including explicit/negative/deferred intent, scoped
+transcripts and writes, duplicate saves, literal fallback, uncertain write
+failures, receipt metadata, editing completed notes, and memory-promise guards.
+Typecheck and clean web export pass. The goals browser test adds completed-note
+edits and saved chat receipt/reload/navigation to the prior manual flow.
+
+On October 7, the user verified goal setup, practice, progress saving and continuity at `946b017`. Explicit chat save and editable completed-session notes are implemented next, locally verified, and await a new host test.

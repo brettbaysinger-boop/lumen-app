@@ -3,8 +3,9 @@
 This implements workstream #8 as a saved practice loop: goal setup, focused chat,
 explicit progress notes, and continuity into a new session. Spanish practice is
 the first preset, with everyday and pest-control customer conversation focuses.
-Other goals can use a custom name and focus. Local checks are complete; host
-verification of this increment is pending.
+Other goals can use a custom name and focus. The user verified the original goal setup, practice, saved progress and next-session
+continuity on October 7 at `946b017`. The newer explicit chat-save and saved-note
+editing increment is locally checked and awaits host verification.
 
 ## User flow
 
@@ -31,8 +32,8 @@ carries its goal selection back to the correct practice screen.
 
 The preferred duration is not a timer. Rhythm does not schedule reminders or
 closed-app notifications. Use the existing My Day reminder flow for a specific
-practice reminder. The model does not automatically infer progress, score
-fluency, save vocabulary or complete goals. Session notes are user-entered;
+practice reminder. The model does not silently save progress, score fluency or complete goals.
+Notes are user-entered or summarized only after an explicit save-session request;
 unsaved edits are local state and are lost on reload.
 
 ## Continuity and limits
@@ -105,3 +106,36 @@ and Send. Practice an introduction. Save a progress note and vocabulary, reload,
 then start the next session and confirm Lumen uses the saved next step. Check a
 second account cannot read the goal/session. Model lesson quality and actual
 Spanish voice recognition are separate from mocked browser checks.
+
+## Explicit session saving from chat
+
+Within a linked practice conversation, “save our session”, “can you save this
+practice session?” or “lets call it a day. are you able to save the session for
+me?” finishes the current session without a separate approval screen. Negative,
+quoted, how-to and deferred requests are not interpreted as save commands.
+A plain goodbye does not save. An ordinary chat is not converted into practice;
+Lumen directs the user to Goals & practice instead.
+
+The backend retrieves up to 40 recent messages from that exact companion/chat,
+with a 16,000-character total budget and 1,200-character per-message cap. It uses
+the selected model with direct JSON (`think:false`), a 2,048-token output budget
+and 120-second timeout. The prompt distinguishes covered topics from demonstrated
+mastery and asks for transcript-grounded vocabulary/corrections. These are model
+summaries, not validated assessments; the saved conversation remains available.
+If structured summarization fails, literal recent excerpts are saved with a clear
+label instead of invented progress; vocabulary and next step remain empty.
+
+Only after a confirmed owner-scoped database write does the backend return a
+saved receipt. On write failure it reports uncertainty and asks the user to
+reload before retrying. A repeated command returns the existing completed record
+without regenerating or overwriting it. The command does not write long-term
+memories. Ordinary generated promises such as “I'll keep everything in my memory”
+are covered by the save-claim guard.
+
+The receipt is persisted in assistant message metadata and remains a historical
+snapshot after edits. **Review saved practice** opens the correct goal. In recent
+practice, **Edit session notes** edits summary, corrections, vocabulary and next
+step; **Save session edits** updates the completed record without reopening it or
+changing its end time/profile. The new authenticated route is
+`PATCH /{goal_id}/sessions/{session_id}` with the same note field limits as Finish.
+No database migration is required beyond the original goal-session migration.

@@ -26,10 +26,12 @@ attachment analysis, and document actions. Checklist generation, note
 review/edit/save to My Day, and a scheduled follow-up reminder were confirmed.
 The direct-JSON note fix at `63e3e62` was verified working with a major reported
 speed improvement and pushed/tagged. Goals & practice now adds saved preferences,
-linked practice chats and explicit progress notes; host verification is pending. See
+linked practice chats and explicit progress notes, verified by the user at
+`946b017`. Explicit chat saving and editable saved notes are now implemented;
+this newer increment awaits host verification. See
 `docs/assistant/STATUS.md` for remaining work.
 
-Current local verification: 182 backend tests, TypeScript validation, clean web
+Current local verification: 192 backend tests, TypeScript validation, clean web
 export, and document-action database/browser checks. Deployment reports and
 automated checks are recorded separately in `docs/assistant/VALIDATION.md`.
 

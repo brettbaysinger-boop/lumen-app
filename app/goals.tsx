@@ -13,7 +13,9 @@ export default function GoalsScreen(){
  const [goals,setGoals]=useState<DayItem[]>([]),[selectedId,setSelectedId]=useState(''),[sessions,setSessions]=useState<GoalSession[]>([]);
  const [loading,setLoading]=useState(true),[busy,setBusy]=useState(false),[error,setError]=useState(''),[notice,setNotice]=useState('');
  const [creating,setCreating]=useState(false),[title,setTitle]=useState('Learn Spanish'),[profile,setProfile]=useState<GoalProfile>(defaults);
+ const [editingSession,setEditingSession]=useState<GoalSession|null>(null);
  const [summary,setSummary]=useState(''),[notes,setNotes]=useState(''),[vocabulary,setVocabulary]=useState(''),[nextStep,setNextStep]=useState('');
+ const scroll=useRef<ScrollView>(null);
  const createKey=useRef(requestKey()),startKey=useRef(requestKey()),loadVersion=useRef(0);
  const selected=goals.find(goal=>goal.id===selectedId),open=sessions.find(session=>session.status==='open');
  const load=useCallback(async()=>{
@@ -27,7 +29,7 @@ export default function GoalsScreen(){
   const rows=await goalRequest<GoalSession[]>(companion.id,`/${selectedId}/sessions`);setSessions(rows);
  },[companion?.id,selectedId]);
  useEffect(()=>{
-  let active=true;setSessions([]);setSummary('');setNotes('');setVocabulary('');setNextStep('');startKey.current=requestKey();
+  let active=true;setSessions([]);setEditingSession(null);setSummary('');setNotes('');setVocabulary('');setNextStep('');startKey.current=requestKey();
   const row=goals.find(g=>g.id===selectedId);
   if(row){setProfile({...defaults,focus:row.title,...row.goal_profile} as GoalProfile);}
   if(companion&&selectedId)goalRequest<GoalSession[]>(companion.id,`/${selectedId}/sessions`).then(rows=>{if(active)setSessions(rows);}).catch(e=>{if(active)setError(e.message);});
@@ -51,16 +53,17 @@ export default function GoalsScreen(){
   router.push({pathname:'/',params:{conversation:session.conversation_id,draft:'Let’s practice this goal. Use my saved progress and give me one small exercise to begin.'}});
  });
  const finish=()=>run(async()=>{
-  if(!companion||!selected||!open)return;
+  if(!companion||!selected||(!open&&!editingSession))return;
   if(!summary.trim())throw new Error('Add a short progress note before finishing.');
-  await goalRequest(companion.id,`/${selected.id}/sessions/${open.id}/finish`,'POST',{summary,practice_notes:notes,vocabulary,next_step:nextStep});
-  await loadSessions();startKey.current=requestKey();setSummary('');setNotes('');setVocabulary('');setNextStep('');setNotice('Session saved. Your next practice will include these notes.');
+  const target=editingSession||open!;
+  await goalRequest(companion.id,`/${selected.id}/sessions/${target.id}${editingSession?'':'/finish'}`,editingSession?'PATCH':'POST',{summary,practice_notes:notes,vocabulary,next_step:nextStep});
+  await loadSessions();startKey.current=requestKey();setEditingSession(null);setSummary('');setNotes('');setVocabulary('');setNextStep('');setNotice('Session saved. Your next practice will include these notes.');
  });
  const field={color:c.neutral[100],backgroundColor:c.neutral[900],borderColor:c.neutral[700],borderWidth:1,padding:12,borderRadius:10};
  const button=(label:string,action:()=>void,disabled=false)=><Pressable key={label} accessibilityRole="button" disabled={busy||disabled} onPress={action} style={{padding:12,borderRadius:10,borderWidth:1,borderColor:c.neutral[700],opacity:(busy||disabled)?0.5:1}}><Text style={{color:c.primary[300]}}>{label}</Text></Pressable>;
  if(companionLoading)return <ActivityIndicator color={c.primary[300]}/>;
  if(!companion)return <Text style={{color:c.error[300],padding:24}}>{companionError||'Could not load your companion.'}</Text>;
- return <SafeAreaView style={{flex:1,backgroundColor:c.neutral[950]}}><ScrollView contentContainerStyle={{padding:20,paddingBottom:60,gap:16,maxWidth:820,width:'100%',alignSelf:'center'}}>
+ return <SafeAreaView style={{flex:1,backgroundColor:c.neutral[950]}}><ScrollView ref={scroll} contentContainerStyle={{padding:20,paddingBottom:60,gap:16,maxWidth:820,width:'100%',alignSelf:'center'}}>
   <Text style={{color:c.neutral[100],fontSize:30}}>Goals & practice</Text>
   <Text style={{color:c.neutral[300],lineHeight:23}}>A little practice, with a place to pick up next time.</Text>
   <View style={{flexDirection:'row',flexWrap:'wrap',gap:12}}>{button('Back to conversation',()=>router.push('/'))}{button('New goal',()=>{setCreating(true);setTitle('Learn Spanish');})}</View>
@@ -80,19 +83,21 @@ export default function GoalsScreen(){
    <Text style={{color:c.neutral[300]}}>Practice rhythm · {profile.cadence}</Text><View style={{flexDirection:'row',flexWrap:'wrap',gap:10}}>{(['daily','weekly','flexible'] as const).map(cadence=>button(cadence,()=>setProfile(p=>({...p,cadence}))))}</View>
    <Text style={{color:c.neutral[400],lineHeight:21}}>Rhythm and minutes are preferences. They do not schedule notifications or run a timer. Preference changes apply to new sessions; an open session keeps its original setup.</Text>
    <View style={{flexDirection:'row',flexWrap:'wrap',gap:12}}>{button('Save practice preferences',()=>void run(async()=>{await saveProfile();setNotice('Practice preferences saved.');}))}{button(open?'Resume practice':'Start practice',()=>void start(),selected.status!=='open')}{button('Edit goal in My Day',()=>router.push({pathname:'/my-day',params:{item:selected.id}}))}</View>
-   {open&&<View style={{gap:12,backgroundColor:c.neutral[800],padding:16,borderRadius:14}}>
-    <Text style={{color:c.neutral[100],fontSize:20}}>Save this session</Text><Text style={{color:c.neutral[300]}}>Record what you tried. Finishing saves these notes; it does not mark the entire goal complete.</Text>
+   {(open||editingSession)&&<View onLayout={event=>{if(editingSession)scroll.current?.scrollTo({y:event.nativeEvent.layout.y,animated:true});}} style={{gap:12,backgroundColor:c.neutral[800],padding:16,borderRadius:14}}>
+    <Text style={{color:c.neutral[100],fontSize:20}}>{editingSession?'Edit saved session':'Save this session'}</Text><Text style={{color:c.neutral[300]}}>Record what you tried. Finishing saves these notes; it does not mark the entire goal complete.</Text>
     <TextInput accessibilityLabel="Session progress" placeholder="What did you practice?" value={summary} onChangeText={setSummary} multiline maxLength={2000} editable={!busy} style={field}/>
     <TextInput accessibilityLabel="Practice corrections" placeholder="Corrections or things to revisit" value={notes} onChangeText={setNotes} multiline maxLength={2000} editable={!busy} style={field}/>
     <TextInput accessibilityLabel="Practice vocabulary" placeholder="Useful vocabulary" value={vocabulary} onChangeText={setVocabulary} multiline maxLength={2000} editable={!busy} style={field}/>
     <TextInput accessibilityLabel="Next practice step" placeholder="One next step" value={nextStep} onChangeText={setNextStep} maxLength={300} editable={!busy} style={field}/>
-    {button('Finish and save session',()=>void finish())}
+    {button(editingSession?'Save session edits':'Finish and save session',()=>void finish())}
+    {editingSession&&button('Cancel session edits',()=>{setEditingSession(null);setSummary('');setNotes('');setVocabulary('');setNextStep('');})}
    </View>}
    <Text style={{color:c.neutral[100],fontSize:22}}>Recent practice</Text>
    {!sessions.some(s=>s.status==='completed')&&<Text style={{color:c.neutral[300]}}>Your saved sessions will appear here.</Text>}
    {sessions.filter(s=>s.status==='completed').slice(0,20).map(s=><View key={s.id} style={{gap:10,padding:16,backgroundColor:c.neutral[900],borderRadius:14}}>
     <Text style={{color:c.primary[300]}}>{new Date(s.ended_at||s.started_at).toLocaleString()}</Text><Text style={{color:c.neutral[100]}}>{s.summary}</Text>
     {!!s.practice_notes&&<Text style={{color:c.neutral[300]}}>Revisit: {s.practice_notes}</Text>}{!!s.vocabulary&&<Text style={{color:c.neutral[300]}}>Vocabulary: {s.vocabulary}</Text>}{!!s.next_step&&<Text style={{color:c.neutral[300]}}>Next: {s.next_step}</Text>}
+    {button('Edit session notes',()=>{setEditingSession(s);setSummary(s.summary);setNotes(s.practice_notes);setVocabulary(s.vocabulary);setNextStep(s.next_step);})}
     {button('Open saved practice chat',()=>router.push({pathname:'/',params:{conversation:s.conversation_id}}))}
    </View>)}
   </>}
