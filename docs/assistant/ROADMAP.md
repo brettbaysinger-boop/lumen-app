@@ -17,6 +17,15 @@ foundation; it is not a claim that all integrations are finished.
 | 9 | Find local information | Selected-file import, extraction, local search, cited answers | Retrieve a warranty passage with filename and page; remove indexed file |
 | 10 | Shared fun | Persistent creative sessions, stories and challenges | Resume a session from its saved conversation and notes |
 
+## October 7 progress
+
+Foundation A and major understanding C pieces are implemented on the Take 2
+feature line. The user verified local vision/photo and PDF understanding, web
+research, note review/edit/save and a follow-up reminder. Document checklist
+generation also worked. The concise note shortcut now matches the successful
+three-detail request. Broader reliability, OCR, semantic retrieval, routines,
+calendar connections and closed-app delivery remain open. See `STATUS.md`.
+
 ## Release order
 
 A. Shared foundation: My Day records and cards; explicit conversation actions;

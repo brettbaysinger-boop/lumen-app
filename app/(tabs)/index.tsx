@@ -719,7 +719,7 @@ export default function ChatScreen() {
               </TouchableOpacity>
             </View>
             <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 20 }}>
-              {[['Draft checklist','Create a preparation checklist from this document.'],['Draft note','Draft a note with the important details and exclusions from this document.'],['Draft follow-up','Draft a follow-up reminder about this document.']].map(([label,prompt]) =>
+              {[['Draft checklist','Create a preparation checklist from this document.'],['Draft note','Draft a short note from this document. Include only three important details, with a source citation in each bullet.'],['Draft follow-up','Draft a follow-up reminder about this document.']].map(([label,prompt]) =>
                 <TouchableOpacity key={label} accessibilityRole="button" disabled={sending || documentBusy} onPress={()=>setInputText(prompt)}><Text style={{color:colors.primary[300]}}>{label}</Text></TouchableOpacity>)}
             </View>
           </View>}

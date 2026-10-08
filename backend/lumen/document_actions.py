@@ -41,7 +41,7 @@ class GeneratedNote(BaseModel):
 async def prepare_draft(provider, model, query, sources, kind):
     schema_type=GeneratedNote if kind=='note' else GeneratedDraft
     format_instruction=('For a note return title and body only. Do not create checklist steps. '
-        'Write 3 to 6 concise bullet points with useful details and exclusions. '
+        'Write exactly three concise bullet points with important details, including exclusions when relevant. '
         'Put supplied citations like [1] directly in body; citations in the title do not count.'
         if kind=='note' else 'Return title, body and checklist only. '
         'Checklist is empty for reminders. Each checklist object has text and done:false.')

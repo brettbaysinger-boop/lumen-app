@@ -121,7 +121,9 @@ Document action drafts now offer review/edit/save controls for source-linked
 checklists, notes and follow-up reminders. Drafting does not save an item;
 reminders require a user-selected future time. Saved items retain page references
 and support Undo/Restore. See `docs/document-actions.md` for persistence, ownership
-checks and deployment; host verification of this increment remains pending.
+checks and deployment. On October 7, the user verified checklist drafting, note
+review/edit/save and a saved follow-up reminder. The note shortcut uses the
+verified short three-detail request.
 
 ### Remember what matters
 

@@ -17,9 +17,15 @@ Active integration branch:
 
 `feat/lumen-integration`
 
-Current integrated checkpoint:
+Historical integration checkpoint:
 
-`6ccfcbc Add persistent companion visual identity`
+`e5f0197 Unify Lumen project documentation and roadmap`
+
+Current deployed development branch: `feat/lumen-take2-local`. The October 7
+checkpoint includes authenticated HTTPS mobile access, voice/camera/photo
+understanding, web research, private PDF/text imports, and reviewed document
+actions. See `docs/assistant/STATUS.md` and `docs/assistant/VALIDATION.md` for
+reported host verification versus local automated checks.
 
 ---
 
@@ -551,8 +557,11 @@ are not retained. Mobile Tailscale PDF/photo understanding was verified at
 
 Reviewed document-to-checklist/note/follow-up drafts are now implemented on the
 feature line, with source pages, explicit Save, reminder time selection, and
-Undo/Restore. See `docs/document-actions.md`. Local checks passed; deployment
-host verification of this new action increment remains pending.
+Undo/Restore. See `docs/document-actions.md`. Local checks passed (174 backend tests, SQL ownership/retry tests and mobile-sized
+browser tests). On October 7, the user verified checklist generation, note
+review/edit/save to My Day, and a saved follow-up reminder. The note shortcut now
+uses the verified short three-detail request; broader model/document reliability
+remains ongoing work.
 
 Further multimodal work includes:
 

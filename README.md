@@ -12,13 +12,24 @@ and preserve a stable identity even as models and hardware change.
 
 ## Current development state
 
-Active integration branch:
+Current deployed development branch:
 
-`feat/lumen-integration`
+`feat/lumen-take2-local`
 
-Current integration checkpoint:
+Historical integration branch: `feat/lumen-integration`, documentation checkpoint
+`e5f0197`. The Take 2 branch builds on that integration; it is not a claim that
+the feature branch has been merged into the integration branch.
 
-`6ccfcbc Add persistent companion visual identity`
+October 7 checkpoint: the user verified Google login across local/LAN/Tailscale,
+mobile HTTPS microphone/camera/photo understanding, web research, photo/PDF
+attachment analysis, and document actions. Checklist generation, note
+review/edit/save to My Day, and a scheduled follow-up reminder were confirmed.
+Draft note now uses the verified short three-detail prompt. See
+`docs/assistant/STATUS.md` for remaining work.
+
+Current local verification: 174 backend tests, TypeScript validation, clean web
+export, and document-action database/browser checks. Deployment reports and
+automated checks are recorded separately in `docs/assistant/VALIDATION.md`.
 
 The current integrated system includes:
 

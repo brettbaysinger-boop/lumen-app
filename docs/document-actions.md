@@ -1,8 +1,9 @@
 # Reviewed document actions
 
 This Take 2 increment turns an imported document into a checklist, useful note,
-or follow-up reminder. It is implemented and locally tested; verification on the
-deployment host remains pending. Photo-to-action drafts are outside this increment.
+or follow-up reminder. It is implemented and locally tested. On October 7, 2026 (America/Phoenix),
+the user verified checklist generation, note review/edit/save to My Day, and a
+saved follow-up reminder on the deployment host. Photo-to-action drafts are outside this increment.
 
 ## Use
 
@@ -10,6 +11,8 @@ deployment host remains pending. Photo-to-action drafts are outside this increme
    existing import from the document library.
 2. Choose **Draft checklist**, **Draft note**, or **Draft follow-up**, then Send.
    These shortcuts only prepare the prompt; selecting one does not send it.
+   Draft note prepares the verified short request: exactly three important details,
+   with a source citation in each bullet.
 3. Inspect the cited document pages. Choose **Review and save**, then edit the
    title, notes and checklist steps. A follow-up requires a future date and time
    in the browser's timezone; the model does not choose the time.
@@ -100,3 +103,14 @@ Checks performed for this increment:
 Suggested host smoke test: attach a proposal, draft and edit its checklist, save,
 open My Day, inspect a source page, Undo and reload. Draft a follow-up, choose its
 time explicitly, and confirm one reminder is created after Save.
+
+## October 7 checkpoint
+
+The initial long note request failed schema validation on the selected
+`satgeze/gemma4-12b-uncensored-1.5m:latest` model. A synthetic note passed, and the
+short three-detail request then passed with the real document. The Draft note
+shortcut and note generation instructions now use that concise approach. This
+is evidence for the tested flow, not a guarantee for arbitrary documents or models.
+The backend suite passes 174 tests; typecheck and clean web export also pass.
+Draft Undo/Restore and private-source retry behavior were covered by local browser
+and SQL tests; live confirmation of those individual controls remains separate.

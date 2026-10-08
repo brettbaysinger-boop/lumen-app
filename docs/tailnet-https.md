@@ -124,3 +124,7 @@ real device permissions and remote TLS requests require verification on the host
 References:
 - https://tailscale.com/docs/reference/tailscale-cli/serve
 - https://developer.mozilla.org/en-US/docs/Web/API/MediaDevices/getUserMedia
+
+## Reported deployment progress — October 7, 2026
+
+The user verified HTTPS mobile Google login, microphone, camera and photo understanding on October 6, and later mobile photo/PDF attachments. A stale frontend public-URL cache caused a subsequent regression; a clean export with the existing HTTPS API/Auth URLs restored operation. Use `npm run build:web -- --clear` for deployment updates. These are user-reported host checks; workspace TLS checks remain separate.

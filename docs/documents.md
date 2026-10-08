@@ -140,3 +140,7 @@ for grouped web citations, mobile upload/search/page reading, draft-only questio
 chat source persistence, deletion and sign-out. Set `LUMEN_PLAYWRIGHT_MODULE` to an
 installed Playwright package path. Live model quality and actual phone uploads
 still require verification on the deployment.
+
+## Reported deployment progress — October 7, 2026
+
+The user verified mobile Tailscale photo/PDF attachment understanding on October 6. On October 7, document checklist generation, note review/edit/save and a saved follow-up reminder were reported working. See `document-actions.md`; the note shortcut now uses the tested short request.
