@@ -1,3 +1,5 @@
+> **Canonical project checkpoint:** [Project Status](../PROJECT-STATUS.md).
+
 # Validation
 
 ## October 7, 2026 checkpoint

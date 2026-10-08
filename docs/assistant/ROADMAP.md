@@ -1,3 +1,5 @@
+> **Canonical project checkpoint:** [Project Status](../PROJECT-STATUS.md).
+
 # Lumen: personal, helpful, engaging
 
 Ten committed product workstreams. Ship through complete, reviewable increments,

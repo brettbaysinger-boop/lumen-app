@@ -1,3 +1,5 @@
+> **Current project checkpoint:** [docs/PROJECT-STATUS.md](docs/PROJECT-STATUS.md). Read this before selecting new development work.
+
 # Lumen Roadmap
 
 This document is the master implementation map for Lumen.

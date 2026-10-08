@@ -1,3 +1,5 @@
+> **Canonical project checkpoint:** [Project Status](../PROJECT-STATUS.md).
+
 # Take 2 delivery status — October 7, 2026
 
 | # | Action item | Delivered foundation | Next increment |

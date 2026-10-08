@@ -1,3 +1,5 @@
+> **Current development status:** [Lumen Project Status](docs/PROJECT-STATUS.md).
+
 # Lumen
 
 Lumen is a local-first personal AI companion platform built around persistent
