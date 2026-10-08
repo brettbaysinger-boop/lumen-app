@@ -32,6 +32,9 @@ below were reported by the user, not performed directly from this workspace.
 ## Next work
 
 - Verify the updated note shortcut on the host after rebuilding the web export.
+- A later short-note attempt failed again; the earlier success does not establish
+  reliability. The note-only schema/thinking-mode follow-up and safe diagnostics
+  require host verification. See `../document-actions.md`.
 - Improve reliability across more real documents/models; retain citation checks.
 - Continue goals/routines and saved work sessions.
 - Closed-app reminder delivery, recurring schedules, calendars and wake-word

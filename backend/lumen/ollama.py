@@ -57,15 +57,23 @@ class OllamaProvider:
         except (httpx.HTTPError, ValueError, AttributeError):
             return None
 
-    async def structured(self, model: str, messages: list[dict], schema: dict, *, max_tokens: int = 1000, timeout: float = 60) -> str:
+    async def structured(self, model: str, messages: list[dict], schema: dict, *, max_tokens: int = 1000, timeout: float = 60, think: bool | None = None) -> str:
         async with httpx.AsyncClient(timeout=timeout) as client:
             response = await client.post(f"{self.base_url}/api/chat", json={
                 "model": model, "messages": messages, "stream": False, "format": schema,
                 "keep_alive": self.keep_alive,
+                **({"think": think} if think is not None else {}),
                 "options": {"temperature": 0, "num_predict": max_tokens, "num_ctx": self.context_length},
             })
             response.raise_for_status()
-            return response.json()["message"]["content"]
+            data=response.json()
+            content=data.get('message',{}).get('content','')
+            if think is not None:
+                reason=data.get('done_reason')
+                logging.getLogger(__name__).warning('Structured draft response model=%s content_chars=%s eval_count=%s done_reason=%s',
+                    model,len(content),data.get('eval_count') if isinstance(data.get('eval_count'),int) else None,
+                    reason if reason in ('stop','length','load','unload') else 'other')
+            return content
 
     async def generate(self, model: str, messages: list[dict], temperature: float = 0.7) -> dict:
         started = time.perf_counter()

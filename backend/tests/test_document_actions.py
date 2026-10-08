@@ -20,6 +20,20 @@ DRAFT={'title':'Prepare for the job','body':'Check access for the foundation wor
        'checklist':[{'text':'Confirm access to the foundation. [1]','done':True}]}
 
 class Generation(unittest.IsolatedAsyncioTestCase):
+    async def test_note_request_disables_thinking_and_logs_only_response_metrics(self):
+        from lumen.ollama import OllamaProvider
+        def handler(request):
+            payload=json.loads(request.content)
+            self.assertFalse(payload['think'])
+            self.assertEqual(payload['options']['num_predict'],4096)
+            return httpx.Response(200,json={'message':{'content':'private output','thinking':'private reasoning'},'eval_count':4096,'done_reason':'length'})
+        original=httpx.AsyncClient
+        with patch('lumen.ollama.httpx.AsyncClient',side_effect=lambda **kwargs:original(transport=httpx.MockTransport(handler),**kwargs)),self.assertLogs('lumen.ollama',level='WARNING') as logs:
+            result=await OllamaProvider(SimpleNamespace(ollama_url='http://model')).structured('local',[],{},max_tokens=4096,timeout=600,think=False)
+        self.assertEqual(result,'private output')
+        self.assertIn('done_reason=length',' '.join(logs.output))
+        self.assertNotIn('private output',' '.join(logs.output));self.assertNotIn('private reasoning',' '.join(logs.output))
+
     async def test_note_uses_note_schema_and_accepts_title_body_without_checklist(self):
         provider=Mock(structured=AsyncMock(return_value=json.dumps({'title':'Job details','body':'Repairs are excluded. [1]'})))
         result=await prepare_draft(provider,'local','Draft a note',[SOURCE],'note')
@@ -27,7 +41,8 @@ class Generation(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result['document_action_draft']['kind'],'note')
         schema=provider.structured.call_args.args[2]
         self.assertEqual(schema['required'],['title','body'])
-        self.assertEqual(schema['properties']['checklist']['maxItems'],0)
+        self.assertNotIn('checklist',schema['properties'])
+        self.assertFalse(provider.structured.call_args.kwargs['think'])
 
     async def test_note_retry_requires_body_citations_and_remains_a_note(self):
         provider=Mock(structured=AsyncMock(side_effect=[json.dumps({'title':'Details [1]','body':'Repairs are excluded.'}),json.dumps({'title':'Details','body':'Repairs are excluded. [1]'})]))

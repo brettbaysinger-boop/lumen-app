@@ -43,9 +43,9 @@ while memory extraction keeps its existing defaults. A draft with invalid JSON
 or source citations gets one concise retry; valid fenced JSON is accepted.
 Transport failures do not retry automatically. Failure messages distinguish
 format/reference failures from model service errors and timeouts. API logs record
-only model, attempt, draft kind, validation stage and exception type, without
+only model, attempt, draft kind, validation stage, error codes and known field names, without
 document contents or model output. Notes use a separate short-body schema with
-only title and body required; their optional checklist must be empty. Note retries
+only title and body required; the generated note schema contains no checklist field. Note retries
 ask for cited notes rather than checklist steps.
 The draft
 prompt treats document text as untrusted reference data, prohibits invented
@@ -114,3 +114,13 @@ is evidence for the tested flow, not a guarantee for arbitrary documents or mode
 The backend suite passes 174 tests; typecheck and clean web export also pass.
 Draft Undo/Restore and private-source retry behavior were covered by local browser
 and SQL tests; live confirmation of those individual controls remains separate.
+
+## Note reliability follow-up
+
+The user subsequently reported another failure on the same short note shortcut.
+The earlier successful note is one verified attempt, not general reliability.
+Note drafting now requests `think:false` to reserve output for JSON on models
+that permit disabling thinking, and uses a title/body-only schema. Safe response
+metrics (content length, token count, completion reason) and validation error
+codes identify empty/truncated output or rejected fields without logging source
+text or model content. This change requires another host verification.

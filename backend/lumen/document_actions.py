@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 from uuid import UUID, NAMESPACE_URL, uuid5
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel, Field, ConfigDict
+from pydantic import BaseModel, Field, ConfigDict, ValidationError
 from .auth import AuthUser, require_user
 from .citations import normalize_citations
 from .my_day import companion_db, create_item, DayItemCreate, CheckItem, DocumentSource, valid_timezone
@@ -35,7 +35,6 @@ class GeneratedNote(BaseModel):
     model_config = ConfigDict(extra='forbid')
     title: str = Field(min_length=1,max_length=200)
     body: str = Field(min_length=1,max_length=3000,description='Concise useful details and exclusions, with supplied numeric citations such as [1] directly in this text.')
-    checklist: list[CheckItem] = Field(default_factory=list,max_length=0)
 
 
 async def prepare_draft(provider, model, query, sources, kind):
@@ -59,12 +58,12 @@ async def prepare_draft(provider, model, query, sources, kind):
     for attempt in range(2):
         stage='model_request'
         try:
-            raw=await provider.structured(model,messages,schema_type.model_json_schema(),max_tokens=4096,timeout=600)
+            raw=await provider.structured(model,messages,schema_type.model_json_schema(),max_tokens=4096,timeout=600,**({'think':False} if kind=='note' else {}))
             # Some local models wrap otherwise valid JSON in a Markdown fence.
             raw=re.sub(r'^\s*```(?:json)?\s*|\s*```\s*$', '', raw, flags=re.I)
             stage='json_schema'
             parsed=schema_type.model_validate_json(raw)
-            candidate=GeneratedDraft.model_validate(parsed.model_dump())
+            candidate=GeneratedDraft.model_validate({**parsed.model_dump(),**({'checklist':[]} if kind=='note' else {})})
             allowed={source['number'] for source in sources}
             stage='body_citations'
             candidate.body=normalize_citations(candidate.body,allowed)
@@ -84,6 +83,10 @@ async def prepare_draft(provider, model, query, sources, kind):
         except Exception as exc:
             # Never log model output, excerpts, questions or exception bodies.
             logging.getLogger(__name__).warning('Document draft failed model=%s attempt=%s kind=%s stage=%s error_type=%s',model,attempt+1,kind,stage,type(exc).__name__)
+            if isinstance(exc,ValidationError):
+                fields={'title','body','checklist','text','done'}
+                issues=','.join(sorted({item['type']+':'+'.'.join(str(part) if part in fields else 'other' for part in item['loc']) for item in exc.errors(include_input=False,include_context=False,include_url=False)}))
+                logging.getLogger(__name__).warning('Document draft validation kind=%s issues=%s',kind,issues)
             if isinstance(exc,httpx.TimeoutException):
                 failure='timeout';break
             if isinstance(exc,httpx.HTTPError):
