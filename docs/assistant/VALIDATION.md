@@ -56,4 +56,4 @@ failures, receipt metadata, editing completed notes, and memory-promise guards.
 Typecheck and clean web export pass. The goals browser test adds completed-note
 edits and saved chat receipt/reload/navigation to the prior manual flow.
 
-On October 7, the user verified goal setup, practice, progress saving and continuity at `946b017`. Explicit chat save and editable completed-session notes are implemented next, locally verified, and await a new host test.
+On October 7, the user verified goal setup, practice, progress saving and continuity at `946b017`. After deploying `1006343`, the user reported that everything was working well, confirming the practice chat-save checkpoint. This is user-reported deployment verification; automated coverage is recorded separately.

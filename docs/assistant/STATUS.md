@@ -34,9 +34,9 @@ below were reported by the user, not performed directly from this workspace.
 - The direct-JSON note fix was subsequently verified fast and working by the user
   at `63e3e62`, then pushed/tagged. See `../document-actions.md`.
 - The user verified goal setup, practice, saving and next-session continuity at
-  `946b017`. Explicit chat-save receipts and editing saved notes await host testing.
+  `946b017`, and reported the chat-save increment at `1006343` working after deployment.
 - Improve reliability across more real documents/models; retain citation checks.
-- Extend practice into milestones and routine delivery after host verification.
+- Extend practice into milestones and routine delivery.
 - Closed-app reminder delivery, recurring schedules, calendars and wake-word
   activation remain future increments, not features of this checkpoint.
 
@@ -52,7 +52,7 @@ On October 7, the user verified the direct-JSON note fix at `63e3e62`, reported 
 
 ## Explicit chat-save increment
 
-On October 7, the user verified goal setup, practice, progress saving and continuity at `946b017`. Explicit chat save and editable completed-session notes are implemented next, locally verified, and await a new host test.
+On October 7, the user verified goal setup, practice, progress saving and continuity at `946b017`. After deploying `1006343`, the user reported that everything was working well, confirming the practice chat-save checkpoint. This is user-reported deployment verification; automated coverage is recorded separately.
 
 Session summaries are generated only after explicit save intent. Save receipts
 follow confirmed writes; failed summarization uses labeled literal excerpts.

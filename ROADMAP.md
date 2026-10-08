@@ -743,14 +743,14 @@ On October 7, the user verified the direct-JSON note fix at `63e3e62`, reported 
 Workstream #8 now has Goals & practice: level/focus/time/rhythm preferences,
 atomic session/chat creation, resume, explicit progress/corrections/vocabulary and
 next-step notes, and bounded continuity into a new session. Local backend, SQL
-and mobile-sized browser checks cover persistence and ownership; actual host
-verification is pending. See `docs/goals-and-practice.md`. Recurring notifications,
+and mobile-sized browser checks cover persistence and ownership. The user verified
+the original flow at `946b017` and reported the chat-save increment working at `1006343`. See `docs/goals-and-practice.md`. Recurring notifications,
 multilingual speech evaluation, milestones and full-course semantic recall remain
 future work.
 
 ## October 7: practice chat saves
 
-On October 7, the user verified goal setup, practice, progress saving and continuity at `946b017`. Explicit chat save and editable completed-session notes are implemented next, locally verified, and await a new host test.
+On October 7, the user verified goal setup, practice, progress saving and continuity at `946b017`. After deploying `1006343`, the user reported that everything was working well, confirming the practice chat-save checkpoint. This is user-reported deployment verification; automated coverage is recorded separately.
 
 Explicit save-session requests now summarize the bounded practice transcript and
 finish the owned session, with a persisted chat receipt only after the write is

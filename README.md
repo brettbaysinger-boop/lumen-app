@@ -28,7 +28,7 @@ The direct-JSON note fix at `63e3e62` was verified working with a major reported
 speed improvement and pushed/tagged. Goals & practice now adds saved preferences,
 linked practice chats and explicit progress notes, verified by the user at
 `946b017`. Explicit chat saving and editable saved notes are now implemented;
-this newer increment awaits host verification. See
+the user reported this increment working after deploying `1006343`. See
 `docs/assistant/STATUS.md` for remaining work.
 
 Current local verification: 192 backend tests, TypeScript validation, clean web

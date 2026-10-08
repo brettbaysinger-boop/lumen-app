@@ -5,7 +5,7 @@ explicit progress notes, and continuity into a new session. Spanish practice is
 the first preset, with everyday and pest-control customer conversation focuses.
 Other goals can use a custom name and focus. The user verified the original goal setup, practice, saved progress and next-session
 continuity on October 7 at `946b017`. The newer explicit chat-save and saved-note
-editing increment is locally checked and awaits host verification.
+editing increment at `1006343` is locally checked and reported working by the user.
 
 ## User flow
 

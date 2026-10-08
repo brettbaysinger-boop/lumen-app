@@ -67,13 +67,14 @@ calendar appointments are separate delivery milestones, not implied features.
 ## Ongoing-goal increment
 
 Workstream #8 now includes practice setup, linked chat sessions, saved progress,
-vocabulary and next steps. Host verification is pending. Recurring delivery,
+vocabulary and next steps. The user verified the original flow at `946b017`
+and reported the chat-save increment working at `1006343`. Recurring delivery,
 multilingual speech and milestones remain separate increments. The direct-JSON
 fast-note fix has been verified and tagged by the user.
 
 ## October 7: practice chat saves
 
-On October 7, the user verified goal setup, practice, progress saving and continuity at `946b017`. Explicit chat save and editable completed-session notes are implemented next, locally verified, and await a new host test.
+On October 7, the user verified goal setup, practice, progress saving and continuity at `946b017`. After deploying `1006343`, the user reported that everything was working well, confirming the practice chat-save checkpoint. This is user-reported deployment verification; automated coverage is recorded separately.
 
 Explicit save-session requests now summarize the bounded practice transcript and
 finish the owned session, with a persisted chat receipt only after the write is
