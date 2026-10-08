@@ -1,4 +1,5 @@
 import json
+import httpx
 import unittest
 from datetime import datetime,timedelta,timezone
 from types import SimpleNamespace
@@ -19,6 +20,25 @@ DRAFT={'title':'Prepare for the job','body':'Check access for the foundation wor
        'checklist':[{'text':'Confirm access to the foundation. [1]','done':True}]}
 
 class Generation(unittest.IsolatedAsyncioTestCase):
+    async def test_invalid_citations_retry_once_without_fabricating_references(self):
+        provider=Mock(structured=AsyncMock(side_effect=[json.dumps({**DRAFT,'body':'Missing citations'}),json.dumps(DRAFT)]))
+        result=await prepare_draft(provider,'local','Make a checklist',[SOURCE],'list')
+        self.assertIn('document_action_draft',result)
+        self.assertEqual(provider.structured.await_count,2)
+        self.assertEqual(provider.structured.call_args.kwargs,{'max_tokens':4096,'timeout':600})
+
+    async def test_fenced_json_and_provider_failure_are_distinguished(self):
+        provider=Mock(structured=AsyncMock(return_value='```json\n'+json.dumps(DRAFT)+'\n```'))
+        self.assertIn('document_action_draft',await prepare_draft(provider,'local','Make a checklist',[SOURCE],'list'))
+        for error,word in [(httpx.ReadTimeout('private detail'),'timed out'),(httpx.ConnectError('private detail'),'service')]:
+            provider=Mock(structured=AsyncMock(side_effect=error))
+            with self.assertLogs('lumen.document_actions',level='WARNING') as logs:
+                result=await prepare_draft(provider,'local','Make a checklist',[SOURCE],'list')
+            self.assertIn(word,result['content']);self.assertNotIn('document_action_draft',result)
+            self.assertEqual(provider.structured.await_count,1)
+            self.assertNotIn('private detail',' '.join(logs.output))
+            self.assertNotIn(SOURCE['excerpt'],' '.join(logs.output))
+
     async def test_runtime_persists_draft_without_actions_or_memory_writes(self):
         runtime=CognitionRuntime.__new__(CognitionRuntime)
         runtime.settings=SimpleNamespace(conversation_model='local',memory_observations_enabled=True)

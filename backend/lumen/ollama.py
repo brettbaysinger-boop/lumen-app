@@ -57,12 +57,12 @@ class OllamaProvider:
         except (httpx.HTTPError, ValueError, AttributeError):
             return None
 
-    async def structured(self, model: str, messages: list[dict], schema: dict) -> str:
-        async with httpx.AsyncClient(timeout=60) as client:
+    async def structured(self, model: str, messages: list[dict], schema: dict, *, max_tokens: int = 1000, timeout: float = 60) -> str:
+        async with httpx.AsyncClient(timeout=timeout) as client:
             response = await client.post(f"{self.base_url}/api/chat", json={
                 "model": model, "messages": messages, "stream": False, "format": schema,
                 "keep_alive": self.keep_alive,
-                "options": {"temperature": 0, "num_predict": 1000, "num_ctx": self.context_length},
+                "options": {"temperature": 0, "num_predict": max_tokens, "num_ctx": self.context_length},
             })
             response.raise_for_status()
             return response.json()["message"]["content"]

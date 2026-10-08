@@ -35,6 +35,13 @@ validation checks references, not the truth of the interpretation; review the
 original source before using a checklist for work.
 
 The selected conversation model must support structured JSON output. The draft
+request uses a dedicated 4,096-token output budget and a 600-second timeout,
+while memory extraction keeps its existing defaults. A draft with invalid JSON
+or source citations gets one concise retry; valid fenced JSON is accepted.
+Transport failures do not retry automatically. Failure messages distinguish
+format/reference failures from model service errors and timeouts. API logs record
+only model, attempt and exception type, without document contents or model output.
+The draft
 prompt treats document text as untrusted reference data, prohibits invented
 procedures and commitments, and requests only source-supported steps. Existing
 document limits and PDF extraction requirements still apply; see `documents.md`.

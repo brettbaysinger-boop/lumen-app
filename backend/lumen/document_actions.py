@@ -1,5 +1,7 @@
 """Reviewed document-to-My-Day drafts. Draft generation never writes an item."""
 import json
+import logging
+import httpx
 import re
 from datetime import datetime, timezone
 from uuid import UUID, NAMESPACE_URL, uuid5
@@ -40,22 +42,44 @@ async def prepare_draft(provider, model, query, sources, kind):
         'the user chooses its time separately. Return title, body and checklist only. '
         'Checklist is empty for notes/reminders. Each checklist object has text and done:false.'},
         {'role':'user','content':json.dumps({'requested_kind':kind,'question':query,'sources':sources})}]
-    try:
-        raw=await provider.structured(model,messages,GeneratedDraft.model_json_schema())
-        draft=GeneratedDraft.model_validate_json(raw)
-        allowed={source['number'] for source in sources}
-        draft.body=normalize_citations(draft.body,allowed)
-        if kind=='list' and not draft.checklist: raise ValueError('Empty checklist')
-        if kind!='list': draft.checklist=[]
-        for item in draft.checklist:
-            item.text=normalize_citations(item.text,allowed)
-            item.done=False
-        # Revalidate lengths after expanding grouped citations.
-        draft=GeneratedDraft.model_validate(draft.model_dump())
-        if not draft.title.strip() or re.search(r'https?://',str(draft.model_dump()),re.I):
-            raise ValueError('Unsupported draft')
-    except Exception:
-        return {'content':'I couldn’t prepare a source-cited draft from these excerpts. Nothing was saved. Try a more specific request or inspect the source pages.',
+    failure='invalid_output'
+    draft=None
+    for attempt in range(2):
+        try:
+            raw=await provider.structured(model,messages,GeneratedDraft.model_json_schema(),max_tokens=4096,timeout=600)
+            # Some local models wrap otherwise valid JSON in a Markdown fence.
+            raw=re.sub(r'^\s*```(?:json)?\s*|\s*```\s*$', '', raw, flags=re.I)
+            candidate=GeneratedDraft.model_validate_json(raw)
+            allowed={source['number'] for source in sources}
+            candidate.body=normalize_citations(candidate.body,allowed)
+            if kind=='list' and not candidate.checklist: raise ValueError('Empty checklist')
+            if kind!='list': candidate.checklist=[]
+            for item in candidate.checklist:
+                item.text=normalize_citations(item.text,allowed)
+                item.done=False
+            candidate=GeneratedDraft.model_validate(candidate.model_dump())
+            if not candidate.title.strip() or re.search(r'https?://',str(candidate.model_dump()),re.I):
+                raise ValueError('Unsupported draft')
+            draft=candidate
+            break
+        except Exception as exc:
+            # Never log model output, excerpts, questions or exception bodies.
+            logging.getLogger(__name__).warning('Document draft failed model=%s attempt=%s error_type=%s',model,attempt+1,type(exc).__name__)
+            if isinstance(exc,httpx.TimeoutException):
+                failure='timeout';break
+            if isinstance(exc,httpx.HTTPError):
+                failure='provider_error';break
+            if attempt==0:
+                messages.append({'role':'system','content':
+                    'The previous response did not pass draft validation. Try once more with concise valid JSON only: '
+                    'title, body, checklist. Use at most 10 short checklist steps, each under 250 characters. '
+                    'Include a valid supplied citation such as [1] in body AND every step. '
+                    'Use only supplied document facts; do not add URLs or new source numbers.'})
+    if draft is None:
+        reasons={'timeout':'The local model timed out while drafting.',
+                 'provider_error':'The local model service could not complete the draft request.',
+                 'invalid_output':'The local model returned a draft with invalid formatting or source references, even after one retry.'}
+        return {'content':reasons[failure]+' Nothing was saved. Try drafting a shorter checklist or choose another conversation model, then inspect the source pages.',
                 'model':'document-draft','document_sources':sources}
     return {'content':'I prepared a draft for review. Edit it below, then choose Save to My Day. Nothing has been saved or scheduled yet.',
             'model':model,'document_sources':sources,
