@@ -250,3 +250,22 @@ and user acceptance remain to be verified.
 4. Verify a real image appears in chat and Gallery.
 5. Verify ordinary text replies still stream smoothly.
 6. Confirm generated self-portraits reflect saved visual identity.
+
+### October 9 — Live companion-image acceptance
+
+**User-verified:** Companion-initiated image generation succeeded in the
+deployed application at commit `3b47f68`.
+
+- The companion independently chose to illustrate a "Memory Garden".
+- Heavy generated the image successfully.
+- The image appeared in the companion's chat response.
+- The user confirmed the same image appeared in Gallery.
+- No internal image-action JSON was visible in the response.
+- The user requested removal of the redundant backend-generated
+  "Here's the image I made for you" sentence.
+
+**Follow-up polish:** Successful image replies now preserve the companion's
+own prose without appending a canned sentence. When no prose exists, a
+short natural fallback is used. Failure replies remain explicit and truthful.
+
+**Polish deployment:** Pending.

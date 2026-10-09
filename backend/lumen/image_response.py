@@ -45,10 +45,13 @@ def clean_image_intro(content: str) -> str:
 
 def image_reply(content: str, *, success: bool) -> str:
     intro = clean_image_intro(content)
+    if success:
+        # The companion's own words should carry the moment.
+        # Only provide a fallback when the model supplied no visible prose.
+        return intro or "I wanted to share this with you."
+
     ending = (
-        "Here's the image I made for you."
-        if success
-        else "I tried to create that image, but couldn't finish "
-             "generating and saving it. Please try again."
+        "I tried to create that image, but couldn't finish "
+        "generating and saving it. Please try again."
     )
     return f"{intro}\n\n{ending}" if intro else ending

@@ -176,7 +176,10 @@ class CompanionImageRuntimeTests(unittest.IsolatedAsyncioTestCase):
 
         create_image.assert_awaited_once()
         self.assertNotIn('"action_input"', response.content)
-        self.assertIn("image I made", response.content)
+        self.assertEqual(
+            response.content,
+            "I wanted to share this with you.",
+        )
 
     async def test_stream_does_not_expose_action_json(self):
         response, events, _ = await self.respond(
