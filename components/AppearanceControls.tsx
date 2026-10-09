@@ -3,6 +3,7 @@ import { View, Text, TextInput, Pressable, Switch } from 'react-native';
 import { useTheme } from '@/lib/theme-context';
 import { contrast, isHex, type PortraitFrame, type FrameFinish } from '@/lib/appearance';
 import { CompanionPortrait } from './CompanionPortrait';
+import { VisualColorPicker } from './VisualColorPicker';
 
 const COLOR_SWATCHES = {
   Background: [
@@ -33,6 +34,7 @@ function ColorField({ label, value, fallback, onApply }: {
   const { colors: c } = useTheme();
   const current = value || fallback;
   const [draft, setDraft] = useState(current);
+  const [pickerOpen, setPickerOpen] = useState(false);
 
   useEffect(() => setDraft(current), [current]);
 
@@ -85,6 +87,36 @@ function ColorField({ label, value, fallback, onApply }: {
           );
         })}
       </View>
+
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel={`${label} custom color picker`}
+        accessibilityState={{ expanded: pickerOpen }}
+        onPress={() => setPickerOpen(open => !open)}
+        style={{
+          alignSelf: 'flex-start',
+          paddingVertical: 9,
+          paddingHorizontal: 14,
+          borderRadius: 10,
+          borderWidth: 1,
+          borderColor: pickerOpen ? c.primary[400] : c.neutral[700],
+          backgroundColor: c.neutral[900],
+        }}
+      >
+        <Text style={{ color: c.primary[300], fontSize: 12, fontWeight: '600' }}>
+          {pickerOpen ? 'Close custom color' : 'Custom color...'}
+        </Text>
+      </Pressable>
+
+      {pickerOpen && (
+        <VisualColorPicker
+          value={current}
+          onApply={color => {
+            selectColor(color);
+            setPickerOpen(false);
+          }}
+        />
+      )}
 
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
         <View
