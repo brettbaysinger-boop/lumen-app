@@ -77,25 +77,60 @@ export async function removeStoredFiles(bucket: MediaBucket, paths: string[]) {
   if (error) console.error('file cleanup failed', error);
 }
 
-export function useSignedUrl(bucket: MediaBucket, path: string | null | undefined): string | null {
-  const [signed, setSigned] = useState<{ path: string; url: string } | null>(null);
+export function useSignedUrl(
+  bucket: MediaBucket,
+  path: string | null | undefined,
+): string | null {
+  const [signed, setSigned] = useState<{
+    bucket: MediaBucket;
+    path: string;
+    url: string;
+  } | null>(null);
 
   useEffect(() => {
-    if (!path) return;
+    if (!path) {
+      setSigned(null);
+      return;
+    }
+
     let cancelled = false;
-    supabase.storage
-      .from(bucket)
-      .createSignedUrl(path, 60 * 60)
-      .then(({ data, error }) => {
+
+    const renew = async () => {
+      try {
+        const { data, error } = await supabase.storage
+          .from(bucket)
+          .createSignedUrl(path, 60 * 60);
+
         if (cancelled) return;
+
         if (error || !data?.signedUrl) {
           console.error('signed link failed', error);
+          setSigned(null);
           return;
         }
-        setSigned({ path, url: data.signedUrl });
-      });
-    return () => { cancelled = true; };
+
+        setSigned({ bucket, path, url: data.signedUrl });
+      } catch (error) {
+        if (cancelled) return;
+        console.error('signed link failed', error);
+        setSigned(null);
+      }
+    };
+
+    void renew();
+
+    // Refresh before the one-hour signed URL expires.
+    const interval = setInterval(() => {
+      void renew();
+    }, 50 * 60 * 1000);
+
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
   }, [bucket, path]);
 
-  return path && signed?.path === path ? signed.url : null;
+  return path && signed?.bucket === bucket && signed?.path === path
+    ? signed.url
+    : null;
 }

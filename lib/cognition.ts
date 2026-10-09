@@ -19,16 +19,25 @@ export interface MessageAttachment {
   mime_type: string;
 }
 
-const IMAGE_REQUEST = /\b(generate|create|make|draw|paint|sketch|design|render|illustrate)\b[^.?!]{0,80}\b(image|picture|pic|photo|drawing|painting|illustration|artwork|art|portrait|wallpaper|logo|sketch)\b|\b(show|send)\b[^.?!]{0,40}\b(image|picture|pic|photo|drawing|portrait)\b/i;
+const IMAGE_REQUEST =
+  /\b(?:generate|create|make|draw|paint|sketch|design|render|illustrate)\b[^.?!]{0,100}\b(?:image|picture|pic|photo|drawing|painting|illustration|artwork|portrait|wallpaper|logo|sketch)\b|\b(?:show|send)\b[^.?!]{0,60}\b(?:image|picture|pic|photo|drawing|portrait)\b/i;
+
+const DIRECT_VISUAL_CREATION =
+  /^(?:please\s+)?(?:draw|sketch|illustrate|render|paint)\s+(?:(?:me|us)\s+)?(?:an?\s+|the\s+|this\s+|that\s+|my\s+|our\s+)?(?:[\w'-]+\s+){0,5}[\w'-]+/i;
+
+const NON_IMAGE_REQUEST =
+  /\b(?:paint|draw)\s+(?:me\s+)?(?:a\s+)?picture\s+(?:with|using)\s+words\b|\b(?:paint|draw)\s+(?:me\s+)?(?:a\s+)?verbal\s+picture\b/i;
 
 export function isImageRequest(text: string): boolean {
-  return IMAGE_REQUEST.test(text);
+  if (NON_IMAGE_REQUEST.test(text)) return false;
+  return IMAGE_REQUEST.test(text) || DIRECT_VISUAL_CREATION.test(text);
 }
 
 export async function generateImage(
   companionId: string,
   conversationId: string | null,
   prompt: string,
+  userMessage?: string,
 ): Promise<{ conversation_id: string; message_id: string }> {
   const baseUrl = process.env.EXPO_PUBLIC_LUMEN_API_URL?.trim().replace(/\/+$/, '');
   if (!baseUrl) {
@@ -46,6 +55,7 @@ export async function generateImage(
         companion_id: companionId,
         conversation_id: conversationId,
         prompt,
+        ...(userMessage ? { user_message: userMessage } : {}),
       }),
       signal: controller.signal,
     });

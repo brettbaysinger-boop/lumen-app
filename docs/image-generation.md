@@ -377,6 +377,73 @@ At the current visual-identity checkpoint:
 - original prompt remains preserved
 - live Lumen self-image generation has been verified
 
+## October 9, 2026 — Gallery integration and recovery
+
+**Implementation state:** Changes tested locally; application deployment and
+browser acceptance verification are pending.
+
+### Confirmed Heavy generation
+
+The backend's ComfyUI provider successfully generated a valid 1024×1024 RGB
+PNG using Heavy's RTX 5060 Ti 16 GB GPU and the versioned FLUX.2 Klein 4B
+FP8 workflow. The measured provider call completed in approximately 3.04
+seconds. This verifies image generation, not other Heavy inference workloads.
+
+### Conversational image requests
+
+The updated frontend recognizes additional direct image instructions,
+including requests to paint a scene. It also recognizes confirmations such
+as "Yes, please do" when the immediately preceding assistant message
+explicitly offers to create an image.
+
+The resolved generation prompt is sent separately from the user's literal
+confirmation, preserving conversational history and prompt provenance.
+
+### Gallery registration
+
+Generated images and user-uploaded image attachments are registered in
+`gallery_items` with their companion, conversation, original message,
+private storage path, source, category, and metadata.
+
+Generated images use `companion_sent`; uploaded images use `user_showed`.
+Registration IDs are deterministic UUIDv5 values to support safe retries.
+
+Gallery display signs private `chat-media` storage paths for authenticated
+viewing and refreshes signed URLs during longer sessions. Storage objects
+remain private.
+
+Gallery-registration errors are logged without discarding a successfully
+saved chat message or image.
+
+### Historical recovery
+
+Migration `20261009190000_backfill_chat_image_gallery.sql` was applied
+through Supabase's local migration system on October 9, 2026.
+
+Verified results:
+
+- 48 historical generated images registered.
+- 21 historical user-uploaded images registered.
+- 69 total gallery records, all with unique IDs.
+- All 69 records link to existing private storage objects and messages.
+- Original message timestamps preserved.
+- One unreferenced storage object left untouched.
+- Existing chat messages and image files were not modified.
+
+The migration is idempotent and uses `ON CONFLICT (id) DO NOTHING`.
+
+### Validation and remaining work
+
+Six frontend image-follow-up tests and eight backend image/gallery tests
+passed, alongside TypeScript validation and whitespace checks.
+
+The gallery UI and backend changes still require commit, deployment,
+and user verification in the browser. Do not treat successful database
+recovery alone as proof that images render correctly.
+
+Future work includes reference-image conditioning, stronger visual
+identity consistency, broader provider routing, and storage backups.
+
 ## Image north star
 
 A user should eventually be able to say:

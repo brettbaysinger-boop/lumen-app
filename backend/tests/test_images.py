@@ -105,6 +105,50 @@ class ImageEndpointTests(unittest.IsolatedAsyncioTestCase):
             2,
         )
 
+        # Generated images must be registered in the private gallery.
+        repository._request.assert_awaited_once()
+        args, kwargs = repository._request.await_args
+        self.assertEqual(args, ("POST", "gallery_items"))
+        self.assertEqual(kwargs["params"], {"on_conflict": "id"})
+        self.assertEqual(
+            kwargs["headers"]["Prefer"],
+            "resolution=merge-duplicates,return=minimal",
+        )
+
+        gallery = kwargs["json"]
+        self.assertEqual(gallery["companion_id"], COMPANION_ID)
+        self.assertEqual(gallery["conversation_id"], CONVERSATION_ID)
+        self.assertEqual(gallery["source"], "companion")
+        self.assertEqual(gallery["category"], "companion_sent")
+        self.assertEqual(gallery["media_type"], "image")
+        self.assertEqual(
+            gallery["url"],
+            f"{USER_ID}/generated-image-id.png",
+        )
+        self.assertEqual(
+            gallery["caption"],
+            "A luminous city beneath two moons",
+        )
+        self.assertEqual(gallery["metadata"]["bucket"], "chat-media")
+        self.assertEqual(
+            gallery["metadata"]["storage_path"],
+            gallery["url"],
+        )
+        self.assertEqual(
+            gallery["metadata"]["message_id"],
+            MESSAGE_ID,
+        )
+        self.assertTrue(gallery["metadata"]["generated_image"])
+
+        import uuid
+        self.assertEqual(
+            gallery["id"],
+            str(uuid.uuid5(
+                uuid.NAMESPACE_URL,
+                f"raialume:generated-image:{MESSAGE_ID}",
+            )),
+        )
+
     async def test_companion_self_image_uses_visual_identity(self):
         repository = AsyncMock()
         repository.get_companion.return_value = {
@@ -189,6 +233,45 @@ class ImageEndpointTests(unittest.IsolatedAsyncioTestCase):
             "A crystal dragon",
         )
 
+    async def test_followup_preserves_literal_user_message(self):
+        repository = AsyncMock()
+        repository.get_companion.return_value = {"id": COMPANION_ID}
+        repository.get_conversation.return_value = {
+            "id": CONVERSATION_ID,
+            "companion_id": COMPANION_ID,
+        }
+        repository.create_message.side_effect = [
+            {"id": "user-message"},
+            {"id": MESSAGE_ID},
+        ]
+        provider = FakeImageProvider()
+
+        with patch("lumen.main.SupabaseRepository", return_value=repository), \
+             patch("lumen.main.create_image_provider", return_value=provider):
+            await generate_image(
+                ImageGenerateRequest(
+                    companion_id=COMPANION_ID,
+                    conversation_id=CONVERSATION_ID,
+                    prompt="A Sonoran Desert sunrise",
+                    user_message="Yes please do",
+                ),
+                AuthUser(USER_ID, "user-token"),
+            )
+
+        user_row = repository.create_message.await_args_list[0].args[0]
+        assistant_row = repository.create_message.await_args_list[1].args[0]
+
+        self.assertEqual(user_row["content"], "Yes please do")
+        self.assertEqual(provider.prompt, "A Sonoran Desert sunrise")
+        self.assertEqual(
+            assistant_row["metadata"]["image_prompt"],
+            "Yes please do",
+        )
+        self.assertEqual(
+            assistant_row["metadata"]["generation_prompt"],
+            "A Sonoran Desert sunrise",
+        )
+
     async def test_generate_image_rejects_wrong_conversation(self):
         repository = AsyncMock()
         repository.get_companion.return_value = {"id": COMPANION_ID}
@@ -208,6 +291,47 @@ class ImageEndpointTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(raised.exception.status_code, 404)
         repository.upload_storage.assert_not_awaited()
         repository.create_message.assert_not_awaited()
+
+
+    async def test_gallery_failure_preserves_generated_image(self):
+        repository = AsyncMock()
+        repository.get_companion.return_value = {"id": COMPANION_ID}
+        repository.get_conversation.return_value = {
+            "id": CONVERSATION_ID,
+            "companion_id": COMPANION_ID,
+        }
+        repository.create_message.side_effect = [
+            {"id": "user-message"},
+            {"id": MESSAGE_ID},
+        ]
+        repository._request.side_effect = RuntimeError("gallery unavailable")
+
+        with patch("lumen.main.SupabaseRepository", return_value=repository), \
+             patch(
+                 "lumen.main.create_image_provider",
+                 return_value=FakeImageProvider(),
+             ), \
+             patch("lumen.main.logging.getLogger") as get_logger:
+
+            response = await generate_image(
+                ImageGenerateRequest(
+                    companion_id=COMPANION_ID,
+                    conversation_id=CONVERSATION_ID,
+                    prompt="A desert sunrise",
+                ),
+                AuthUser(USER_ID, "user-token"),
+            )
+
+        self.assertEqual(response.message_id, MESSAGE_ID)
+        repository.upload_storage.assert_awaited_once()
+        self.assertEqual(repository.create_message.await_count, 2)
+        repository.touch_conversation.assert_awaited_once_with(
+            CONVERSATION_ID,
+            2,
+        )
+        get_logger.return_value.exception.assert_called_once_with(
+            "Generated image saved to chat but gallery registration failed"
+        )
 
 
 if __name__ == "__main__":

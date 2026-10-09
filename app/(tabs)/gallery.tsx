@@ -16,6 +16,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Plus, X, Trash2, Image as ImageIcon, Video, Sparkles } from 'lucide-react-native';
 import { supabase } from '@/lib/supabase';
+import { useSignedUrl } from '@/lib/media';
 import { useTheme } from '@/lib/theme-context';
 import { Spacing, Radius, Typography, type ExtendedThemeColors } from '@/lib/theme';
 import type { Companion, GalleryItem, GalleryCategory } from '@/types/database';
@@ -26,6 +27,49 @@ const CATEGORIES: Array<{ key: GalleryCategory | 'all'; label: string }> = [
   { key: 'user_showed', label: 'Things You Showed Me' },
   { key: 'companion_sent', label: 'Images I Sent Back' },
 ];
+
+/**
+ * Gallery records may contain an external URL or a private chat-media path.
+ * Never expose private storage objects through public URLs.
+ */
+function GalleryImage({
+  item,
+  style,
+  resizeMode,
+  loadingColor,
+}: {
+  item: GalleryItem;
+  style: any;
+  resizeMode: 'cover' | 'contain';
+  loadingColor: string;
+}) {
+  const metadata = item.metadata ?? {};
+  const storedPath =
+    typeof metadata.storage_path === 'string'
+      ? metadata.storage_path
+      : !/^https?:\/\//i.test(item.url)
+        ? item.url
+        : null;
+
+  const signedUrl = useSignedUrl('chat-media', storedPath);
+  const uri = storedPath ? signedUrl : item.url;
+
+  if (!uri) {
+    return (
+      <View style={[style, { alignItems: 'center', justifyContent: 'center' }]}>
+        <ActivityIndicator color={loadingColor} />
+      </View>
+    );
+  }
+
+  return (
+    <RNImage
+      source={{ uri }}
+      style={style}
+      resizeMode={resizeMode}
+    />
+  );
+}
 
 export default function GalleryScreen() {
   const { colors: c } = useTheme();
@@ -148,7 +192,7 @@ export default function GalleryScreen() {
             onPress={() => setPreviewItem(item)}
           >
             {item.media_type === 'image' ? (
-              <RNImage source={{ uri: item.url }} style={styles.cardImage} resizeMode="cover" />
+              <GalleryImage item={item} style={styles.cardImage} resizeMode="cover" loadingColor={c.primary[400]} />
             ) : (
               <View style={[styles.cardImage, styles.videoPlaceholder]}>
                 <Video color={c.neutral[400]} size={32} strokeWidth={1.5} />
@@ -232,7 +276,7 @@ export default function GalleryScreen() {
               </View>
             </View>
             {previewItem?.media_type === 'image' ? (
-              <RNImage source={{ uri: previewItem.url }} style={styles.previewImage} resizeMode="contain" />
+              <GalleryImage item={previewItem} style={styles.previewImage} resizeMode="contain" loadingColor={c.primary[400]} />
             ) : (
               <View style={[styles.previewImage, styles.videoPlaceholder]}>
                 <Video color={c.neutral[400]} size={48} strokeWidth={1.5} />

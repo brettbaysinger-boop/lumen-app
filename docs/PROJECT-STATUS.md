@@ -97,6 +97,68 @@ Next steps:
 5. Verify companion portrait generation and saved-portrait integration.
 6. Update this checkpoint after each completed workstream.
 
+## October 9, 2026 — Image generation and gallery recovery
+
+**State:** Database recovery applied and verified. Application changes tested
+locally but not yet committed, deployed, or user-verified in the browser.
+
+### Confirmed infrastructure
+
+- `aiLumen-llm-heavy` serves ComfyUI at `192.168.86.50:8188`.
+- Heavy reports an NVIDIA RTX 5060 Ti with 16 GB VRAM.
+- Required FLUX.2 Klein 4B FP8 model assets and workflow nodes are available.
+- A live backend-provider generation returned a valid 1024×1024 PNG
+  in approximately 3.04 seconds.
+- The application backend is configured to use Heavy for image generation.
+- This does not establish that Heavy serves conversational or vision inference.
+
+### Image and gallery repairs
+
+- Expanded direct image-request detection.
+- Added contextual handling for confirmations of explicit image offers.
+- Preserved the user's literal confirmation separately from the resolved
+  image-generation prompt.
+- Added gallery registration for generated images and user-uploaded images.
+- Added authenticated signed-URL rendering for private gallery images.
+- Added signed-URL renewal for longer-lived gallery sessions.
+- Gallery registration failures are logged without losing chat messages.
+
+### Historical gallery recovery
+
+Applied migration:
+`20261009190000_backfill_chat_image_gallery.sql`
+
+- 48 generated images recovered.
+- 21 user-uploaded image attachments recovered.
+- 69 unique gallery entries verified.
+- All 69 entries have storage paths and original-message references.
+- All 69 referenced storage objects and companion/conversation relationships
+  were verified before recovery.
+- One additional unreferenced chat-media object was left untouched.
+- Recovery uses deterministic UUIDv5 IDs and conflict-safe insertion.
+- Original message timestamps are preserved.
+
+### Automated validation
+
+- TypeScript typecheck passed.
+- Six frontend image-follow-up tests passed.
+- Eight backend image/gallery tests passed.
+- `git diff --check` passed.
+- Recovery migration dry run inserted 69 records and rolled back cleanly.
+- Supabase migration applied and appears in local migration history.
+
+### Remaining acceptance work
+
+1. Review and commit the intended application, test, documentation,
+   and migration changes.
+2. Build and deploy the updated web frontend and backend.
+3. Verify that all 69 historical images appear in the browser gallery.
+4. Test a new direct image request and a conversational confirmation.
+5. Confirm new generated and uploaded images appear in Gallery.
+6. Continue the broader Heavy workload and inference-routing audit.
+
+Do not stage unrelated `supabase/config.toml` changes or backup files.
+
 ## Cross-chat development protocol
 
 At the beginning of every new Lumen development conversation:

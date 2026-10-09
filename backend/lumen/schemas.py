@@ -88,6 +88,7 @@ class ImageGenerateRequest(BaseModel):
     companion_id: str
     conversation_id: str | None = None
     prompt: str = Field(min_length=1, max_length=1000)
+    user_message: str | None = Field(default=None, min_length=1, max_length=1000)
 
 
 class ImageGenerateResponse(BaseModel):

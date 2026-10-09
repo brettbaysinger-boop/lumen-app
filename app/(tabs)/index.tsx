@@ -42,6 +42,7 @@ import { router, useLocalSearchParams, useFocusEffect } from 'expo-router';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth';
 import { respondToMessage, generateImage, isImageRequest } from '@/lib/cognition';
+import { imagePromptFromConfirmation } from '@/lib/image-followup';
 import { pickImages, uploadImage, removeStoredFiles, MediaError, type PickedImage } from '@/lib/media';
 import { MessageImages, PendingAttachments, readAttachments } from '@/components/ChatAttachments';
 import { recordMicrophone, transcribeRecording, playReply, type RecordingHandle } from '@/lib/voice';
@@ -351,7 +352,11 @@ export default function ChatScreen() {
     if (!turnKey.current || turnKey.current.text !== text) turnKey.current = { text, id: requestKey() };
     const images = pendingImages;
     const document = pendingDocument;
-    const wantsImage = !document && !images.length && isImageRequest(text);
+    const followupImagePrompt = !document && !images.length
+      ? imagePromptFromConfirmation(text, messages)
+      : null;
+    const wantsImage = !document && !images.length &&
+      (isImageRequest(text) || followupImagePrompt !== null);
     setInputText('');
     setPendingImages([]);
     setSending(true);
@@ -364,7 +369,12 @@ export default function ChatScreen() {
     try {
       let response: { conversation_id: string };
       if (wantsImage) {
-        response = await generateImage(companion.id, activeConversation?.id ?? null, text);
+        response = await generateImage(
+          companion.id,
+          activeConversation?.id ?? null,
+          followupImagePrompt ?? text,
+          followupImagePrompt ? text : undefined,
+        );
       } else {
         for (const image of images) {
           uploaded.push(await uploadImage('chat-media', userId, image, 10 * 1024 * 1024));
@@ -417,7 +427,7 @@ export default function ChatScreen() {
       setActivity('');
       setCreatingImage(false);
     }
-  }, [inputText, pendingImages, pendingDocument, documentBusy, companion, session?.user.id, sending, activeConversation, loadMessages]);
+  }, [inputText, pendingImages, pendingDocument, documentBusy, companion, session?.user.id, sending, activeConversation, loadMessages, messages]);
 
   useEffect(() => {
     if (messages.length > 0) {

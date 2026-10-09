@@ -1,5 +1,6 @@
 import asyncio
 import json
+import logging
 import uuid
 
 import httpx
@@ -218,7 +219,7 @@ async def generate_image(
         "conversation_id": active_conversation_id,
         "companion_id": request.companion_id,
         "role": "user",
-        "content": request.prompt,
+        "content": request.user_message or request.prompt,
     })
 
     assistant_message = await db.create_message({
@@ -233,12 +234,47 @@ async def generate_image(
                 "mime_type": mime_type,
             }],
             "generated_image": True,
-            "image_prompt": request.prompt,
+            "image_prompt": request.user_message or request.prompt,
+            "generation_prompt": request.prompt,
             "resolved_image_prompt": resolved_prompt,
             "image_subject": image_subject,
             "image_provider": result["provider"],
         },
     })
+
+    # Register the existing private image in the companion's gallery.
+    # A deterministic ID makes this registration safe to retry.
+    gallery_id = str(uuid.uuid5(
+        uuid.NAMESPACE_URL,
+        f"raialume:generated-image:{assistant_message['id']}",
+    ))
+    try:
+        await db._request(
+            "POST",
+            "gallery_items",
+            params={"on_conflict": "id"},
+            headers={"Prefer": "resolution=merge-duplicates,return=minimal"},
+            json={
+                "id": gallery_id,
+                "companion_id": request.companion_id,
+                "conversation_id": active_conversation_id,
+                "source": "companion",
+                "category": "companion_sent",
+                "media_type": "image",
+                "url": storage_path,
+                "caption": request.prompt,
+                "metadata": {
+                    "bucket": "chat-media",
+                    "storage_path": storage_path,
+                    "message_id": assistant_message["id"],
+                    "generated_image": True,
+                },
+            },
+        )
+    except Exception:
+        logging.getLogger(__name__).exception(
+            "Generated image saved to chat but gallery registration failed"
+        )
 
     await db.touch_conversation(active_conversation_id, 2)
 

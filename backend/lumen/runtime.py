@@ -1,5 +1,5 @@
 import logging
-from uuid import uuid4
+from uuid import uuid4, uuid5, NAMESPACE_URL
 from .my_day import handle_action
 from .unstuck import unstuck_action, unstuck_request
 from .goals import practice_context
@@ -178,6 +178,41 @@ class CognitionRuntime:
             "metadata": {**({"attachments": [a.model_dump() for a in attachments]} if attachments else {}),
                          **({"document_id": document_id, "document_title": action.get("document_title")} if document_id else {})},
         })
+        # Register photos only after their user chat message has been saved.
+        # Each message/attachment pair has a stable gallery ID.
+        for attachment in attachments:
+            gallery_id = str(uuid5(
+                NAMESPACE_URL,
+                f"raialume:user-image:{user_row['id']}:{attachment.path}",
+            ))
+            try:
+                await self.db._request(
+                    "POST",
+                    "gallery_items",
+                    params={"on_conflict": "id"},
+                    headers={"Prefer": "resolution=merge-duplicates,return=minimal"},
+                    json={
+                        "id": gallery_id,
+                        "companion_id": companion_id,
+                        "conversation_id": conversation_id,
+                        "source": "user",
+                        "category": "user_showed",
+                        "media_type": "image",
+                        "url": attachment.path,
+                        "caption": user_message[:500] or None,
+                        "metadata": {
+                            "bucket": "chat-media",
+                            "storage_path": attachment.path,
+                            "message_id": user_row["id"],
+                            "mime_type": attachment.mime_type,
+                        },
+                    },
+                )
+            except Exception:
+                logging.getLogger(__name__).exception(
+                    "User image saved to chat but gallery registration failed"
+                )
+
         assistant_row = await self.db.create_message({
             "conversation_id": conversation_id,
             "companion_id": companion_id,
