@@ -1,3 +1,4 @@
+import { RaialumeColors as brand } from '@/lib/raialume-colors';
 import { SocialSignIn } from '@/components/SocialSignIn';
 import { RaialumeLogo } from '@/components/RaialumeLogo';
 import { signOutThisBrowser } from '@/lib/sign-out';
@@ -38,7 +39,7 @@ export default function Login() {
     } catch (error) { setNotice(error instanceof Error ? error.message : 'Could not sign in.'); }
     finally { setBusy(false); }
   };
-  return <SafeAreaView style={{ flex: 1, backgroundColor: '#0C1930' }}>
+  return <SafeAreaView style={{ flex: 1, backgroundColor: brand.background }}>
     <ScrollView
       keyboardShouldPersistTaps="handled"
       contentContainerStyle={{
@@ -53,7 +54,7 @@ export default function Login() {
         <View style={{ alignItems: 'center', gap: 8, marginBottom: 34 }}>
           <RaialumeLogo width={174} height={109} />
           <Text style={{
-            color: '#F5E8C8',
+            color: brand.ivory,
             fontSize: 43,
             fontFamily: 'Georgia',
             letterSpacing: 1.4,
@@ -61,7 +62,7 @@ export default function Login() {
             raialume
           </Text>
           <Text style={{
-            color: '#C9BDAE',
+            color: brand.sand,
             fontSize: 13,
             fontFamily: 'Inter-Regular',
             letterSpacing: 0.5,
@@ -73,15 +74,15 @@ export default function Login() {
 
         <View style={{
           width: '100%',
-          backgroundColor: '#14243B',
+          backgroundColor: brand.panel,
           borderWidth: 1,
-          borderColor: '#314158',
+          borderColor: brand.border,
           borderRadius: 22,
           padding: 26,
           gap: 16,
         }}>
           <Text style={{
-            color: '#F5E8C8',
+            color: brand.ivory,
             fontSize: 19,
             lineHeight: 27,
             fontFamily: 'Inter-SemiBold',
@@ -89,7 +90,7 @@ export default function Login() {
             {signup ? 'Begin your journey' : 'Welcome back'}
           </Text>
           <Text style={{
-            color: '#C9BDAE',
+            color: brand.sand,
             fontSize: 14,
             lineHeight: 21,
             fontFamily: 'Inter-Regular',
@@ -98,18 +99,18 @@ export default function Login() {
               ? 'Create your account and meet your companion.'
               : 'Sign in to continue your journey.'}
           </Text>
-      {setupError && <><Text style={{ color: c.neutral[100], fontSize: 16, fontFamily: 'Inter-Regular' }}>{setupError}</Text><TouchableOpacity onPress={retry}><Text style={{ color: c.primary[300], fontSize: 15, paddingVertical: 8, fontFamily: 'Inter-Regular' }}>Retry account setup</Text></TouchableOpacity>
-        <TouchableOpacity onPress={() => void signOutThisBrowser().catch(error => setNotice(error instanceof Error ? error.message : 'Could not sign out.'))}><Text style={{ color: c.primary[300], fontSize: 15, paddingVertical: 8, fontFamily: 'Inter-Regular' }}>Sign out</Text></TouchableOpacity></>}
+      {setupError && <><Text style={{ color: c.neutral[100], fontSize: 16, fontFamily: 'Inter-Regular' }}>{setupError}</Text><TouchableOpacity onPress={retry}><Text style={{ color: brand.gold, fontSize: 15, paddingVertical: 8, fontFamily: 'Inter-Regular' }}>Retry account setup</Text></TouchableOpacity>
+        <TouchableOpacity onPress={() => void signOutThisBrowser().catch(error => setNotice(error instanceof Error ? error.message : 'Could not sign out.'))}><Text style={{ color: brand.gold, fontSize: 15, paddingVertical: 8, fontFamily: 'Inter-Regular' }}>Sign out</Text></TouchableOpacity></>}
       {!session && <>
-        <SocialSignIn disabled={busy} onError={setNotice} onBusyChange={setBusy} />
-        {signup && <TextInput style={{ backgroundColor: c.neutral[800], color: c.neutral[100], padding: 14, borderRadius: Radius.md, fontSize: 16, fontFamily: 'Inter-Regular' }} placeholder="Your name" placeholderTextColor={c.neutral[500]} value={name} onChangeText={setName} maxLength={100} accessibilityLabel="Your name" />}
-        <TextInput style={{ backgroundColor: c.neutral[800], color: c.neutral[100], padding: 14, borderRadius: Radius.md, fontSize: 16, fontFamily: 'Inter-Regular' }} placeholder="Email" placeholderTextColor={c.neutral[500]} value={email} onChangeText={setEmail} autoCapitalize="none" keyboardType="email-address" autoComplete="email" accessibilityLabel="Email" />
-        <TextInput style={{ backgroundColor: c.neutral[800], color: c.neutral[100], padding: 14, borderRadius: Radius.md, fontSize: 16, fontFamily: 'Inter-Regular' }} placeholder="Password (at least 8 characters)" placeholderTextColor={c.neutral[500]} value={password} onChangeText={setPassword} secureTextEntry autoComplete={signup ? 'new-password' : 'current-password'} accessibilityLabel="Password" />
-        <TouchableOpacity style={{ backgroundColor: c.primary[700], padding: 16, borderRadius: Radius.md, alignItems: 'center' }} onPress={submit} disabled={busy || !email.trim() || (signup ? password.length < 8 : !password)}>
-          <Text style={{ color: c.neutral[0], fontSize: 16, fontFamily: 'Inter-SemiBold' }}>{busy ? 'Please wait…' : signup ? 'Create account' : 'Sign in'}</Text>
+        <SocialSignIn brandStyle disabled={busy} onError={setNotice} onBusyChange={setBusy} />
+        {signup && <TextInput style={{ backgroundColor: brand.input, color: brand.ivory, padding: 14, borderRadius: Radius.md, fontSize: 16, fontFamily: 'Inter-Regular' }} placeholder="Your name" placeholderTextColor={brand.muted} value={name} onChangeText={setName} maxLength={100} accessibilityLabel="Your name" />}
+        <TextInput style={{ backgroundColor: brand.input, color: brand.ivory, padding: 14, borderRadius: Radius.md, fontSize: 16, fontFamily: 'Inter-Regular' }} placeholder="Email" placeholderTextColor={brand.muted} value={email} onChangeText={setEmail} autoCapitalize="none" keyboardType="email-address" autoComplete="email" accessibilityLabel="Email" />
+        <TextInput style={{ backgroundColor: brand.input, color: brand.ivory, padding: 14, borderRadius: Radius.md, fontSize: 16, fontFamily: 'Inter-Regular' }} placeholder="Password (at least 8 characters)" placeholderTextColor={brand.muted} value={password} onChangeText={setPassword} secureTextEntry autoComplete={signup ? 'new-password' : 'current-password'} accessibilityLabel="Password" />
+        <TouchableOpacity style={{ backgroundColor: brand.gold, padding: 16, borderRadius: Radius.md, alignItems: 'center' }} onPress={submit} disabled={busy || !email.trim() || (signup ? password.length < 8 : !password)}>
+          <Text style={{ color: brand.background, fontSize: 16, fontFamily: 'Inter-SemiBold' }}>{busy ? 'Please wait…' : signup ? 'Create account' : 'Sign in'}</Text>
         </TouchableOpacity>
-        <TouchableOpacity onPress={() => { setSignup(!signup); setNotice(''); }} disabled={busy}><Text style={{ color: c.primary[300], fontSize: 15, paddingVertical: 8, fontFamily: 'Inter-Regular' }}>{signup ? 'Already have an account? Sign in' : 'Create an account'}</Text></TouchableOpacity>
-        {!signup && <TouchableOpacity onPress={() => router.push('/recover')} disabled={busy}><Text style={{ color: c.primary[300], paddingVertical: 8 }}>Forgot password?</Text></TouchableOpacity>}
+        <TouchableOpacity onPress={() => { setSignup(!signup); setNotice(''); }} disabled={busy}><Text style={{ color: brand.gold, fontSize: 15, paddingVertical: 8, fontFamily: 'Inter-Regular' }}>{signup ? 'Already have an account? Sign in' : 'Create an account'}</Text></TouchableOpacity>
+        {!signup && <TouchableOpacity onPress={() => router.push('/recover')} disabled={busy}><Text style={{ color: brand.gold, paddingVertical: 8 }}>Forgot password?</Text></TouchableOpacity>}
       </>}
           {!!notice && <Text accessibilityRole="alert" style={{ color: c.neutral[100], fontSize: 16, fontFamily: 'Inter-Regular' }}>{notice}</Text>}
         </View>
