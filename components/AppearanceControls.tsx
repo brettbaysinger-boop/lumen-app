@@ -160,11 +160,49 @@ function ColorField({ label, value, fallback, onApply }: {
   );
 }
 export function AppearanceControls() {
-  const { colors: c, appearance: a, setAppearance, resetAppearance } = useTheme();
+  const {
+    colors: c,
+    appearance: a,
+    setAppearance,
+    resetAppearance,
+    importDeviceAppearance,
+    hasDeviceAppearance,
+  } = useTheme();
+  const [importMessage, setImportMessage] = useState<string | null>(null);
   const chip = (label: string, active: boolean, onPress: () => void) => <Pressable key={label} accessibilityRole="button" accessibilityState={{ selected: active }} onPress={onPress}
     style={{ padding: 12, borderRadius: 10, borderWidth: 1, borderColor: active ? c.primary[400] : c.neutral[700], backgroundColor: c.neutral[900] }}><Text style={{ color: active ? c.primary[300] : c.neutral[300], fontSize: 12 }}>{label}</Text></Pressable>;
   return <View style={{ gap: 18, marginTop: 20 }}>
-    <Text style={{ color: c.neutral[400], fontSize: 12, lineHeight: 20 }}>Make it yours. Custom colors override the preset and are saved on this device.</Text>
+    <Text style={{ color: c.neutral[400], fontSize: 12, lineHeight: 20 }}>Make it yours. Your appearance preferences sync with your account across devices.</Text>
+    {hasDeviceAppearance && (
+      <View style={{ gap: 8 }}>
+        <Pressable
+          accessibilityRole="button"
+          onPress={async () => {
+            const imported = await importDeviceAppearance();
+            setImportMessage(imported
+              ? 'Device appearance imported locally. Account synchronization is pending.'
+              : 'Could not import device appearance. Try again when connected.');
+          }}
+          style={{
+            alignSelf: 'flex-start',
+            paddingVertical: 12,
+            paddingHorizontal: 16,
+            borderRadius: 10,
+            borderWidth: 1,
+            borderColor: c.primary[400],
+          }}
+        >
+          <Text style={{ color: c.primary[300], fontWeight: '600' }}>
+            Import this device's appearance
+          </Text>
+        </Pressable>
+        {!!importMessage && (
+          <Text style={{ color: c.neutral[300], fontSize: 12 }}>
+            {importMessage}
+          </Text>
+        )}
+      </View>
+    )}
     <ColorField label="Background" value={a.background} fallback={c.neutral[950]} onApply={background => setAppearance({ background })} />
     <ColorField label="Text" value={a.text} fallback={c.neutral[100]} onApply={text => setAppearance({ text })} />
     <ColorField label="Accent" value={a.accent} fallback={c.primary[400]} onApply={accent => setAppearance({ accent })} />
