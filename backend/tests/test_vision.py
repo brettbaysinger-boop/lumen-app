@@ -97,7 +97,17 @@ class VisionRuntime(unittest.IsolatedAsyncioTestCase):
             self.assertNotIn('encoded-image', str(user))
             self.assertTrue(assistant['metadata']['vision_used'])
             self.assertIsNone(response.observation_message_id)
-            runtime.db._request.assert_not_awaited()
+            # Uploaded photos are intentionally registered in Gallery.
+            runtime.db._request.assert_awaited_once()
+            gallery_call = runtime.db._request.await_args
+            self.assertEqual(gallery_call.args, ("POST", "gallery_items"))
+            gallery = gallery_call.kwargs["json"]
+            self.assertEqual(gallery["source"], "user")
+            self.assertEqual(gallery["category"], "user_showed")
+            self.assertEqual(gallery["url"], PHOTO.path)
+            self.assertEqual(gallery["metadata"]["message_id"], "u")
+            self.assertEqual(gallery["conversation_id"], "conversation")
+            self.assertEqual(gallery["companion_id"], "companion")
 
     async def test_unsupported_or_unknown_never_reads_or_generates(self):
         for supported in [False, None]:

@@ -214,3 +214,39 @@ of documentation or feature work without explicit user approval.
   still be verified before claiming the typing lag is resolved.
 - The previous image-generation and gallery recovery work was deployed and
   subsequently confirmed working by the user in the browser.
+
+## October 9, 2026 — Companion-initiated image generation
+
+**State:** Implementation and automated tests complete. Live deployment
+and user acceptance remain to be verified.
+
+### Implemented
+
+- Conversational model can request an image through a structured internal
+  `generate_image` action rather than displaying action JSON in chat.
+- Supports companion self-portraits using saved visual identity.
+- Uses the existing Heavy/ComfyUI image-generation integration.
+- Saves generated images in private chat-media storage.
+- Attaches the image to the companion's persisted chat message.
+- Registers generated images in Gallery using deterministic IDs.
+- Preserves ordinary incremental chat streaming while filtering internal
+  image-action markup and standalone legacy JSON.
+- Handles generation failures without claiming an image was created.
+- Limits image-action execution to the conversational model reply branch.
+- Keeps user-uploaded photo Gallery registration intact.
+
+### Automated validation
+
+- 249 backend tests passed.
+- TypeScript typecheck passed.
+- Python compilation passed.
+- `git diff --check` passed.
+
+### Remaining acceptance
+
+1. Commit the intended backend implementation and tests.
+2. Deploy the backend API.
+3. Ask Raialume to show something about herself.
+4. Verify a real image appears in chat and Gallery.
+5. Verify ordinary text replies still stream smoothly.
+6. Confirm generated self-portraits reflect saved visual identity.

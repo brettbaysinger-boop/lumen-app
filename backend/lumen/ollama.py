@@ -100,6 +100,8 @@ class OllamaProvider:
         }
 
     async def generate_stream(self, model, messages, emit):
+        from .image_actions import ImageActionStreamFilter
+        image_filter = ImageActionStreamFilter()
         started = time.perf_counter()
         content = ""
         final = None
@@ -120,11 +122,16 @@ class OllamaProvider:
                     delta = data.get("message", {}).get("content", "")
                     if delta:
                         content += delta
-                        await emit({"type": "delta", "text": delta})
+                        visible = image_filter.push(delta)
+                        if visible:
+                            await emit({"type": "delta", "text": visible})
                     if data.get("done"):
                         final = data
         if final is None:
             raise RuntimeError("Incomplete Ollama stream")
+        remaining = image_filter.finish()
+        if remaining:
+            await emit({"type": "delta", "text": remaining})
         timings = {key: round(final.get(key, 0) / 1_000_000) for key in
                    ("load_duration", "prompt_eval_duration", "eval_duration")}
         logging.getLogger(__name__).info("Chat timing model=%s context=%s timings_ms=%s", model, self.context_length, timings)

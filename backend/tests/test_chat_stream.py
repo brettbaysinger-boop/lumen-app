@@ -28,6 +28,56 @@ class StreamingTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result['timings_ms']['load_duration'], 2)
         self.assertEqual(events, [{'type':'delta','text':'Hello '}, {'type':'delta','text':'there'}])
 
+    async def test_image_action_is_not_streamed_to_browser(self):
+        from lumen.image_actions import ACTION_START, ACTION_END
+
+        events = []
+
+        async def emit(event):
+            events.append(event)
+
+        payload = (
+            "I want to show you something. "
+            + ACTION_START
+            + '{"action":"generate_image","action_input":"A portrait"}'
+            + ACTION_END
+        )
+
+        chunks = [
+            payload[:25],
+            payload[25:50],
+            payload[50:],
+        ]
+
+        def handler(request):
+            return httpx.Response(
+                200,
+                text="\n".join(
+                    json.dumps({"message": {"content": chunk}})
+                    for chunk in chunks
+                ) + "\n" + json.dumps({"done": True, "model": "local"}),
+            )
+
+        original = httpx.AsyncClient
+
+        with patch(
+            "lumen.ollama.httpx.AsyncClient",
+            side_effect=lambda **kw: original(
+                transport=httpx.MockTransport(handler), **kw
+            ),
+        ):
+            result = await OllamaProvider(
+                SimpleNamespace(ollama_url="http://local")
+            ).generate_stream("local", [], emit)
+
+        visible = "".join(
+            event["text"] for event in events if event["type"] == "delta"
+        )
+
+        self.assertEqual(visible, "I want to show you something. ")
+        self.assertEqual(result["content"], payload)
+        self.assertNotIn("generate_image", visible)
+
     async def test_incomplete_stream_cannot_be_success(self):
         original = httpx.AsyncClient
         async def emit(event): pass
