@@ -1,7 +1,7 @@
 import { View, Text, Pressable, StyleSheet, useWindowDimensions } from 'react-native';
 import type { BottomTabBarProps } from '@react-navigation/bottom-tabs';
 import { MessageCircle, Brain, User, Settings, Images, CalendarCheck } from 'lucide-react-native';
-import { RaialumeColors as brand } from '@/lib/raialume-colors';
+import { useTheme } from '@/lib/theme-context';
 import { RaialumeLogo } from '@/components/RaialumeLogo';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -15,14 +15,15 @@ const items = {
 };
 
 export function LumenNavigation({ state, navigation }: BottomTabBarProps) {
+  const { colors: c } = useTheme();
   const { width } = useWindowDimensions();
   const insets = useSafeAreaInsets();
   const desktop = width >= 1000;
-  return <View style={[styles.shell, { backgroundColor: brand.background, borderColor: brand.border }, desktop ? styles.desktop : [styles.mobile, { paddingBottom: Math.max(insets.bottom, 10) }]]}>
+  return <View style={[styles.shell, { backgroundColor: c.neutral[950], borderColor: c.neutral[700] }, desktop ? styles.desktop : [styles.mobile, { paddingBottom: Math.max(insets.bottom, 10) }]]}>
     {desktop && <View style={styles.brand}>
       <RaialumeLogo width={105} height={66} />
-      <Text style={[styles.wordmark, { color: brand.ivory }]}>raialume</Text>
-      <Text style={[styles.tagline, { color: brand.muted }]}>A little more light in your life.</Text>
+      <Text style={[styles.wordmark, { color: c.neutral[50] }]}>raialume</Text>
+      <Text style={[styles.tagline, { color: c.neutral[400] }]}>A little more light in your life.</Text>
     </View>}
     <View style={desktop ? styles.links : styles.mobileLinks}>
       {state.routes.map((route, index) => {
@@ -36,16 +37,16 @@ export function LumenNavigation({ state, navigation }: BottomTabBarProps) {
             if (!selected && !event.defaultPrevented) navigation.navigate(route.name, route.params);
           }}
           onLongPress={() => navigation.emit({ type: 'tabLongPress', target: route.key })}
-          style={({ pressed }) => [styles.link, desktop ? styles.desktopLink : styles.mobileLink, { backgroundColor: selected ? brand.input : 'transparent', opacity: pressed ? 0.65 : 1 }]}>
-          <Icon size={20} strokeWidth={selected ? 2 : 1.6} color={selected ? brand.gold : brand.muted} />
-          <Text numberOfLines={1} style={[desktop ? styles.label : styles.mobileLabel, { color: selected ? brand.ivory : brand.muted }]}>{!desktop && route.name === 'index' ? 'Chat' : item.label}</Text>
-          {selected && desktop && <View style={[styles.dot, { backgroundColor: brand.gold }]} />}
+          style={({ pressed }) => [styles.link, desktop ? styles.desktopLink : styles.mobileLink, { backgroundColor: selected ? c.neutral[800] : 'transparent', opacity: pressed ? 0.65 : 1 }]}>
+          <Icon size={20} strokeWidth={selected ? 2 : 1.6} color={selected ? c.primary[400] : c.neutral[400]} />
+          <Text numberOfLines={1} style={[desktop ? styles.label : styles.mobileLabel, { color: selected ? c.neutral[50] : c.neutral[400] }]}>{!desktop && route.name === 'index' ? 'Chat' : item.label}</Text>
+          {selected && desktop && <View style={[styles.dot, { backgroundColor: c.primary[400] }]} />}
         </Pressable>;
       })}
     </View>
-    {desktop && <View style={[styles.footer, { borderColor: brand.border }]}>
-      <Text style={[styles.footerTitle, { color: brand.sand }]}>Your own little world</Text>
-      <Text style={[styles.footerText, { color: brand.muted }]}>Conversation. Connection. Continuity.</Text>
+    {desktop && <View style={[styles.footer, { borderColor: c.neutral[700] }]}>
+      <Text style={[styles.footerTitle, { color: c.neutral[300] }]}>Your own little world</Text>
+      <Text style={[styles.footerText, { color: c.neutral[400] }]}>Conversation. Connection. Continuity.</Text>
     </View>}
   </View>;
 }

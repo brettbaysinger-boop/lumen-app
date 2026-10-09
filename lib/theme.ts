@@ -56,11 +56,12 @@ const coralError: ColorRamp = {
   800: '#842914', 900: '#6b2210', 950: '#4d180b',
 };
 
-// Midnight Navy — deep, grounded dark base
+// Raialume midnight navy — default dark foundation.
+// User appearance overrides are resolved separately in lib/appearance.ts.
 const midnightNavy: ColorRamp = {
-  0: '#ffffff', 50: '#f5f2ec', 100: '#eae5dc', 200: '#d9d3c9',
-  300: '#bcb6ac', 400: '#a39c93', 500: '#938a80', 600: '#8c847b',
-  700: '#3b3732', 800: '#282522', 900: '#1b1917', 950: '#100f0e',
+  0: '#ffffff', 50: '#F5E8C8', 100: '#E8E5DF', 200: '#D7DDE5',
+  300: '#C9BDAE', 400: '#A9B8C8', 500: '#8899AC', 600: '#70839A',
+  700: '#314158', 800: '#1C304A', 900: '#14243B', 950: '#0C1930',
 };
 
 const pearlCream: ColorRamp = {
