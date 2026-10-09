@@ -123,7 +123,11 @@ export default function SettingsScreen() {
     ? Math.round(modelRuns.reduce((sum, r) => sum + (r.latency_ms || 0), 0) / totalRuns)
     : 0;
 
-  const uniqueColorNames = SCHEMES.filter((s, i, arr) => arr.findIndex((x) => x.name === s.name) === i);
+  const uniqueColorNames = SCHEMES
+    .filter((scheme) => scheme.name !== 'Lumen')
+    .filter((scheme, index, schemes) =>
+      schemes.findIndex((candidate) => candidate.name === scheme.name) === index
+    );
   const currentColorName = SCHEMES.find((s) => s.id === schemeId)?.name || 'Ocean';
 
   return (
