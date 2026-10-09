@@ -42,7 +42,7 @@ export default function Login() {
     <ScrollView contentContainerStyle={{ width: '100%', maxWidth: 440, alignSelf: 'center', padding: 28, gap: 18, flexGrow: 1, justifyContent: 'center' }} keyboardShouldPersistTaps="handled">
       <View style={{ alignItems: 'center', gap: 10, marginBottom: 12 }}>
         <RaialumeLogo width={150} height={94} />
-        <Text style={{ color: '#F5E8C8', fontSize: 39, fontFamily: 'Georgia', letterSpacing: 1.2 }}>Raialume</Text>
+        <Text style={{ color: '#F5E8C8', fontSize: 39, fontFamily: 'Georgia', letterSpacing: 1.2 }}>raialume</Text>
         <Text style={{ color: c.neutral[300], fontSize: 13, fontFamily: 'Inter-Regular', letterSpacing: 0.4 }}>A little more light in your life.</Text>
       </View>
       <Text style={{ color: c.neutral[100], fontSize: 16, lineHeight: 24, fontFamily: 'Inter-Regular' }}>{signup ? 'Create your account and meet your companion.' : 'Sign in to your companion.'}</Text>

@@ -22,7 +22,7 @@ export function LumenNavigation({ state, navigation }: BottomTabBarProps) {
   return <View style={[styles.shell, { backgroundColor: c.neutral[950], borderColor: c.neutral[800] }, desktop ? styles.desktop : [styles.mobile, { paddingBottom: Math.max(insets.bottom, 10) }]]}>
     {desktop && <View style={styles.brand}>
       <RaialumeLogo width={105} height={66} />
-      <Text style={[styles.wordmark, { color: '#F5E8C8' }]}>Raialume</Text>
+      <Text style={[styles.wordmark, { color: '#F5E8C8' }]}>raialume</Text>
       <Text style={[styles.tagline, { color: c.neutral[400] }]}>A little more light in your life.</Text>
     </View>}
     <View style={desktop ? styles.links : styles.mobileLinks}>
