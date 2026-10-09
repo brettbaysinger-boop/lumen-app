@@ -1,4 +1,4 @@
-import { forwardRef, useImperativeHandle, useRef, type ReactElement } from 'react';
+import { forwardRef, memo, useImperativeHandle, useRef, type ReactElement } from 'react';
 import { FlatList, Platform, ScrollView, View, type StyleProp, type ViewStyle } from 'react-native';
 import type { Message } from '@/types/database';
 
@@ -14,6 +14,21 @@ interface Props {
   ListEmptyComponent?: ReactElement | null;
 }
 
+
+interface WebMessageProps {
+  item: Message;
+  renderItem: Props['renderItem'];
+}
+
+const MemoizedWebMessage = memo(
+  function WebMessage({ item, renderItem }: WebMessageProps) {
+    return <View>{renderItem({ item })}</View>;
+  },
+  (previous, next) =>
+    previous.item === next.item &&
+    previous.renderItem === next.renderItem,
+);
+
 // Variable-height web replies must not depend on FlatList's initial render batch.
 // Native retains FlatList; browser history uses a normal bounded scroll viewport.
 export const ConversationList = forwardRef<ConversationListHandle, Props>((props, ref) => {
@@ -27,7 +42,7 @@ export const ConversationList = forwardRef<ConversationListHandle, Props>((props
   }), []);
   if (Platform.OS !== 'web') return <FlatList {...props} ref={native} style={{ flex: 1, minHeight: 0 }} />;
   return <ScrollView ref={web} style={{ flex: 1, minHeight: 0 }} contentContainerStyle={props.contentContainerStyle}>
-    {props.data.length ? props.data.map(item => <View key={props.keyExtractor(item)}>{props.renderItem({ item })}</View>) : props.ListEmptyComponent}
+    {props.data.length ? props.data.map(item => <MemoizedWebMessage key={props.keyExtractor(item)} item={item} renderItem={props.renderItem} />) : props.ListEmptyComponent}
     {props.ListFooterComponent}
   </ScrollView>;
 });

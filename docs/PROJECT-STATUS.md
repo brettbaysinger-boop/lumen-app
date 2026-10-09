@@ -199,3 +199,18 @@ of documentation or feature work without explicit user approval.
 - `docs/documents.md`
 - `docs/document-actions.md`
 - `docs/web-research.md`
+
+## Chat typing performance optimization — October 9, 2026
+
+**Status:** Implemented and locally validated; browser acceptance pending.
+
+- Extracted the chat message renderer into a `useCallback` with explicit dependencies.
+- Memoized individual web conversation message rows so ordinary draft typing
+  does not unnecessarily re-render unchanged message content.
+- Preserved the existing native `FlatList` implementation.
+- Added `tests/conversation-render-performance.test.cjs` with three regression checks.
+- Validation: 3/3 regression tests pass, TypeScript passes, and `git diff --check` passes.
+- The user is testing remotely through Tailscale. Browser responsiveness must
+  still be verified before claiming the typing lag is resolved.
+- The previous image-generation and gallery recovery work was deployed and
+  subsequently confirmed working by the user in the browser.

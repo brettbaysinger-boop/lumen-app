@@ -429,6 +429,87 @@ export default function ChatScreen() {
     }
   }, [inputText, pendingImages, pendingDocument, documentBusy, companion, session?.user.id, sending, activeConversation, loadMessages, messages]);
 
+  const renderMessage = useCallback(
+    ({ item }: { item: Message }) => (
+          <View
+            style={[
+              styles.messageWrapper,
+              item.role === 'user' ? styles.messageWrapperUser : styles.messageWrapperAI,
+            ]}
+          >
+            {item.role === 'assistant' && (
+              <View style={{ marginTop: 2 }}><CompanionPortrait colors={colors} size={isMobile ? 36 : 46} portraitUrl={companion?.portrait_url} mood={getMoodFromState(companionState)} speaking={speakingId === item.id} /></View>
+            )}
+            <View
+              style={[
+                styles.messageBubble,
+                item.role === 'user' ? styles.messageBubbleUser : styles.messageBubbleAI,
+              ]}
+            >
+              {!!item.metadata?.document_title && <Text style={{ color: colors.primary[300], marginBottom: 8 }}>Document: {String(item.metadata.document_title)}</Text>}
+              <MessageImages attachments={readAttachments(item.metadata)} colors={colors} />
+              <Text
+                style={[
+                  styles.messageText,
+                  item.role === 'user' ? styles.messageTextUser : styles.messageTextAI,
+                ]}
+              >
+                {item.role === 'assistant' && item.metadata?.web_search
+                  ? <CitationText content={item.content} value={item.metadata.web_search} />
+                  : item.content}
+              </Text>
+              {item.role === 'assistant' && item.metadata?.goal_session != null && <PracticeSavedCard value={item.metadata.goal_session}/> }
+              {item.role === 'assistant' && item.metadata?.my_day_item != null && <DayActionCard item={item.metadata.my_day_item as DayItem} />}
+              {item.role === 'assistant' && item.metadata?.web_search != null && <WebSources value={item.metadata.web_search} />}
+              {item.role === 'assistant' && item.metadata?.unstuck_draft != null && <UnstuckDraft value={item.metadata.unstuck_draft} companionId={item.companion_id} messageId={item.id}/> }
+              {item.role === 'assistant' && item.metadata?.document_action_draft != null && <DocumentActionDraft value={item.metadata.document_action_draft} companionId={item.companion_id} messageId={item.id} />}
+              {item.role === 'assistant' && item.metadata?.document_sources != null && <DocumentSources value={item.metadata.document_sources} companionId={item.companion_id} />}
+              {item.role === 'assistant' && item.metadata?.timings_ms != null && (
+                <View>
+                  <TouchableOpacity onPress={() => setExpandedActivity(expandedActivity === item.id ? null : item.id)}>
+                    <Text style={{ color: colors.primary[300], fontSize: 12, marginTop: 8 }}>Activity details {expandedActivity === item.id ? '▾' : '▸'}</Text>
+                  </TouchableOpacity>
+                  {expandedActivity === item.id && <Text style={{ color: colors.neutral[400], fontSize: 12, marginTop: 8 }}>
+                    Model: {item.model_used || 'local'}{'\n'}
+                    {Object.entries(item.metadata.timings_ms as Record<string, number>).map(([key, value]) =>
+                      `${key.replace(/_/g, ' ')}: ${(value / 1000).toFixed(2)}s`).join('\n')}
+                    {'\n'}Request: {((item.latency_ms || 0) / 1000).toFixed(2)}s{'\n'}Activity timings, not a private thought transcript.
+                  </Text>}
+                </View>
+              )}
+              {item.role === 'assistant' &&
+                (item.metadata?.memory_status === 'saved' || item.metadata?.memory_status === 'existing') && (
+                  <Text style={{ color: colors.primary[300], fontSize: 12, marginTop: 8 }}>
+                    {item.metadata.memory_status === 'saved' ? 'Memory saved' : 'Memory already saved'}
+                    {item.metadata.memory_subject === 'user' ? ' · About you' :
+                      item.metadata.memory_subject === 'companion' ? ` · About ${companion?.name || 'your companion'}` :
+                      item.metadata.memory_subject === 'shared' ? ' · Shared experience' :
+                      item.metadata.memory_subject === 'unknown' ? ' · Subject unassigned' : ''}
+                  </Text>
+                )}
+              {item.role === 'assistant' && Platform.OS === 'web' && (
+                <TouchableOpacity
+                  style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 10 }}
+                  onPress={() => togglePlayback(item)}
+                  disabled={voiceBusy}
+                  accessibilityLabel={playingId === item.id ? 'Stop reply audio' : 'Play reply audio'}
+                >
+                  {playingId === item.id
+                    ? <Square color={colors.primary[300]} size={16} />
+                    : <Volume2 color={colors.primary[300]} size={16} />}
+                  <Text style={{ color: colors.primary[300], fontSize: 12 }}>
+                    {playingId === item.id ? 'Stop audio' : 'Play reply'}
+                  </Text>
+                </TouchableOpacity>
+              )}
+            </View>
+          </View>
+        ),
+    [styles, colors, isMobile, companion?.portrait_url,
+     companion?.name, companionState, speakingId,
+     expandedActivity, playingId, voiceBusy, togglePlayback],
+  );
+
   useEffect(() => {
     if (messages.length > 0) {
       setTimeout(() => flatListRef.current?.scrollToEnd({ animated: false }), 50);
@@ -551,81 +632,7 @@ export default function ChatScreen() {
         </View> : null}
         keyExtractor={(item) => item.id}
         contentContainerStyle={styles.messagesList}
-        renderItem={({ item }) => (
-          <View
-            style={[
-              styles.messageWrapper,
-              item.role === 'user' ? styles.messageWrapperUser : styles.messageWrapperAI,
-            ]}
-          >
-            {item.role === 'assistant' && (
-              <View style={{ marginTop: 2 }}><CompanionPortrait colors={colors} size={isMobile ? 36 : 46} portraitUrl={companion?.portrait_url} mood={getMoodFromState(companionState)} speaking={speakingId === item.id} /></View>
-            )}
-            <View
-              style={[
-                styles.messageBubble,
-                item.role === 'user' ? styles.messageBubbleUser : styles.messageBubbleAI,
-              ]}
-            >
-              {!!item.metadata?.document_title && <Text style={{ color: colors.primary[300], marginBottom: 8 }}>Document: {String(item.metadata.document_title)}</Text>}
-              <MessageImages attachments={readAttachments(item.metadata)} colors={colors} />
-              <Text
-                style={[
-                  styles.messageText,
-                  item.role === 'user' ? styles.messageTextUser : styles.messageTextAI,
-                ]}
-              >
-                {item.role === 'assistant' && item.metadata?.web_search
-                  ? <CitationText content={item.content} value={item.metadata.web_search} />
-                  : item.content}
-              </Text>
-              {item.role === 'assistant' && item.metadata?.goal_session != null && <PracticeSavedCard value={item.metadata.goal_session}/> }
-              {item.role === 'assistant' && item.metadata?.my_day_item != null && <DayActionCard item={item.metadata.my_day_item as DayItem} />}
-              {item.role === 'assistant' && item.metadata?.web_search != null && <WebSources value={item.metadata.web_search} />}
-              {item.role === 'assistant' && item.metadata?.unstuck_draft != null && <UnstuckDraft value={item.metadata.unstuck_draft} companionId={item.companion_id} messageId={item.id}/> }
-              {item.role === 'assistant' && item.metadata?.document_action_draft != null && <DocumentActionDraft value={item.metadata.document_action_draft} companionId={item.companion_id} messageId={item.id} />}
-              {item.role === 'assistant' && item.metadata?.document_sources != null && <DocumentSources value={item.metadata.document_sources} companionId={item.companion_id} />}
-              {item.role === 'assistant' && item.metadata?.timings_ms != null && (
-                <View>
-                  <TouchableOpacity onPress={() => setExpandedActivity(expandedActivity === item.id ? null : item.id)}>
-                    <Text style={{ color: colors.primary[300], fontSize: 12, marginTop: 8 }}>Activity details {expandedActivity === item.id ? '▾' : '▸'}</Text>
-                  </TouchableOpacity>
-                  {expandedActivity === item.id && <Text style={{ color: colors.neutral[400], fontSize: 12, marginTop: 8 }}>
-                    Model: {item.model_used || 'local'}{'\n'}
-                    {Object.entries(item.metadata.timings_ms as Record<string, number>).map(([key, value]) =>
-                      `${key.replace(/_/g, ' ')}: ${(value / 1000).toFixed(2)}s`).join('\n')}
-                    {'\n'}Request: {((item.latency_ms || 0) / 1000).toFixed(2)}s{'\n'}Activity timings, not a private thought transcript.
-                  </Text>}
-                </View>
-              )}
-              {item.role === 'assistant' &&
-                (item.metadata?.memory_status === 'saved' || item.metadata?.memory_status === 'existing') && (
-                  <Text style={{ color: colors.primary[300], fontSize: 12, marginTop: 8 }}>
-                    {item.metadata.memory_status === 'saved' ? 'Memory saved' : 'Memory already saved'}
-                    {item.metadata.memory_subject === 'user' ? ' · About you' :
-                      item.metadata.memory_subject === 'companion' ? ` · About ${companion?.name || 'your companion'}` :
-                      item.metadata.memory_subject === 'shared' ? ' · Shared experience' :
-                      item.metadata.memory_subject === 'unknown' ? ' · Subject unassigned' : ''}
-                  </Text>
-                )}
-              {item.role === 'assistant' && Platform.OS === 'web' && (
-                <TouchableOpacity
-                  style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 10 }}
-                  onPress={() => togglePlayback(item)}
-                  disabled={voiceBusy}
-                  accessibilityLabel={playingId === item.id ? 'Stop reply audio' : 'Play reply audio'}
-                >
-                  {playingId === item.id
-                    ? <Square color={colors.primary[300]} size={16} />
-                    : <Volume2 color={colors.primary[300]} size={16} />}
-                  <Text style={{ color: colors.primary[300], fontSize: 12 }}>
-                    {playingId === item.id ? 'Stop audio' : 'Play reply'}
-                  </Text>
-                </TouchableOpacity>
-              )}
-            </View>
-          </View>
-        )}
+        renderItem={renderMessage}
         ListEmptyComponent={
           <View style={styles.emptyChat}>
             <CompanionPortrait colors={colors} size={isMobile ? 140 : 170} portraitUrl={companion?.portrait_url} />
