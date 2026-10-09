@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "bolt-expo-nativewind",
+    "name": "Raialume",
     "slug": "bolt-expo-nativewind",
     "version": "1.0.0",
     "orientation": "portrait",
@@ -29,7 +29,7 @@
       [
         "expo-camera",
         {
-          "cameraPermission": "Allow Lumen to use your camera when you choose to take a photo.",
+          "cameraPermission": "Allow Raialume to use your camera when you choose to take a photo.",
           "recordAudioAndroid": false
         }
       ]

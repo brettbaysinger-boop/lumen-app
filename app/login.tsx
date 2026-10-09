@@ -1,4 +1,5 @@
 import { SocialSignIn } from '@/components/SocialSignIn';
+import { RaialumeLogo } from '@/components/RaialumeLogo';
 import { signOutThisBrowser } from '@/lib/sign-out';
 import { initialSocialError } from '@/lib/social-auth';
 import { useState } from 'react';
@@ -39,7 +40,11 @@ export default function Login() {
   };
   return <SafeAreaView style={{ flex: 1, backgroundColor: c.neutral[950], justifyContent: 'center' }}>
     <ScrollView contentContainerStyle={{ width: '100%', maxWidth: 440, alignSelf: 'center', padding: 28, gap: 18, flexGrow: 1, justifyContent: 'center' }} keyboardShouldPersistTaps="handled">
-      <Text style={{ color: c.primary[400], fontSize: 36, fontWeight: '700', fontFamily: 'Inter-Bold' }}>Lumen</Text>
+      <View style={{ alignItems: 'center', gap: 10, marginBottom: 12 }}>
+        <RaialumeLogo width={150} height={94} />
+        <Text style={{ color: '#F5E8C8', fontSize: 39, fontFamily: 'Georgia', letterSpacing: 1.2 }}>Raialume</Text>
+        <Text style={{ color: c.neutral[300], fontSize: 13, fontFamily: 'Inter-Regular', letterSpacing: 0.4 }}>A little more light in your life.</Text>
+      </View>
       <Text style={{ color: c.neutral[100], fontSize: 16, lineHeight: 24, fontFamily: 'Inter-Regular' }}>{signup ? 'Create your account and meet your companion.' : 'Sign in to your companion.'}</Text>
       {setupError && <><Text style={{ color: c.neutral[100], fontSize: 16, fontFamily: 'Inter-Regular' }}>{setupError}</Text><TouchableOpacity onPress={retry}><Text style={{ color: c.primary[300], fontSize: 15, paddingVertical: 8, fontFamily: 'Inter-Regular' }}>Retry account setup</Text></TouchableOpacity>
         <TouchableOpacity onPress={() => void signOutThisBrowser().catch(error => setNotice(error instanceof Error ? error.message : 'Could not sign out.'))}><Text style={{ color: c.primary[300], fontSize: 15, paddingVertical: 8, fontFamily: 'Inter-Regular' }}>Sign out</Text></TouchableOpacity></>}

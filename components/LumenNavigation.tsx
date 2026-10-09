@@ -2,6 +2,7 @@ import { View, Text, Pressable, StyleSheet, useWindowDimensions } from 'react-na
 import type { BottomTabBarProps } from '@react-navigation/bottom-tabs';
 import { MessageCircle, Brain, User, Settings, Images, CalendarCheck } from 'lucide-react-native';
 import { useTheme } from '@/lib/theme-context';
+import { RaialumeLogo } from '@/components/RaialumeLogo';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 const items = {
@@ -20,8 +21,9 @@ export function LumenNavigation({ state, navigation }: BottomTabBarProps) {
   const desktop = width >= 1000;
   return <View style={[styles.shell, { backgroundColor: c.neutral[950], borderColor: c.neutral[800] }, desktop ? styles.desktop : [styles.mobile, { paddingBottom: Math.max(insets.bottom, 10) }]]}>
     {desktop && <View style={styles.brand}>
-      <Text style={[styles.wordmark, { color: c.neutral[50] }]}>lumen<Text style={{ color: c.primary[400] }}>.</Text></Text>
-      <Text style={[styles.tagline, { color: c.neutral[400] }]}>A little closer.</Text>
+      <RaialumeLogo width={105} height={66} />
+      <Text style={[styles.wordmark, { color: '#F5E8C8' }]}>Raialume</Text>
+      <Text style={[styles.tagline, { color: c.neutral[400] }]}>A little more light in your life.</Text>
     </View>}
     <View style={desktop ? styles.links : styles.mobileLinks}>
       {state.routes.map((route, index) => {
@@ -53,7 +55,7 @@ const styles = StyleSheet.create({
   shell: { flexShrink: 0 }, desktop: { width: 216, borderRightWidth: 1, padding: 18, paddingTop: 40 },
   mobile: { borderTopWidth: 1, paddingTop: 10, paddingHorizontal: 6 },
   brand: { marginBottom: 52, paddingHorizontal: 12 },
-  wordmark: { fontSize: 32, fontFamily: 'Inter-SemiBold', letterSpacing: -1.5 }, tagline: { fontSize: 12, marginTop: 6, fontFamily: 'Inter-Regular' },
+  wordmark: { fontSize: 28, fontFamily: 'Georgia', letterSpacing: -0.6 }, tagline: { fontSize: 12, marginTop: 6, fontFamily: 'Inter-Regular' },
   links: { gap: 8, flex: 1 }, mobileLinks: { flexDirection: 'row' }, link: { borderRadius: 12 },
   desktopLink: { flexDirection: 'row', alignItems: 'center', gap: 12, minHeight: 48, paddingHorizontal: 12 },
   mobileLink: { flex: 1, alignItems: 'center', gap: 5, minHeight: 44, padding: 4 },
