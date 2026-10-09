@@ -4,17 +4,128 @@ import { useTheme } from '@/lib/theme-context';
 import { contrast, isHex, type PortraitFrame, type FrameFinish } from '@/lib/appearance';
 import { CompanionPortrait } from './CompanionPortrait';
 
-function ColorField({ label, value, fallback, onApply }: { label: string; value: string; fallback: string; onApply: (value: string) => void }) {
+const COLOR_SWATCHES = {
+  Background: [
+    '#0C1930', '#14243B', '#1C304A', '#183A32',
+    '#253B35', '#372C46', '#352C3A', '#40302C',
+    '#212121', '#404040', '#F5F1E8', '#FFFFFF',
+  ],
+  Text: [
+    '#FFFFFF', '#F5E8C8', '#E8E5DF', '#D7DDE5',
+    '#C9BDAE', '#A9B8C8', '#E9B879', '#FFD7A8',
+    '#C5E5D5', '#C7D9FF', '#282522', '#0C1930',
+  ],
+  Accent: [
+    '#E9B879', '#D68B45', '#F2C879', '#EAA88B',
+    '#E58E9B', '#C5A1E8', '#899FE8', '#78B5E5',
+    '#6FC4B2', '#9BCB87', '#D9D9D9', '#FFFFFF',
+  ],
+} as const;
+
+type ColorLabel = keyof typeof COLOR_SWATCHES;
+
+function ColorField({ label, value, fallback, onApply }: {
+  label: ColorLabel;
+  value: string;
+  fallback: string;
+  onApply: (value: string) => void;
+}) {
   const { colors: c } = useTheme();
-  const [draft, setDraft] = useState(value || fallback);
-  useEffect(() => setDraft(value || fallback), [value, fallback]);
-  return <View style={{ gap: 8 }}><Text style={{ color: c.neutral[300], fontSize: 12 }}>{label}</Text>
-    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-      <View style={{ width: 24, height: 24, borderRadius: 6, backgroundColor: isHex(draft) ? draft : fallback, borderWidth: 1, borderColor: c.neutral[500] }} />
-      <TextInput value={draft} onChangeText={setDraft} maxLength={7} autoCapitalize="none" accessibilityLabel={`${label} hex color`}
-        style={{ flex: 1, color: c.neutral[100], padding: 12, borderRadius: 10, borderWidth: 1, borderColor: c.neutral[700] }} />
-      <Pressable accessibilityRole="button" disabled={!isHex(draft)} onPress={() => onApply(draft)} style={{ padding: 12, opacity: isHex(draft) ? 1 : .4 }}><Text style={{ color: c.primary[300] }}>Apply</Text></Pressable>
-    </View></View>;
+  const current = value || fallback;
+  const [draft, setDraft] = useState(current);
+
+  useEffect(() => setDraft(current), [current]);
+
+  const selectColor = (color: string) => {
+    setDraft(color);
+    onApply(color);
+  };
+
+  return (
+    <View style={{ gap: 10 }}>
+      <Text style={{ color: c.neutral[300], fontSize: 13, fontWeight: '600' }}>
+        {label}
+      </Text>
+
+      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10 }}>
+        {COLOR_SWATCHES[label].map(color => {
+          const selected = current.toLowerCase() === color.toLowerCase();
+
+          return (
+            <Pressable
+              key={color}
+              accessibilityRole="button"
+              accessibilityLabel={`${label} color ${color}`}
+              accessibilityState={{ selected }}
+              onPress={() => selectColor(color)}
+              style={{
+                width: 38,
+                height: 38,
+                borderRadius: 12,
+                backgroundColor: color,
+                borderWidth: selected ? 3 : 1,
+                borderColor: selected ? c.primary[400] : c.neutral[600],
+                alignItems: 'center',
+                justifyContent: 'center',
+              }}
+            >
+              {selected && (
+                <View
+                  style={{
+                    width: 11,
+                    height: 11,
+                    borderRadius: 6,
+                    backgroundColor: contrast(color, '#FFFFFF') >= 3
+                      ? '#FFFFFF'
+                      : '#0C1930',
+                  }}
+                />
+              )}
+            </Pressable>
+          );
+        })}
+      </View>
+
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+        <View
+          style={{
+            width: 28,
+            height: 28,
+            borderRadius: 8,
+            backgroundColor: isHex(draft) ? draft : fallback,
+            borderWidth: 1,
+            borderColor: c.neutral[500],
+          }}
+        />
+
+        <TextInput
+          value={draft}
+          onChangeText={setDraft}
+          maxLength={7}
+          autoCapitalize="none"
+          accessibilityLabel={`${label} hex color`}
+          style={{
+            flex: 1,
+            color: c.neutral[100],
+            padding: 12,
+            borderRadius: 10,
+            borderWidth: 1,
+            borderColor: c.neutral[700],
+          }}
+        />
+
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={`Apply ${label.toLowerCase()} color`}
+          disabled={!isHex(draft)}
+          onPress={() => onApply(draft)}
+          style={{ padding: 12, opacity: isHex(draft) ? 1 : 0.4 }}
+        >
+          <Text style={{ color: c.primary[300] }}>Apply</Text>
+        </Pressable>
+      </View>
+    </View>
+  );
 }
 export function AppearanceControls() {
   const { colors: c, appearance: a, setAppearance, resetAppearance } = useTheme();
