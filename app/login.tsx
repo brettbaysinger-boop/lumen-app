@@ -38,14 +38,66 @@ export default function Login() {
     } catch (error) { setNotice(error instanceof Error ? error.message : 'Could not sign in.'); }
     finally { setBusy(false); }
   };
-  return <SafeAreaView style={{ flex: 1, backgroundColor: c.neutral[950], justifyContent: 'center' }}>
-    <ScrollView contentContainerStyle={{ width: '100%', maxWidth: 440, alignSelf: 'center', padding: 28, gap: 18, flexGrow: 1, justifyContent: 'center' }} keyboardShouldPersistTaps="handled">
-      <View style={{ alignItems: 'center', gap: 10, marginBottom: 12 }}>
-        <RaialumeLogo width={150} height={94} />
-        <Text style={{ color: '#F5E8C8', fontSize: 39, fontFamily: 'Georgia', letterSpacing: 1.2 }}>raialume</Text>
-        <Text style={{ color: c.neutral[300], fontSize: 13, fontFamily: 'Inter-Regular', letterSpacing: 0.4 }}>A little more light in your life.</Text>
-      </View>
-      <Text style={{ color: c.neutral[100], fontSize: 16, lineHeight: 24, fontFamily: 'Inter-Regular' }}>{signup ? 'Create your account and meet your companion.' : 'Sign in to your companion.'}</Text>
+  return <SafeAreaView style={{ flex: 1, backgroundColor: '#0C1930' }}>
+    <ScrollView
+      keyboardShouldPersistTaps="handled"
+      contentContainerStyle={{
+        flexGrow: 1,
+        justifyContent: 'center',
+        alignItems: 'center',
+        paddingHorizontal: 22,
+        paddingVertical: 44,
+      }}
+    >
+      <View style={{ width: '100%', maxWidth: 440, alignItems: 'center' }}>
+        <View style={{ alignItems: 'center', gap: 8, marginBottom: 34 }}>
+          <RaialumeLogo width={174} height={109} />
+          <Text style={{
+            color: '#F5E8C8',
+            fontSize: 43,
+            fontFamily: 'Georgia',
+            letterSpacing: 1.4,
+          }}>
+            raialume
+          </Text>
+          <Text style={{
+            color: '#C9BDAE',
+            fontSize: 13,
+            fontFamily: 'Inter-Regular',
+            letterSpacing: 0.5,
+            textAlign: 'center',
+          }}>
+            A little more light in your life.
+          </Text>
+        </View>
+
+        <View style={{
+          width: '100%',
+          backgroundColor: '#14243B',
+          borderWidth: 1,
+          borderColor: '#314158',
+          borderRadius: 22,
+          padding: 26,
+          gap: 16,
+        }}>
+          <Text style={{
+            color: '#F5E8C8',
+            fontSize: 19,
+            lineHeight: 27,
+            fontFamily: 'Inter-SemiBold',
+          }}>
+            {signup ? 'Begin your journey' : 'Welcome back'}
+          </Text>
+          <Text style={{
+            color: '#C9BDAE',
+            fontSize: 14,
+            lineHeight: 21,
+            fontFamily: 'Inter-Regular',
+          }}>
+            {signup
+              ? 'Create your account and meet your companion.'
+              : 'Sign in to continue your journey.'}
+          </Text>
       {setupError && <><Text style={{ color: c.neutral[100], fontSize: 16, fontFamily: 'Inter-Regular' }}>{setupError}</Text><TouchableOpacity onPress={retry}><Text style={{ color: c.primary[300], fontSize: 15, paddingVertical: 8, fontFamily: 'Inter-Regular' }}>Retry account setup</Text></TouchableOpacity>
         <TouchableOpacity onPress={() => void signOutThisBrowser().catch(error => setNotice(error instanceof Error ? error.message : 'Could not sign out.'))}><Text style={{ color: c.primary[300], fontSize: 15, paddingVertical: 8, fontFamily: 'Inter-Regular' }}>Sign out</Text></TouchableOpacity></>}
       {!session && <>
@@ -59,7 +111,9 @@ export default function Login() {
         <TouchableOpacity onPress={() => { setSignup(!signup); setNotice(''); }} disabled={busy}><Text style={{ color: c.primary[300], fontSize: 15, paddingVertical: 8, fontFamily: 'Inter-Regular' }}>{signup ? 'Already have an account? Sign in' : 'Create an account'}</Text></TouchableOpacity>
         {!signup && <TouchableOpacity onPress={() => router.push('/recover')} disabled={busy}><Text style={{ color: c.primary[300], paddingVertical: 8 }}>Forgot password?</Text></TouchableOpacity>}
       </>}
-      {!!notice && <Text accessibilityRole="alert" style={{ color: c.neutral[100], fontSize: 16, fontFamily: 'Inter-Regular' }}>{notice}</Text>}
+          {!!notice && <Text accessibilityRole="alert" style={{ color: c.neutral[100], fontSize: 16, fontFamily: 'Inter-Regular' }}>{notice}</Text>}
+        </View>
+      </View>
     </ScrollView>
   </SafeAreaView>;
 }
