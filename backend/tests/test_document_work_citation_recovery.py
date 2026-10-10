@@ -229,8 +229,8 @@ class CitationRecoveryTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(SOURCES, original)
         self.assertEqual(result['document_sources'], original)
         first, retry = provider.structured.await_args_list[:2]
-        self.assertEqual(len(first.args[1]), 2)
-        self.assertEqual(len(retry.args[1]), 2)
+        self.assertEqual(len(first.args[1]), 3)
+        self.assertEqual(len(retry.args[1]), 3)
         self.assertNotIn('initial draft was rejected', first.args[1][0]['content'])
         self.assertIn('initial draft was rejected', retry.args[1][0]['content'])
 

@@ -141,3 +141,30 @@ earlier pending host-suite check; it does not establish live model acceptance.
 At this test checkpoint no services had been restarted.
 Deployment, real-proposal acceptance, and authoritative status/handoff closeout
 remain separate verification steps.
+
+<!-- citation-final-contract-2026-10-10 -->
+## October 10, Phoenix — Proposal citation fix validated locally
+
+The saved failing interaction was replayed locally without printing customer
+text. Its 813-character request and six saved excerpts reproduced
+citations_missing on both draft attempts. Ollama output was returned unchanged
+by the provider. Both calls ended normally without reaching their configured
+context or output limits.
+
+A candidate appends a final citation contract after proposal inputs, separating
+user replacements from retained excerpt-backed terms. It does not insert
+citations into generated output or weaken validation. The contract applies to
+initial draft, permitted retry and final revision; review remains unchanged.
+
+The candidate experiment completed draft, review and revision. The application
+patch then passed 297 host backend tests, including four new synthetic
+regression tests. A subsequent live replay through the patched application
+code, without the experimental wrapper, completed all three stages and
+returned a validated final draft with nine numeric citations and four
+confirmation placeholders. Nothing was saved, exported or sent.
+
+This establishes local workflow success on the saved failing inputs, not
+independent claim verification or browser acceptance. Deployment and a fresh
+user-facing retest remain pending. Inspect source support, new project details,
+prices, exclusions, warranties and confirmation placeholders before accepting.
+No provider, model, routing, frontend, database or Helios change is required.

@@ -67,6 +67,29 @@ def validate_proposal(raw, sources, user_request=""):
     return value
 
 
+
+def _proposal_messages(messages, sources):
+    """Append the citation contract without mutating original inputs."""
+    markers = " ".join(f"[{s['number']}]" for s in sources)
+    instruction = (
+        "Before returning the proposal JSON, distinguish new user-supplied "
+        "facts from terms retained from the reference excerpts. "
+        "New customer, scope and price replacements are user-supplied; "
+        "do not cite old excerpts as evidence for those replacements. "
+        "For every factual term actually retained from an excerpt, put "
+        "its numeric source marker immediately beside that term INSIDE "
+        "the body string. This includes retained exclusions, payment "
+        "terms and warranty limitations. Source IDs are not page numbers. "
+        f"Available source markers: {markers}. "
+        "Do not substitute placeholders for supported reference terms. "
+        "Do not add a citation to unrelated or unsupported text merely "
+        "to satisfy validation. If no excerpt-backed facts can legitimately "
+        "be retained, mark missing facts [NEEDS CONFIRMATION]; do not "
+        "manufacture source support. Return only the required JSON."
+    )
+    return [*messages, {"role": "system", "content": instruction}]
+
+
 async def prepare_work(provider, model, query, sources, emit=None):
     async def progress(text):
         if emit:
@@ -97,7 +120,7 @@ async def prepare_work(provider, model, query, sources, emit=None):
             raise ProposalCheckError('sources_missing')
         stage = "draft_request"
         await progress('Work harder · drafting from document excerpts…')
-        raw = await provider.structured(model,messages,Proposal.model_json_schema(),**options)
+        raw = await provider.structured(model,_proposal_messages(messages, sources),Proposal.model_json_schema(),**options)
         stage = "draft_validation"
         try:
             draft = validate_proposal(raw,sources,query)
@@ -122,7 +145,7 @@ async def prepare_work(provider, model, query, sources, emit=None):
                 messages[1],
             ]
             raw = await provider.structured(
-                model,retry_messages,Proposal.model_json_schema(),**options)
+                model,_proposal_messages(retry_messages, sources),Proposal.model_json_schema(),**options)
             stage = "draft_citation_retry_validation"
             draft = validate_proposal(raw,sources,query)
         await progress('Work harder · checking scope, prices and exclusions…')
@@ -135,10 +158,10 @@ async def prepare_work(provider, model, query, sources, emit=None):
         review = Review.model_validate_json(review_raw)
         await progress('Work harder · revising the proposal for your review…')
         stage = "revision_request"
-        revised = await provider.structured(model,messages+[
+        revised = await provider.structured(model,_proposal_messages(messages+[
             {'role':'user','content':json.dumps({'draft':draft.model_dump(),'review_issues':review.issues,
               'instruction':'Return the final improved draft. Correct supported issues; mark unresolved or missing facts [NEEDS CONFIRMATION]. Do not invent fixes.'})}
-        ],Proposal.model_json_schema(),**options)
+        ], sources),Proposal.model_json_schema(),**options)
         stage = "revision_validation"
         final = validate_proposal(revised,sources,query)
     except Exception as exc:
