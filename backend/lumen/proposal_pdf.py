@@ -1,10 +1,7 @@
 """Owner-scoped, revalidated proposal PDF export. No inference or persistence."""
 import asyncio
-import io
 import json
-import re
 from uuid import UUID
-from xml.sax.saxutils import escape
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import Response
 from pydantic import BaseModel, ConfigDict, Field
@@ -13,6 +10,7 @@ from .document_actions import draft_message
 from .document_work import validate_proposal, work_request
 from .proposal_context import proposal_request, previous_request
 from .my_day import companion_db, DocumentSource
+from .proposal_pdf_layout import render_proposal_pdf
 
 router = APIRouter(prefix='/v0.6/documents', tags=['proposal-pdf'])
 
@@ -21,45 +19,6 @@ class ProposalPDFRequest(BaseModel):
     title: str = Field(min_length=1,max_length=200)
     body: str = Field(min_length=1,max_length=6000)
 
-
-def render_proposal_pdf(title, body, sources):
-    # Import on export only; ordinary chat does not initialize the renderer.
-    from reportlab.lib import colors
-    from reportlab.lib.styles import ParagraphStyle
-    from reportlab.lib.pagesizes import letter
-    from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, PageBreak
-    out=io.BytesIO()
-    green=colors.HexColor('#22583B')
-    normal=ParagraphStyle('body',fontName='Helvetica',fontSize=10,leading=14,spaceAfter=6)
-    heading=ParagraphStyle('heading',parent=normal,fontName='Helvetica-Bold',fontSize=12,leading=16,textColor=green,spaceBefore=10)
-    title_style=ParagraphStyle('title',parent=heading,fontSize=16,leading=20)
-    def text(value):
-        # Never interpret user-supplied HTML or fetch URLs/images from body text.
-        value=escape(value)
-        value=re.sub(r'\*\*([^*]+)\*\*',r'<b>\1</b>',value)
-        return value
-    story=[Paragraph(text(title),title_style),Paragraph('REVIEW DRAFT - confirm scope, prices, service terms and unresolved details before use.',normal),Spacer(1,8)]
-    for line in body.splitlines():
-        if not line.strip():
-            story.append(Spacer(1,5));continue
-        match=re.match(r'^\s*#{1,6}\s+(.+)$',line)
-        if match:story.append(Paragraph(text(match[1]),heading))
-        else:story.append(Paragraph(text(line),normal))
-    story += [PageBreak(),Paragraph('Source references for review',heading),Paragraph('These references identify the excerpts used for this draft. They do not independently verify each claim. Original excerpt text is not copied into this PDF.',normal)]
-    for source in sources:
-        story.append(Paragraph(text(f"[{source['number']}] {source['title']} - page {source['page']}"),normal))
-    def decorate(canvas,doc):
-        canvas.saveState();canvas.setFillColor(green)
-        canvas.setFont('Helvetica-Bold',11)
-        canvas.drawString(40,744,'PROPOSAL REVIEW DRAFT')
-        canvas.setFont('Helvetica',8)
-        canvas.drawString(40,729,'Confirm the job details and service terms before use.')
-        canvas.setStrokeColor(green);canvas.line(40,713,572,713)
-        canvas.setFont('Helvetica',7)
-        canvas.drawCentredString(306,27,f'REVIEW DRAFT | Page {doc.page}')
-        canvas.restoreState()
-    SimpleDocTemplate(out,pagesize=letter,leftMargin=40,rightMargin=40,topMargin=96,bottomMargin=48,title='Proposal review draft').build(story,onFirstPage=decorate,onLaterPages=decorate)
-    return out.getvalue()
 
 
 @router.post('/companions/{companion_id}/drafts/{message_id}/pdf')

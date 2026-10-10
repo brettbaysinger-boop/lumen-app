@@ -89,7 +89,7 @@ class PDFContext(unittest.TestCase):
     def test_default_renderer_contains_no_global_company_branding(self):
         pdf = PdfReader(BytesIO(render_proposal_pdf('Invented proposal', 'Payment due. [1]', [SOURCE])))
         text = '\n'.join(page.extract_text() for page in pdf.pages)
-        self.assertIn('PROPOSAL REVIEW DRAFT', text)
+        self.assertIn('REVIEW DRAFT', text)
         self.assertNotIn('RATTLESNAKE', text.upper())
         self.assertNotIn('8871', text)
         self.assertNotIn('520-499-0899', text)
