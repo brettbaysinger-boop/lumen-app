@@ -23,6 +23,13 @@ class EffortTests(unittest.TestCase):
         self.assertEqual(validate_proposal(DRAFT,SOURCES).title,'Proposal')
         self.assertIn('$395',validate_proposal(DRAFT.replace('295','395'),SOURCES,'Use a new total of $395').body)
 
+    def test_natural_price_notation_and_unrelated_numbers(self):
+        from lumen.document_work import money_values
+        self.assertEqual(money_values('$595.00'), money_values('price 595',True))
+        self.assertEqual(money_values('normally 50 bundle price 25; 75 value',True), {25,50,75})
+        self.assertEqual(money_values('1151 Main St; 6-8 stations; 4-5 weeks; 5206682866',True),set())
+        self.assertIn('$595.00',validate_proposal(DRAFT.replace('$295','$595.00'),SOURCES,'price 595').body)
+
     def test_explicit_work_intent(self):
         self.assertTrue(work_request('Work harder: improve this document'))
         self.assertTrue(work_request('Draft a bid from this document'))

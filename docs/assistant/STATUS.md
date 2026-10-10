@@ -125,3 +125,11 @@ draft–check–revise workflow are implemented. Source-backed drafts support ed
 plain-text download and reviewed My Day saving. No routing or Helios changes.
 Deployment and user acceptance are pending. See `docs/effort-and-document-work.md`
 and `docs/effort-work-checkpoint.md` from the repository root for scope and evidence.
+
+## October 9 — Lifelong companion direction and template milestone
+
+Approved direction and next acceptance criteria are recorded in
+`docs/lifelong-companion-and-templates.md` (repository root). Actual proposal work
+at 73e6751 failed and remains unverified; the next patch corrects reproducible
+price-notation rejection and adds private-data-free stage logging. Seven focused
+tests passed. Reusable templates and print-ready PDFs are planned, not implemented.

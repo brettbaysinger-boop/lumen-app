@@ -7,7 +7,7 @@ MARKER = '<!-- provider-visibility-2026-10-10 -->'
 def update(root):
     entries = [(root / 'docs' / name).read_text() for name in (
         'provider-checkpoint-entry.md', 'provider-acceptance-checkpoint.md',
-        'effort-work-checkpoint.md'
+        'effort-work-checkpoint.md', 'life-companion-checkpoint.md'
     )]
     targets = [root / 'docs/PROJECT-STATUS.md', root / 'docs/SESSION-HANDOFF-2026-10-09.md']
     # Read both before writing so missing host notes cannot cause a partial update.
