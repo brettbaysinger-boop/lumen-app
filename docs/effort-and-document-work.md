@@ -33,9 +33,12 @@ document**. Edit the suggested request if desired and send. Explicit requests su
 as “Draft a bid from this document” also use the workflow when document retrieval
 is active. It does not operate on image attachments as a proposal workflow.
 
-Three sequential model calls draft, check against retrieved excerpts and revise.
-Activity messages expose these stages. Each call has a 4096-token budget and
-180-second provider timeout. No unbounded planning loop or external action occurs.
+The normal path uses three sequential model calls: draft, check against retrieved
+excerpts and revise. When the initial draft is rejected for missing body citations,
+one additional draft attempt is permitted before review. Activity messages expose
+these stages, including the retry. Each call keeps its 4096-token budget and
+180-second provider timeout. The recovery path has at most four model calls, so
+it can take longer. No unbounded planning loop or external action occurs.
 Only the final valid proposal becomes an editable note draft. Existing owner-scoped
 draft saving persists it in My Day after review. The web UI can download the edited
 text, including source excerpts, before saving. This is plain text, not PDF/DOCX;
@@ -81,3 +84,60 @@ The attached document can guide organization in this request. Persistent approve
 templates, remembered formatting preferences and visual layout reproduction are
 not implemented yet. These are the next part of the document workflow, together
 with PDF/DOCX export. The current deliverable remains editable plain text.
+
+## Missing-citation recovery follow-up — live acceptance pending
+
+The October 9, 2026, 20:07:08 Phoenix log identified
+`stage=draft_validation error_type=ProposalCheckError reason=citations_missing`.
+The initial draft was rejected before review. The private model output was not
+logged, so this does not establish whether citations were absent or written in
+an unrecognized form.
+
+The follow-up makes the citation contract explicit in the proposal body's JSON
+schema description and enumerates the actual source-number markers in the prompt.
+Document page numbers are not citation IDs. With no excerpts, the workflow stops
+before any model call and logs `stage=source_validation reason=sources_missing`.
+
+Only `citations_missing` on the first draft permits one fresh generation from the
+same original request and excerpts. The rejected text is not reused as evidence,
+auto-cited, exposed as a draft, saved, or logged. The new draft must pass the
+unchanged `validate_proposal()` function, including the existing pricing check,
+before normal review and revision. Other initial failures stop immediately. A
+failed retry, review or final revision still returns no actionable draft; there
+is no unchecked fallback and no second retry.
+
+The retry uses stages `draft_citation_retry_request` and
+`draft_citation_retry_validation`. Logs contain stage, exception type and static
+reason code, not the prompt, excerpts, generated text or exception body.
+
+This does not prove that every cited claim is supported. Existing limitations
+still apply: source-number checks and a same-model review are not independent
+fact checking, completeness checking or a guarantee that all replacements were
+applied. Compare the proposal with its actual excerpts and original document.
+
+Verification prepared with this patch: 24 new synthetic regression tests plus
+six supplied validator/workflow cases passed in an isolated reconstructed copy.
+The provider was mocked; the full host suite and installed model were not run.
+The existing citation helper was fetched from repository checkpoint `0cde482`
+and its blob ID was checked. Applying the patch requires checking that the host
+has that same helper and no uncommitted changes to the targeted tracked files.
+
+Host acceptance remains pending: run the full backend suite, then separately
+deploy the backend and retry the source-backed proposal. Check source references,
+new customer details, prices, exclusions and warranty wording; verify edited
+text export and reviewed My Day save/reload. Do not claim deployment or acceptance
+from the synthetic tests. Update `docs/PROJECT-STATUS.md` and the existing session
+handoff after the verified outcome, preserving their current uncommitted content.
+This follow-up requires no frontend build, dependency change, migration, provider
+reconfiguration or Helios change.
+
+<!-- proposal-citation-host-tests-293 -->
+## Host validation — citation recovery candidate
+
+The user supplied a complete test run from aiLumen-llm-video:
+293 backend tests passed in 2.597 seconds, including the new citation-recovery
+tests. Patch application and whitespace checks passed. This supersedes the
+earlier pending host-suite check; it does not establish live model acceptance.
+At this test checkpoint no services had been restarted.
+Deployment, real-proposal acceptance, and authoritative status/handoff closeout
+remain separate verification steps.
