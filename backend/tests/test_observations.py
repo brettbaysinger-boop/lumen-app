@@ -23,6 +23,7 @@ class ObservationTests(unittest.IsolatedAsyncioTestCase):
         self.setup_worker('{"candidates":[{"content":"The user prefers summer.","evidence":"Summer is my favorite season.","subject":"user","type":"preference"}]}')
         await self.run_worker()
         self.assertEqual(self.provider.structured.call_args.args[0], "installed-model")
+        self.assertIs(self.provider.structured.call_args.kwargs.get("think"), False)
         proposals = [c for c in self.calls if c[1] == "rpc/propose_memory"]
         self.assertEqual(len(proposals), 1)
         self.assertEqual(proposals[0][2]["json"]["p_message"], "source")
@@ -43,6 +44,7 @@ class ObservationTests(unittest.IsolatedAsyncioTestCase):
         self.db._request.side_effect = request
         await self.run_worker()
         self.assertEqual(self.provider.structured.call_args.args[0], "selected-chat")
+        self.assertIs(self.provider.structured.call_args.kwargs.get("think"), False)
         writes=[c for c in self.calls if c[1] == "rpc/auto_save_memory_suggestion"]
         self.assertEqual(writes[0][2]["json"], {"p_id":"suggestion-id", "p_topic":"preferred_season"})
 

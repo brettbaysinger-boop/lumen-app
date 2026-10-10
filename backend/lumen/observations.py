@@ -80,7 +80,7 @@ Return JSON matching the supplied schema."""
             raw = await asyncio.wait_for(OllamaProvider(settings).structured(
                 settings.memory_observation_model or companion.get("conversation_model") or settings.conversation_model,
                 [{"role": "system", "content": prompt}, {"role": "user", "content": json.dumps(payload)}],
-                Candidates.model_json_schema()), timeout=60)
+                Candidates.model_json_schema(), think=False), timeout=60)
         proposals = Candidates.model_validate_json(raw)
         rejected = 0
         for c in proposals.candidates:

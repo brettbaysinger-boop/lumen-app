@@ -325,3 +325,34 @@ Database operations were mocked; no real memory writes were made.
 Commit, deployment and actual same-chat browser acceptance remain pending.
 No migration or frontend build is required. Skills and proposal work remain
 paused. Existing configuration and backups are preserved.
+
+<!-- natural-memory-extraction-host-validation-2026-10-10 -->
+## October 10, Phoenix — Natural memory acceptance and extraction fix
+
+Host checkpoint efc22bf is committed and synchronized with the remote branch.
+The user verified existing-chat direct recall, certainty follow-up and ordinary
+conversation correctly use the restored value after Undo.
+
+Natural-memory browser testing verified an ordinary explanation preference
+was automatically saved with user ownership and recalled in a fresh chat.
+A hypothetical guitar statement produced no visible saved memory or proposal.
+An ongoing-project statement was not available in a fresh chat. Repeated
+background observation failures were reported; their generic logs did not
+establish the cause of each individual failure.
+
+A synthetic installed-model probe reproduced an empty structured response for
+an ongoing-project statement. An in-process think=False follow-up returned
+valid evidence-backed preference and project candidates, and an empty candidate
+list for the hypothetical. All database operations were mocked.
+
+The bounded fix sets think=False for memory extraction only. Regression
+assertions cover default and selected-model extraction. Guarded host application,
+clean whitespace checks and 445 backend tests passed in 3.809 seconds.
+No migration or frontend build is required. Deployment and real project-memory
+retry acceptance remain pending.
+
+Project and next-step candidates shared a topic in the synthetic output.
+Real database conflict checks may leave one for review; both auto-saves are
+not established. Existing evidence, sensitivity, ownership and conflict
+protection remain intact. Broader natural-memory acceptance remains ongoing.
+Skills and proposal work remain paused. Configuration and backups are preserved.
