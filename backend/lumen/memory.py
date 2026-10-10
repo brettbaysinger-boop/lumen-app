@@ -44,6 +44,9 @@ _SAVE_CLAIM = re.compile(
     r"|\bi(?:['’]ve| have)\s+(?:taken|made|created)\s+(?:that |the |a |your )?note\b"
     r"|\bi(?:['’]ll| will)\s+(?:always\s+|definitely\s+|make sure to\s+)?remember\b"
     r"|\bi(?:['’]ll| will)\s+(?:always\s+|definitely\s+)?(?:keep|retain|hold)\b[^.!?\n]{0,200}\b(?:memory|memories)\b"
+    r"|\bi(?:['’]ve| have)?\s+(?:(?:have|already|just|successfully)\s+)*"
+    r"(?:updated|changed|corrected|replaced|deleted|removed|forgotten)\b"
+    r"[^.!?\n]{0,120}\b(?:memory|memories|preference|preferences|saved fact|saved facts)\b"
     r"|\b(?:added|committed)\s+.{0,80}\b(?:memory|memories)\b",
     re.IGNORECASE,
 )

@@ -110,3 +110,43 @@ It does not establish universal natural-language correctness.
 Application migration, deployment, browser correction, reload persistence
 and Undo acceptance remain pending. Proposal work remains paused.
 Existing configuration, backups and unrelated edits remain preserved.
+
+<!-- memory-correction-visibility-candidate-2026-10-10 -->
+## October 10, Phoenix — Deployed correction evidence and visibility follow-up
+
+User-supplied host output confirms 4ea7cb0 pushed and deployed, migration
+20261010190000 synchronized, successful web build, active API/web services
+and API/Ollama/database health OK. A pre-migration database archive was
+created and its archive list verified; no restore drill is claimed.
+Prior validation: 406 backend tests, TypeScript, 30 isolated SQL checks,
+and seven installed-model synthetic probes passed.
+
+Browser transcript shows an explicit 'actually' correction produced a
+Memory corrected / Undo / View change card. User reports the revised answer
+survives reload. Undo itself and fresh-conversation recall remain unverified.
+The preceding bare preference plus 'yes update it' exchange produced an
+unsupported generated update claim without a receipt. Do not record that
+exchange as a verified memory write.
+
+Code inspection confirms Memories sorted/displayed creation dates and
+refreshed proposals, but not saved entries, on tab focus. This follow-up
+refreshes saved entries on focus and polling, sorts by updated_at, shows
+created and updated dates, and exposes the latest revision card on each
+saved memory, including Undo. Existing edit/delete controls remain.
+It also detects unsupported ordinary-chat preference/memory mutation claims
+and sends them through the existing rewrite guard.
+
+408 backend tests, TypeScript and component checks pass locally, including
+memory-linked latest-revision lookup, Undo refresh and account isolation.
+Host validation, deployment and browser acceptance of this follow-up remain
+pending. No migration or configuration change is required.
+Bare assertions plus 'yes update it' still need grounded conversational
+intent handling; this follow-up does not claim to implement that flow.
+
+<!-- memory-visibility-host-tests-408 -->
+## October 10 — Memory visibility host validation
+
+User-supplied host output confirms guarded application, clean whitespace
+checks, 408 backend tests passing in 4.086 seconds and TypeScript passing.
+This supersedes pending host validation for the visibility follow-up.
+Deployment and browser acceptance remain pending. No migration is required.

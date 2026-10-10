@@ -17,6 +17,7 @@ import {
   User as UserIcon, Sparkles, Zap, X,
 } from 'lucide-react-native';
 import { useFocusEffect } from 'expo-router';
+import { MemoryCorrectionCard } from '@/components/MemoryCorrectionCard';
 import { authHeaders } from '@/lib/auth';
 import { supabase } from '@/lib/supabase';
 import { useTheme } from '@/lib/theme-context';
@@ -83,7 +84,7 @@ export default function MemoriesScreen() {
     if (!companion) return;
     let query = supabase.from('memories').select('*')
       .eq('companion_id', companion.id).eq('is_active', true)
-      .order('created_at', { ascending: false });
+      .order('updated_at', { ascending: false }).order('id', { ascending: false });
     if (filterType !== 'all') query = query.eq('type', filterType);
     if (searchQuery.trim()) query = query.ilike('content', `%${searchQuery.trim()}%`);
     const { data, error: err } = await query;
@@ -105,10 +106,11 @@ export default function MemoriesScreen() {
   useFocusEffect(useCallback(() => {
     if (!companion) return;
     void loadSuggestions();
+    void loadMemories();
     // Background extraction can finish while this tab is open.
-    const timer = setInterval(() => { void loadSuggestions(); }, 5000);
+    const timer = setInterval(() => { void loadSuggestions(); void loadMemories(); }, 5000);
     return () => clearInterval(timer);
-  }, [companion, loadSuggestions]));
+  }, [companion, loadSuggestions, loadMemories]));
 
   const reviewSuggestion = async (item: Suggestion, action: 'approve' | 'dismiss') => {
     if (reviewBusy) return;
@@ -407,6 +409,9 @@ export default function MemoriesScreen() {
                   />
                 )}
 
+                <MemoryCorrectionCard key={item.id + ':' + item.updated_at}
+                  memoryId={item.id} onUndo={() => { void loadMemories(); }} />
+
                 <View style={styles.memoryFooter}>
                   <Text style={styles.memorySubject}>
                     {subjectLabel(item.subject, companion?.name)}
@@ -425,7 +430,8 @@ export default function MemoriesScreen() {
                   </View>
 
                   <Text style={styles.memoryDate}>
-                    {new Date(item.created_at).toLocaleDateString()}
+                    Created {new Date(item.created_at).toLocaleDateString()}
+                    {item.updated_at !== item.created_at ? ' · Updated ' + new Date(item.updated_at).toLocaleString() : ''}
                   </Text>
                 </View>
               </View>

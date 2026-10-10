@@ -53,6 +53,14 @@ class MemoryCommands(unittest.TestCase):
         for text in ("Remembering my dog", "Don't save this to memory", "Can you remember my name?"):
             self.assertEqual(memory_request(text), (False, None))
 
+    def test_unsupported_preference_mutations_are_corrected(self):
+        for text in ("I've updated your preference to red.", "I’ve changed your memory.",
+                     "I corrected your saved fact.", "I have deleted that memory."):
+            self.assertTrue(has_save_claim(text),text)
+        for text in ("Your preference is red.", "You changed your preference.",
+                     "I've updated the draft below.", "I changed my wording."):
+            self.assertFalse(has_save_claim(text),text)
+
     def test_generated_save_claims_are_corrected(self):
         for text in ("I've noted that today is your birthday.", "I'll remember your birthday!",
                      "I have saved your name.", "I’ve stored it in memory.", "I've added milk to your shopping list.", "I've taken that note for you."):
@@ -165,6 +173,19 @@ class MemoryFlow(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(reply.memory_status, "none")
         self.assertEqual(r.provider.generate.await_count, 2)
         r.db.remember.assert_not_awaited()
+
+    async def test_unverified_update_claim_is_rewritten_without_write(self):
+        r=self.runtime()
+        r.provider.generate.side_effect=[
+            dict(content="I've updated your preference to red.", model="test-model",
+                 latency_ms=1,tokens_in=1,tokens_out=1),
+            dict(content="What exact preference should I correct?", model="test-model",
+                 latency_ms=1,tokens_in=1,tokens_out=1)]
+        reply=await r.respond("companion","chat","yes update it")
+        self.assertNotIn("updated",reply.content)
+        self.assertEqual(r.provider.generate.await_count,2)
+        r.db.remember.assert_not_awaited()
+        self.assertEqual(reply.memory_status,"none")
 
     async def test_normal_fact_answers_are_not_replaced(self):
         for question, answer in (
