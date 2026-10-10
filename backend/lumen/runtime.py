@@ -110,7 +110,7 @@ class CognitionRuntime:
                 getattr(self, 'timezone', 'UTC'), getattr(self, 'request_key', str(uuid4())), recent=recent, companion_name=companion["name"])
             if not action and (document_id or document_command(user_message) is not None):
                 action = await document_action(self.db, companion_id, user_message, provider,
-                    companion.get('conversation_model') or self.settings.conversation_model, emit, document_id=document_id)
+                    companion.get('conversation_model') or self.settings.conversation_model, emit, document_id=document_id, recent=recent)
             if not action:
                 action = await web_action(user_message)
         is_request, memory_content = memory_request(user_message, companion["name"])
@@ -305,7 +305,7 @@ class CognitionRuntime:
             "tokens_in": result["tokens_in"],
             "tokens_out": result["tokens_out"],
             "latency_ms": result["latency_ms"],
-            "metadata": {**(companion_image_metadata or {}), "provider_requests": provider_requests, "provider": provider.name, "runtime": "v0.1", "memory_status": memory_status, "memory_subject": saved_subject, "timings_ms": result.get("timings_ms", {}), "my_day_item": action.get("item") if action else None, "unstuck_draft": action.get("unstuck_draft") if action else None, "pending_reminder": action.get("pending_reminder") if action else None, "web_search": action.get("web_search") if action else None, "goal_session": action.get("goal_session") if action else None, "goal_summary_method": action.get("goal_summary_method") if action else None, "vision_used": vision_used, "document_sources": action.get("document_sources") if action else None, "document_action_draft": action.get("document_action_draft") if action else None},
+            "metadata": {**(companion_image_metadata or {}), "provider_requests": provider_requests, "provider": provider.name, "runtime": "v0.1", "memory_status": memory_status, "memory_subject": saved_subject, "timings_ms": result.get("timings_ms", {}), "my_day_item": action.get("item") if action else None, "unstuck_draft": action.get("unstuck_draft") if action else None, "pending_reminder": action.get("pending_reminder") if action else None, "web_search": action.get("web_search") if action else None, "goal_session": action.get("goal_session") if action else None, "goal_summary_method": action.get("goal_summary_method") if action else None, "vision_used": vision_used, "document_sources": action.get("document_sources") if action else None, "document_action_draft": action.get("document_action_draft") if action else None, "document_work_context": {**action["document_work_context"], "request_message_id": user_row["id"]} if action and action.get("document_work_context") else None},
         })
         if companion_image_metadata:
             image_path = companion_image_metadata["attachments"][0]["path"]

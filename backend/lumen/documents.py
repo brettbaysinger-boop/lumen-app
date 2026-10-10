@@ -15,6 +15,7 @@ from .db import SupabaseRepository
 from .citations import normalize_citations
 from .document_extract import MAX_UPLOAD
 from .document_actions import action_kind, prepare_draft
+from .proposal_context import previous_request, ProposalContextError
 
 router = APIRouter(prefix='/v0.6/documents', tags=['private-documents'])
 
@@ -128,7 +129,7 @@ async def selected_document(db, companion_id, document_id):
     return rows[0]
 
 
-async def document_action(db, companion_id, text, provider, model, emit=None, document_id=None):
+async def document_action(db, companion_id, text, provider, model, emit=None, document_id=None, recent=None):
     query = text.strip() if document_id else document_command(text)
     if query is None:
         return None
@@ -137,6 +138,15 @@ async def document_action(db, companion_id, text, provider, model, emit=None, do
             query = DocumentQuery(query=query).query
         except ValueError:
             return {'content':'Use a document question between 2 and 500 characters.','model':'document-search'}
+    from .document_work import work_request, prepare_work
+    previous = None
+    if work_request(query):
+        try:
+            previous = previous_request(query, recent)
+        except ProposalContextError:
+            return {'content': 'Please include the current job details in this message. '
+                    'I could not safely resolve the previous request. Nothing was drafted or saved.',
+                    'model': 'document-work'}
     if emit:
         await emit({'type':'activity','text':'Searching your private documents…'})
     document = None
@@ -159,9 +169,17 @@ async def document_action(db, companion_id, text, provider, model, emit=None, do
     if not hits:
         return {'content':'No matching document text was found. Upload a document or try specific words from it.','model':'document-search'}
     sources = [{'number':i+1,'document_id':hit['document_id'],'title':hit['title'],'page':hit['page'],'excerpt':hit['content']} for i,hit in enumerate(hits[:6])]
-    from .document_work import work_request, prepare_work
     if work_request(query):
-        return await prepare_work(provider, model, query, sources, emit)
+        options = {'previous_user_request': previous['content']} if previous else {}
+        result = await prepare_work(provider, model, query, sources, emit, **options)
+        if document:
+            result['document_title'] = document['title']
+        if result.get('document_action_draft'):
+            result['document_work_context'] = {
+                'version': 1,
+                'previous_user_message_id': previous['id'] if previous else None,
+            }
+        return result
     kind = action_kind(query)
     if kind:
         result = await prepare_draft(provider, model, query, sources, kind)
