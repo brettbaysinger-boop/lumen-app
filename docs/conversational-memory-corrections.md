@@ -215,3 +215,38 @@ clean whitespace checks and 424 backend tests passing in 3.649 seconds.
 This supersedes pending host-suite validation for this candidate.
 Deployment and browser acceptance remain pending.
 No migration or frontend build is required. Skills work remains paused.
+
+<!-- natural-memory-season-alias-candidate-2026-10-10 -->
+## October 10, Phoenix — Natural confirmation accepted; season wording follow-up
+
+User-supplied host evidence confirms bd960b4 committed, pushed, API restarted
+and API/Ollama/database health OK. Prior host validation: 424 backend tests.
+Browser transcript confirms a bare favorite-season statement produced an
+exact replacement proposal, plain "yes" produced a correction receipt,
+and the user reports chat Undo restored summer.
+
+Cancellation and fresh-chat recall of the confirmed new value have not yet
+been separately reported for this increment. Earlier correction-flow acceptance
+covered reload, Undo, deletion and fresh-chat recall.
+
+The user also demonstrated "my favorite time is autumn" bypassing the
+season conflict path and receiving unsupported speculative chat wording.
+This follow-up matches favorite time/time of year to favorite season only
+when the stated value is explicitly spring/summer/autumn/fall/winter.
+Other times (e.g. morning or Christmas) ask for clarification when a
+season memory is present. No season or preference is inferred from a question.
+
+428 isolated backend tests pass: exact original wording, ambiguity refusal,
+alias duplicate checks, and affirmative confirmation with the existing version
+and receipt. Host validation, deployment and browser acceptance remain pending.
+This remains bounded lexical matching, not arbitrary semantic interpretation.
+No migration, frontend, provider or configuration change. Skills work is paused.
+
+<!-- memory-season-alias-host-tests-428 -->
+## October 10 — Season wording host validation
+
+User-supplied output confirms checksum verification, guarded application,
+clean whitespace checks and 428 backend tests passing in 3.738 seconds.
+This supersedes pending host-suite validation for the season wording candidate.
+Deployment and browser acceptance remain pending.
+No migration or frontend build is required. Skills work remains paused.

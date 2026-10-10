@@ -33,6 +33,42 @@ class NaturalUpdates(unittest.IsolatedAsyncioTestCase):
         db=Mock(_request=AsyncMock(side_effect=effects if effects is not None else [[M]]))
         result=await natural_memory_update(db,'c','chat',message,recent or [],[M] if memories is None else memories,'request')
         return result,db
+    async def test_time_alias_with_season_value_proposes_exact_original_text(self):
+        memory={**M,'content':'My favorite season is summer.'}
+        for text in ('my favorite time is autumn','My favourite time of year is winter.'):
+            result,db=await self.call(message=text,memories=[memory],effects=[[memory]])
+            self.assertEqual(result['memory_update_proposal']['after'],text)
+            self.assertEqual(result['memory_update_proposal']['before'],memory['content'])
+            self.assertTrue(all(c.args[0]=='GET' for c in db._request.call_args_list))
+
+    async def test_ambiguous_time_does_not_replace_season(self):
+        memory={**M,'content':'My favorite season is summer.'}
+        for text in ('My favorite time is morning','My favorite time of year is Christmas'):
+            result,db=await self.call(message=text,memories=[memory])
+            self.assertIn('Do you mean',result['content'])
+            self.assertNotIn('memory_update_proposal',result)
+            db._request.assert_not_awaited()
+
+    async def test_season_alias_confirmation_reuses_existing_version_and_receipt(self):
+        memory={**M,'content':'My favorite season is summer.'}
+        text='my favorite time is autumn'
+        pending={**PENDING,'before':memory['content'],'after':text,'source_text':text}
+        recent=[{'role':'assistant','metadata':{'memory_update_proposal':pending}},
+                {'role':'user','id':'source','content':text}]
+        receipt={**RECEIPT,'after_content':text}
+        result,db=await self.call(message='yes',recent=recent,effects=[[],[memory],receipt])
+        self.assertEqual(result['memory_revision']['id'],'revision')
+        self.assertEqual(db._request.call_args.kwargs['json']['p_after'],text)
+        self.assertEqual(db._request.call_args.kwargs['json']['p_version'],4)
+
+    async def test_alias_duplicates_require_review(self):
+        memory={**M,'content':'My favorite season is summer.'}
+        duplicate={**memory,'id':'other','content':'My favorite time of year is autumn','tags':[]}
+        result,db=await self.call(message='My favorite season is winter',
+                                 memories=[memory],effects=[[memory,duplicate]])
+        self.assertNotIn('memory_update_proposal',result)
+        self.assertIn('more than one',result['content'])
+
     async def test_bare_conflict_proposes_without_writing(self):
         result,db=await self.call()
         self.assertEqual(result['memory_update_proposal']['after'],TEXT)

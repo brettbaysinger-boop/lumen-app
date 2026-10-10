@@ -49,6 +49,11 @@ async def natural_memory_update(db, cid, conversation_id, message, recent, memor
     if YES.fullmatch(text) and (pending or metadata.get('memory_revision') or 'update it' in text.casefold()):
         return await confirm_update(db, cid, conversation_id, message, recent, pending, request_id, companion_name)
     fact = bare_fact(message, companion_name)
+    if (fact and _attribute(fact) in ('favorite time', 'favorite time of year')
+            and any(m.get('subject') == 'user' and _attribute(m.get('content', '')) == 'favorite season'
+                    for m in memories)):
+        return _action("Do you mean your favorite season, or a different time? "
+                       "Please state the exact preference you want changed. I haven’t changed a memory.")
     # Avoid a new database query for ordinary statements unrelated to loaded memories.
     if not fact or not any(m.get('subject') == 'user' and _attribute(m.get('content', '')) == _attribute(fact) for m in memories):
         return None

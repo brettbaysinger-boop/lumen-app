@@ -67,7 +67,13 @@ def _attribute(text):
     text = re.sub(r'\b(lives|works|prefers|likes)\b', lambda m: m[0][:-1], text)
     match = re.match(r"(.+?)\s+(?:is|are)\s+", text)
     if match:
-        return match.group(1).replace('colour', 'color').replace('favourite', 'favorite')
+        attribute = match.group(1).replace('colour', 'color').replace('favourite', 'favorite')
+        # A season value resolves "favorite time" without inventing an attribute.
+        # Morning, holidays and other times remain distinct until clarified.
+        if (attribute in ('favorite time', 'favorite time of year')
+                and re.fullmatch(r"(?:spring|summer|autumn|fall|winter)[.!]?", text[match.end():].strip())):
+            return 'favorite season'
+        return attribute
     match = re.match(r'(live in|work at|work for|prefer|like)\s+', text)
     return match.group(1) if match else None
 
