@@ -37,6 +37,7 @@ from .web_search import router as web_router
 from .documents import router as document_router
 from .document_actions import router as document_action_router
 from .proposal_pdf import router as proposal_pdf_router
+from .document_style import router as document_style_router
 from .providers import router as providers_router, request_record
 from .goals import router as goals_router
 from .unstuck import router as unstuck_router
@@ -52,6 +53,7 @@ app.include_router(web_router)
 app.include_router(document_router)
 app.include_router(document_action_router)
 app.include_router(proposal_pdf_router)
+app.include_router(document_style_router)
 app.include_router(goals_router)
 app.include_router(providers_router)
 app.include_router(unstuck_router)

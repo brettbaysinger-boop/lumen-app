@@ -3,6 +3,7 @@ import { View, Text, TextInput, Pressable, Platform } from 'react-native';
 import { useTheme } from '@/lib/theme-context';
 import { documentRequest } from '@/lib/documents';
 import { proposalPDF } from '@/lib/proposal-pdf';
+import { DocumentStylePanel } from './DocumentStylePanel';
 import { userTimezone, type DayItem } from '@/lib/my-day';
 import { DayActionCard } from './DayActionCard';
 
@@ -62,6 +63,7 @@ function DraftCard({draft,companionId,messageId,sources}:{draft:ActionDraft;comp
       const link=document.createElement('a');link.href=url;link.download='companion-draft.txt';link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
     }}><Text style={{color:c.primary[300]}}>Download editable text</Text></Pressable>}
     {Platform.OS==='web' && draft.kind==='note' && <>
+      <DocumentStylePanel disabled={busy||pdfBusy} onBusyChange={setBusy} onChanged={()=>setPdfUrl('')}/>
       <Pressable accessibilityRole="button" disabled={pdfBusy||busy||loading} onPress={()=>void previewPDF()}><Text style={{color:c.primary[300]}}>{pdfBusy?'Preparing PDF…':'Preview proposal PDF'}</Text></Pressable>
       {!!pdfUrl && <>
         {createElement('iframe',{src:pdfUrl,title:'Proposal PDF preview',style:{width:'100%',height:520,border:0,borderRadius:8}})}

@@ -8,7 +8,7 @@ export async function proposalPDF(companion: string, message: string, title: str
   try {
     const response = await fetch(`${base}/v0.6/documents/companions/${encodeURIComponent(companion)}/drafts/${encodeURIComponent(message)}/pdf`, {
       method: 'POST', headers: { ...await authHeaders(), 'Content-Type': 'application/json' },
-      body: JSON.stringify({title: title.trim(), body}), signal: controller.signal,
+      body: JSON.stringify({title: title.trim(), body, use_saved_style: true}), signal: controller.signal,
     });
     if (!response.ok) {
       const error = await response.json().catch(() => null);

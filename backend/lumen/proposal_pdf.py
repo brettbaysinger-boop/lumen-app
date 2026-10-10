@@ -18,6 +18,7 @@ class ProposalPDFRequest(BaseModel):
     model_config = ConfigDict(extra='forbid')
     title: str = Field(min_length=1,max_length=200)
     body: str = Field(min_length=1,max_length=6000)
+    use_saved_style: bool = False
 
 
 
@@ -70,8 +71,15 @@ async def export_proposal_pdf(companion_id:UUID,message_id:UUID,payload:Proposal
         final=validate_proposal(json.dumps({'title':payload.title,'body':payload.body}),sources,validation_request)
     except ValueError:
         raise HTTPException(422,'Edited proposal failed source or price checks. Keep valid citations and prices from the original request or excerpts.') from None
+    style_options = {}
+    if payload.use_saved_style:
+        from .document_style import load_style
+        try:
+            style_options['style'] = await load_style(user)
+        except Exception:
+            raise HTTPException(503, 'Your saved document style is unavailable. Try again after checking the document-style service.') from None
     try:
-        data=await asyncio.to_thread(render_proposal_pdf,final.title,final.body,sources)
+        data=await asyncio.to_thread(render_proposal_pdf,final.title,final.body,sources,**style_options)
     except Exception:
         # No private exception bodies or draft content in logs or response.
         raise HTTPException(503,'PDF rendering is unavailable. Check the backend PDF dependency.') from None

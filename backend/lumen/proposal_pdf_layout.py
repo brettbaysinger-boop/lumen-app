@@ -109,26 +109,37 @@ def _fonts():
             _font_ready = True
 
 
-def render_proposal_pdf(title, body, sources):
+def render_proposal_pdf(title, body, sources, *, style=None):
     from reportlab.lib import colors
     from reportlab.lib.styles import ParagraphStyle
-    from reportlab.lib.pagesizes import letter
-    from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, PageBreak, LongTable, TableStyle, KeepTogether
+    from reportlab.lib.pagesizes import letter, A4
+    from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, PageBreak, LongTable, TableStyle, KeepTogether, Image
     _fonts()
-    width = 512
+    from .document_style_model import DocumentStyle
+    style = style if isinstance(style, DocumentStyle) else DocumentStyle.model_validate(style or {})
+    page_size = A4 if style.page_size == 'a4' else letter
+    page_width, page_height = page_size
+    width = page_width - 100
     ink = colors.HexColor('#243447')
+    accent = colors.HexColor(style.accent)
+    # Keep any user-selected pale accent readable against a white page.
+    luminance = .2126 * accent.red + .7152 * accent.green + .0722 * accent.blue
+    if luminance > .61:
+        accent = colors.Color(*(channel * .61 / luminance for channel in (accent.red, accent.green, accent.blue)))
+    roomy = style.spacing == 'comfortable'
+    alignment = 1 if style.header_alignment == 'center' else 0
     muted = colors.HexColor('#556272')
     line_color = colors.HexColor('#D5DDE5')
     pale = colors.HexColor('#F3F6F9')
-    normal = ParagraphStyle('body', fontName='LumenPDF', fontSize=9, leading=12.5,
+    normal = ParagraphStyle('body', fontName='LumenPDF', fontSize=10 if roomy else 9, leading=14 if roomy else 12.5,
                             textColor=ink, spaceAfter=3)
     small = ParagraphStyle('small', parent=normal, fontSize=7.5, leading=10, textColor=muted)
     heading_style = ParagraphStyle('heading', parent=normal, fontName='LumenPDF-Bold',
-                                  fontSize=10.5, leading=14, spaceBefore=10, spaceAfter=5, keepWithNext=True)
+                                  fontSize=10.5, leading=14, spaceBefore=10, spaceAfter=5, keepWithNext=True, textColor=accent)
     title_style = ParagraphStyle('title', parent=heading_style, fontSize=18, leading=23,
-                                spaceBefore=0, spaceAfter=7)
+                                spaceBefore=0, spaceAfter=7, alignment=alignment)
     bullet_style = ParagraphStyle('bullet', parent=normal, leftIndent=10, firstLineIndent=-8)
-    cell_style = ParagraphStyle('cell', parent=normal, fontSize=8.5, leading=11.5, spaceAfter=0)
+    cell_style = ParagraphStyle('cell', parent=normal, fontSize=9.5 if roomy else 8.5, leading=13 if roomy else 11.5, spaceAfter=0)
 
     def paragraph(value, style=normal):
         return Paragraph(_inline(value), style)
@@ -197,6 +208,24 @@ def render_proposal_pdf(title, body, sources):
     story = [paragraph(title, title_style),
              paragraph('Review draft. Confirm the scope, prices, terms and any unresolved details before use.', small),
              Spacer(1, 8)]
+    brand = []
+    if style.logo_png:
+        import base64
+        from PIL import Image as PILImage
+        raw_logo = base64.b64decode(style.logo_png, validate=True)
+        with PILImage.open(io.BytesIO(raw_logo)) as logo:
+            factor = min(130 / logo.width, 52 / logo.height)
+            logo_width, logo_height = logo.width * factor, logo.height * factor
+        brand.append(Image(io.BytesIO(raw_logo), width=logo_width, height=logo_height,
+                           hAlign='CENTER' if alignment else 'LEFT'))
+        brand.append(Spacer(1, 6))
+    identity_style = ParagraphStyle('identity', parent=normal, alignment=alignment)
+    if style.company_name:
+        brand.append(paragraph(style.company_name, identity_style))
+    if style.contact_line:
+        brand.append(paragraph(style.contact_line, ParagraphStyle('contact', parent=small, alignment=alignment)))
+    if brand:
+        story[0:0] = [KeepTogether(brand + [Spacer(1, 8)])]
     for heading, lines in _sections(body):
         flows = ([paragraph(heading, heading_style)] if heading else []) + section_content(heading, lines)
         if heading and heading.casefold() == 'acceptance' and sum(map(len, lines)) <= 1300 and len(lines) <= 16:
@@ -221,17 +250,17 @@ def render_proposal_pdf(title, body, sources):
     def decorate(canvas, doc):
         canvas.saveState(); canvas.setFillColor(ink)
         canvas.setFont('LumenPDF-Bold', 9)
-        canvas.drawString(50, 757, 'PROPOSAL')
+        canvas.drawString(50, page_height - 35, 'PROPOSAL')
         canvas.setFont('LumenPDF', 8); canvas.setFillColor(muted)
-        canvas.drawRightString(562, 757, 'REVIEW DRAFT')
-        canvas.setStrokeColor(line_color); canvas.line(50, 747, 562, 747)
+        canvas.drawRightString(page_width - 50, page_height - 35, 'REVIEW DRAFT')
+        canvas.setStrokeColor(line_color); canvas.line(50, page_height - 45, page_width - 50, page_height - 45)
         canvas.setFont('LumenPDF', 7)
         canvas.drawString(50, 28, 'Review draft • Not sent or signed')
-        canvas.drawRightString(562, 28, f'Page {doc.page}')
+        canvas.drawRightString(page_width - 50, 28, f'Page {doc.page}')
         canvas.restoreState()
 
     out = io.BytesIO()
-    SimpleDocTemplate(out, pagesize=letter, leftMargin=50, rightMargin=50, topMargin=60,
+    SimpleDocTemplate(out, pagesize=page_size, leftMargin=50, rightMargin=50, topMargin=60,
                       bottomMargin=47, title='Proposal review draft').build(
                           story, onFirstPage=decorate, onLaterPages=decorate)
     return out.getvalue()
