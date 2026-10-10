@@ -644,3 +644,26 @@ User-supplied host output confirms guarded application, clean whitespace
 checks, 408 backend tests passing in 4.086 seconds and TypeScript passing.
 This supersedes pending host validation for the visibility follow-up.
 Deployment and browser acceptance remain pending. No migration is required.
+
+<!-- memory-correction-browser-accepted-2026-10-10 -->
+## October 10, Phoenix — Memory correction browser acceptance
+
+38a5b87 was pushed and deployed with successful web build, active services,
+and API/Ollama/database health OK. Host validation passed 408 backend tests
+and TypeScript.
+
+User verified correction visibility in Memories, updated dates, Undo,
+persistence after reload, and restored-value recall in a new conversation.
+A decorative overlay intercepted the delete control on important memories.
+The pointerEvents="none" follow-up was applied; the user confirmed deletion
+then worked and a fresh conversation no longer supplied the deleted value.
+
+This closes the bounded correction/reload/Undo/deletion acceptance sequence.
+It does not establish universal natural-language correction accuracy.
+Deletion deactivates the saved memory; historical chat and revision records
+are not erased by this control.
+
+Remaining work: grounded handling of bare preference changes followed by
+"yes update it"; more precise wording when no saved fact is available;
+broader natural-memory acceptance and the original companion goal-list review.
+Proposal work remains paused. Configuration and existing backups are preserved.

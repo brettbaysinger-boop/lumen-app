@@ -402,6 +402,7 @@ export default function MemoriesScreen() {
 
                 {isImportant && (
                   <View
+                    pointerEvents="none"
                     style={[
                       styles.importantGlow,
                       { backgroundColor: config.color, opacity: 0.08 },
