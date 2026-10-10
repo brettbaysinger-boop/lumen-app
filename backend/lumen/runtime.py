@@ -1,5 +1,7 @@
 import logging
+import time
 from uuid import uuid4, uuid5, NAMESPACE_URL
+from .providers import RecordingProvider, request_record, setting
 from .my_day import handle_action
 from .unstuck import unstuck_action, unstuck_request
 from .goals import practice_context
@@ -29,6 +31,7 @@ class CognitionRuntime:
 
     async def respond(self, companion_id: str, conversation_id: str | None, user_message: str,
                       attachments: list[Attachment] | None = None, emit=None, document_id: str | None = None) -> RespondResponse:
+        provider_requests = []
         attachments = attachments or []
         if document_id and attachments:
             raise ValueError("Send a document or photos in one turn, rather than both.")
@@ -50,6 +53,7 @@ class CognitionRuntime:
             )
             conversation_id = conversation["id"]
 
+        provider = RecordingProvider(self.provider,self.settings,provider_requests)
         if emit:
             await emit({"type": "activity", "text": "Checking memories…"})
         state = await self.db.get_state(companion_id)
@@ -70,7 +74,7 @@ class CognitionRuntime:
             model = companion.get("conversation_model") or self.settings.conversation_model
             if emit:
                 await emit({"type": "activity", "text": "Checking photo support…"})
-            supported = await self.provider.supports_vision(model)
+            supported = await provider.supports_vision(model)
             if supported is not True:
                 detail = ("does not support photos" if supported is False else "could not be checked for photo support")
                 action = {"content": f"The selected model ({model}) {detail}. I haven’t viewed this photo. "
@@ -95,16 +99,16 @@ class CognitionRuntime:
             messages.append({"role": "user", "content": user_message})
             action = None
             if not document_id and save_session_request(user_message,companion["name"]):
-                action = await save_practice(self.db,companion_id,conversation,user_message,self.provider,
+                action = await save_practice(self.db,companion_id,conversation,user_message,provider,
                 companion.get("conversation_model") or self.settings.conversation_model,companion["name"],emit)
             if not action and not document_id and unstuck_request(user_message,companion["name"]) is not None:
-                action = await unstuck_action(user_message,companion["name"],self.provider,
+                action = await unstuck_action(user_message,companion["name"],provider,
                     companion.get("conversation_model") or self.settings.conversation_model)
             if not action:
                 action = None if document_id else await handle_action(self.db, companion_id, conversation_id, user_message,
                 getattr(self, 'timezone', 'UTC'), getattr(self, 'request_key', str(uuid4())), recent=recent, companion_name=companion["name"])
             if not action and (document_id or document_command(user_message) is not None):
-                action = await document_action(self.db, companion_id, user_message, self.provider,
+                action = await document_action(self.db, companion_id, user_message, provider,
                     companion.get('conversation_model') or self.settings.conversation_model, emit, document_id=document_id)
             if not action:
                 action = await web_action(user_message)
@@ -116,7 +120,7 @@ class CognitionRuntime:
         if action:
             research = None
             if action.get('web_search'):
-                research = await research_answer(action, self.provider,
+                research = await research_answer(action, provider,
                     companion.get('conversation_model') or self.settings.conversation_model, emit)
             result = research or {"content": action['content'], "model": action.get('model','my-day-action'), "latency_ms": action.get("latency_ms", 0),
                       "tokens_in": action.get("tokens_in"), "tokens_out": action.get("tokens_out")}
@@ -165,11 +169,11 @@ class CognitionRuntime:
                     else:
                         await emit(event)
 
-                result = await self.provider.generate_stream(
+                result = await provider.generate_stream(
                     model, messages, guarded_emit
                 )
             else:
-                result = await self.provider.generate(model, messages)
+                result = await provider.generate(model, messages)
 
             if has_save_claim(result["content"]):
                 if emit:
@@ -185,7 +189,7 @@ class CognitionRuntime:
                     "'Your favorite color is turquoise' when answering a recall question. "
                     "Do not discuss saving unless the question asks about saving."}]
                 original = result
-                result = await self.provider.generate((companion.get("conversation_model") or self.settings.conversation_model), rewrite_messages)
+                result = await provider.generate((companion.get("conversation_model") or self.settings.conversation_model), rewrite_messages)
                 result["latency_ms"] += original["latency_ms"]
                 for key in ("tokens_in", "tokens_out"):
                     if result[key] is not None and original[key] is not None:
@@ -214,6 +218,8 @@ class CognitionRuntime:
                         "type": "activity",
                         "text": "Creating an image…",
                     })
+                image_started=time.perf_counter()
+                image_status='failed'
                 try:
                     companion_image_metadata = await create_companion_image(
                         self.settings,
@@ -223,6 +229,7 @@ class CognitionRuntime:
                         image_action.prompt,
                         subject=image_action.subject,
                     )
+                    image_status="completed"
                     result["content"] = image_reply(
                         visible, success=True
                     )
@@ -233,6 +240,11 @@ class CognitionRuntime:
                     result["content"] = image_reply(
                         visible, success=False
                     )
+                finally:
+                    provider_requests.append(request_record(self.settings,'image',
+                        (companion_image_metadata or {}).get('image_model','ComfyUI workflow'),image_status,
+                        time.perf_counter()-image_started,provider=setting(self.settings,'image_provider','comfyui'),
+                        endpoint=setting(self.settings,'comfyui_url')))
 
         if emit and result.get("model") not in (
             "explicit-memory-command", "memory-recall"
@@ -292,7 +304,7 @@ class CognitionRuntime:
             "tokens_in": result["tokens_in"],
             "tokens_out": result["tokens_out"],
             "latency_ms": result["latency_ms"],
-            "metadata": {**(companion_image_metadata or {}), "provider": self.provider.name, "runtime": "v0.1", "memory_status": memory_status, "memory_subject": saved_subject, "timings_ms": result.get("timings_ms", {}), "my_day_item": action.get("item") if action else None, "unstuck_draft": action.get("unstuck_draft") if action else None, "pending_reminder": action.get("pending_reminder") if action else None, "web_search": action.get("web_search") if action else None, "goal_session": action.get("goal_session") if action else None, "goal_summary_method": action.get("goal_summary_method") if action else None, "vision_used": vision_used, "document_sources": action.get("document_sources") if action else None, "document_action_draft": action.get("document_action_draft") if action else None},
+            "metadata": {**(companion_image_metadata or {}), "provider_requests": provider_requests, "provider": provider.name, "runtime": "v0.1", "memory_status": memory_status, "memory_subject": saved_subject, "timings_ms": result.get("timings_ms", {}), "my_day_item": action.get("item") if action else None, "unstuck_draft": action.get("unstuck_draft") if action else None, "pending_reminder": action.get("pending_reminder") if action else None, "web_search": action.get("web_search") if action else None, "goal_session": action.get("goal_session") if action else None, "goal_summary_method": action.get("goal_summary_method") if action else None, "vision_used": vision_used, "document_sources": action.get("document_sources") if action else None, "document_action_draft": action.get("document_action_draft") if action else None},
         })
         if companion_image_metadata:
             image_path = companion_image_metadata["attachments"][0]["path"]
@@ -350,7 +362,7 @@ class CognitionRuntime:
             message_id=assistant_row["id"],
             content=result["content"],
             model=result["model"],
-            provider=self.provider.name,
+            provider=provider.name,
             latency_ms=result["latency_ms"],
             observation_message_id=observation_message_id,
             timings_ms=result.get("timings_ms", {}),

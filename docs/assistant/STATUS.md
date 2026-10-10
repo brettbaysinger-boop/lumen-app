@@ -93,3 +93,12 @@ list and reminders. This records continued practical use, not a measured reliabi
 rate or verification of closed-app notification delivery. Local automated coverage
 remains 207 backend tests plus typecheck, clean web export, SQL and mobile-sized
 mocked browser checks. No application changes or new migration in this checkpoint.
+
+## October 10 — Provider visibility
+
+Configured provider routes and persisted foreground request details are implemented
+and locally verified (259 backend tests, typecheck, clean web export and mocked
+mobile browser checks). Direct-image reply wording is also refined. Deployment and
+new-feature user acceptance remain pending. Prior companion-image prose and Gallery
+behavior were user-verified at `0cde482`. Routing and Helios remain unchanged.
+See [../provider-visibility.md](../provider-visibility.md) for scope, hardware evidence and acceptance checks.

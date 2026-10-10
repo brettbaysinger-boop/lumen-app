@@ -1,5 +1,6 @@
 import { router } from 'expo-router';
 import { SocialSignIn } from '@/components/SocialSignIn';
+import { ProviderRoutes } from '@/components/ProviderRoutes';
 import { ModelPicker } from '@/components/ModelPicker';
 import { SupportEntry } from '@/components/SupportEntry';
 import { signOutThisBrowser } from '@/lib/sign-out';
@@ -38,37 +39,6 @@ import { useTheme } from '@/lib/theme-context';
 import { SCHEMES, Spacing, Radius, Typography, type ExtendedThemeColors, type SchemeId } from '@/lib/theme';
 import type { Companion, ModelRun } from '@/types/database';
 
-interface ModelRouting {
-  conversation: { provider: string; model: string; gpu: string };
-  reasoning: { provider: string; model: string; gpu: string };
-  memory_extraction: { provider: string; model: string; gpu: string };
-  reflection: { provider: string; model: string; gpu: string };
-  vision: { provider: string; model: string; gpu: string };
-  embeddings: { provider: string; model: string; gpu: string };
-  stt: { provider: string; endpoint: string };
-  tts: { provider: string; endpoint: string };
-  image_generation: { provider: string; endpoint: string };
-}
-
-const DEFAULT_ROUTING: ModelRouting = {
-  conversation: { provider: 'ollama', model: 'companion-main', gpu: 'RTX 5060 Ti 16GB' },
-  reasoning: { provider: 'ollama', model: 'companion-reasoning', gpu: 'RTX 5060 Ti 16GB' },
-  memory_extraction: { provider: 'ollama', model: 'companion-small', gpu: 'RTX 5060 Ti 16GB' },
-  reflection: { provider: 'ollama', model: 'companion-reasoning', gpu: 'RTX 5060 Ti 16GB' },
-  vision: { provider: 'ollama', model: 'companion-vlm', gpu: 'RTX 5060 Ti 16GB' },
-  embeddings: { provider: 'ollama', model: 'embedding-model', gpu: 'RTX 5060 Ti 16GB' },
-  stt: { provider: 'helios', endpoint: 'helios.local:8000' },
-  tts: { provider: 'helios', endpoint: 'helios.local:8001' },
-  image_generation: { provider: 'comfyui', endpoint: 'desktop.local:8188' },
-};
-
-const INFRA_NODES = [
-  { name: 'Main Desktop', role: 'API + ComfyUI + General AI', gpu: 'PNY RTX 5070 OC 12GB GDDR7', status: 'online' },
-  { name: 'Cognition Node', role: 'Companion LLM + Reasoning', gpu: 'RTX 5060 Ti 16GB', status: 'pending' },
-  { name: 'Helios', role: 'STT / TTS / Audio', gpu: 'GTX 1660 Ti', status: 'online' },
-  { name: 'Raspberry Pi 5', role: 'Network + Watchdog', gpu: 'None', status: 'online' },
-];
-
 export default function SettingsScreen() {
   const { colors: c, schemeId, setSchemeId, mode, setAppearance } = useTheme();
   const { session } = useAuth();
@@ -77,7 +47,6 @@ export default function SettingsScreen() {
   const [modelRuns, setModelRuns] = useState<ModelRun[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [routing] = useState<ModelRouting>(DEFAULT_ROUTING);
   const styles = useMemo(() => createStyles(c), [c]);
 
   const loadData = useCallback(async () => {
@@ -261,90 +230,7 @@ export default function SettingsScreen() {
           </View>
         </View>
 
-        <View style={styles.section}>
-          <View style={styles.sectionHeaderRow}>
-            <Server color={c.accent[400]} size={18} strokeWidth={2} />
-            <Text style={styles.sectionTitle}>Infrastructure Nodes</Text>
-          </View>
-          {INFRA_NODES.map((node, i) => (
-            <View key={i} style={styles.nodeRow}>
-              <View style={styles.nodeInfo}>
-                <View style={styles.nodeHeader}>
-                  <Text style={styles.nodeName}>{node.name}</Text>
-                  <View
-                    style={[
-                      styles.statusBadge,
-                      node.status === 'online'
-                        ? { backgroundColor: c.success[900] }
-                        : { backgroundColor: c.warning[900] },
-                    ]}
-                  >
-                    <View
-                      style={[
-                        styles.statusDot,
-                        node.status === 'online'
-                          ? { backgroundColor: c.success[400] }
-                          : { backgroundColor: c.warning[400] },
-                      ]}
-                    />
-                    <Text
-                      style={[
-                        styles.statusText,
-                        node.status === 'online'
-                          ? { color: c.success[300] }
-                          : { color: c.warning[300] },
-                      ]}
-                    >
-                      {node.status === 'online' ? 'Online' : 'Pending'}
-                    </Text>
-                  </View>
-                </View>
-                <Text style={styles.nodeRole}>{node.role}</Text>
-                <Text style={styles.nodeGpu}>{node.gpu}</Text>
-              </View>
-            </View>
-          ))}
-        </View>
-
-        <View style={styles.section}>
-          <View style={styles.sectionHeaderRow}>
-            <Cpu color={c.primary[400]} size={18} strokeWidth={2} />
-            <Text style={styles.sectionTitle}>Planned Model Routing</Text>
-          </View>
-          <Text style={styles.sectionSubtitle}>Planning notes. Choose the actual conversation model above.</Text>
-          {Object.entries(routing).map(([task, config]) => (
-            <View key={task} style={styles.routingRow}>
-              <View style={styles.routingLeft}>
-                <View style={styles.routingIcon}>
-                  {task === 'stt' || task === 'tts' ? (
-                    <Mic color={c.secondary[400]} size={16} strokeWidth={2} />
-                  ) : task === 'vision' ? (
-                    <Camera color={c.accent[400]} size={16} strokeWidth={2} />
-                  ) : task === 'image_generation' ? (
-                    <Camera color={c.warning[400]} size={16} strokeWidth={2} />
-                  ) : task === 'embeddings' ? (
-                    <Database color={c.success[400]} size={16} strokeWidth={2} />
-                  ) : (
-                    <Zap color={c.primary[400]} size={16} strokeWidth={2} />
-                  )}
-                </View>
-                <View>
-                  <Text style={styles.routingTask}>
-                    {task.replace(/_/g, ' ').replace(/\b\w/g, (ch) => ch.toUpperCase())}
-                  </Text>
-                  <Text style={styles.routingDetail}>
-                    {'model' in config ? config.model : config.endpoint}
-                  </Text>
-                  <Text style={styles.routingProvider}>
-                    {config.provider}
-                    {'gpu' in config ? ` · ${config.gpu}` : ''}
-                  </Text>
-                </View>
-              </View>
-              <ChevronRight color={c.neutral[600]} size={18} strokeWidth={2} />
-            </View>
-          ))}
-        </View>
+        {companion && <ProviderRoutes companionId={companion.id} />}
 
         <View style={styles.section}>
           <View style={styles.sectionHeaderRow}>

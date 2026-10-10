@@ -30,6 +30,7 @@ import {
 import { CameraCapture } from '@/components/CameraCapture';
 import { CompanionPortrait } from '@/components/CompanionPortrait';
 import { PracticeSavedCard } from '@/components/PracticeSavedCard';
+import { ProviderRequests } from '@/components/ProviderRequests';
 import { DayActionCard } from '@/components/DayActionCard';
 import { UnstuckDraft } from '@/components/UnstuckDraft';
 import { DocumentActionDraft } from '@/components/DocumentActionDraft';
@@ -464,6 +465,7 @@ export default function ChatScreen() {
               {item.role === 'assistant' && item.metadata?.unstuck_draft != null && <UnstuckDraft value={item.metadata.unstuck_draft} companionId={item.companion_id} messageId={item.id}/> }
               {item.role === 'assistant' && item.metadata?.document_action_draft != null && <DocumentActionDraft value={item.metadata.document_action_draft} companionId={item.companion_id} messageId={item.id} />}
               {item.role === 'assistant' && item.metadata?.document_sources != null && <DocumentSources value={item.metadata.document_sources} companionId={item.companion_id} />}
+              {item.role === 'assistant' && <ProviderRequests value={item.metadata?.provider_requests} />}
               {item.role === 'assistant' && item.metadata?.timings_ms != null && (
                 <View>
                   <TouchableOpacity onPress={() => setExpandedActivity(expandedActivity === item.id ? null : item.id)}>

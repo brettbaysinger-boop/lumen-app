@@ -64,6 +64,18 @@ class CompanionImageRuntimeTests(unittest.IsolatedAsyncioTestCase):
             "image_latency_ms": 1000,
         }
 
+    async def test_provenance_records_text_then_image(self):
+        await self.respond('A sunrise. '+IMAGE_ACTION)
+        metadata=self.db.create_message.call_args_list[1].args[0]['metadata']
+        self.assertEqual([row['kind'] for row in metadata['provider_requests']],['text','image'])
+        self.assertEqual([row['status'] for row in metadata['provider_requests']],['completed','completed'])
+        self.assertEqual(metadata['provider_requests'][1]['model'],'heavy-workflow')
+
+    async def test_failed_image_keeps_text_and_failed_image_trace(self):
+        await self.respond('A sunrise. '+IMAGE_ACTION,image_error=RuntimeError('failed'))
+        metadata=self.db.create_message.call_args_list[1].args[0]['metadata']
+        self.assertEqual([row['status'] for row in metadata['provider_requests']],['completed','failed'])
+
     def model_result(self, content):
         return {
             "content": content,

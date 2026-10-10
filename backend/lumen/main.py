@@ -36,6 +36,7 @@ from .support import router as support_router
 from .web_search import router as web_router
 from .documents import router as document_router
 from .document_actions import router as document_action_router
+from .providers import router as providers_router, request_record
 from .goals import router as goals_router
 from .unstuck import router as unstuck_router
 
@@ -50,6 +51,7 @@ app.include_router(web_router)
 app.include_router(document_router)
 app.include_router(document_action_router)
 app.include_router(goals_router)
+app.include_router(providers_router)
 app.include_router(unstuck_router)
 app.add_middleware(
     CORSMiddleware,
@@ -226,7 +228,7 @@ async def generate_image(
         "conversation_id": active_conversation_id,
         "companion_id": request.companion_id,
         "role": "assistant",
-        "content": "Here's the image I made for you.",
+        "content": "A little glimpse of me, for you." if image_subject == "companion" else "Here you go.",
         "model_used": result["model"],
         "metadata": {
             "attachments": [{
@@ -234,6 +236,7 @@ async def generate_image(
                 "mime_type": mime_type,
             }],
             "generated_image": True,
+            "provider_requests": [request_record(settings,"image",result["model"],"completed",result["latency_ms"]/1000,provider=result["provider"],endpoint=settings.comfyui_url)],
             "image_prompt": request.user_message or request.prompt,
             "generation_prompt": request.prompt,
             "resolved_image_prompt": resolved_prompt,

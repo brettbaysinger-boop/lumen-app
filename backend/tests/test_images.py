@@ -58,6 +58,10 @@ class ImageEndpointTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(response.message_id, MESSAGE_ID)
         self.assertEqual(response.provider, "comfyui")
         self.assertEqual(response.model, "comfyui-workflow")
+        assistant = repository.create_message.call_args_list[1].args[0]
+        self.assertEqual(assistant['content'],'Here you go.')
+        self.assertEqual(assistant['metadata']['provider_requests'][0]['kind'],'image')
+        self.assertEqual(len(assistant['metadata']['provider_requests']),1)
         self.assertEqual(response.latency_ms, 1234)
 
         self.assertEqual(
