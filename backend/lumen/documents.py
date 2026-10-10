@@ -159,6 +159,9 @@ async def document_action(db, companion_id, text, provider, model, emit=None, do
     if not hits:
         return {'content':'No matching document text was found. Upload a document or try specific words from it.','model':'document-search'}
     sources = [{'number':i+1,'document_id':hit['document_id'],'title':hit['title'],'page':hit['page'],'excerpt':hit['content']} for i,hit in enumerate(hits[:6])]
+    from .document_work import work_request, prepare_work
+    if work_request(query):
+        return await prepare_work(provider, model, query, sources, emit)
     kind = action_kind(query)
     if kind:
         result = await prepare_draft(provider, model, query, sources, kind)

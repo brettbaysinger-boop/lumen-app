@@ -3,6 +3,7 @@ import { authHeaders } from './auth';
 export interface ModelOptions {
   models: string[];
   vision?: boolean | null;
+  effort_supported?: boolean;
   selected: string | null;
   effective: string;
   default: string;

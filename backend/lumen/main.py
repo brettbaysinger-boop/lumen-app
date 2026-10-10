@@ -84,6 +84,7 @@ async def respond(request: RespondRequest, background_tasks: BackgroundTasks, us
         await prioritize_chat()
         async with model_lock:
             instance = CognitionRuntime(settings, user.token, user.id)
+            instance.effort = request.effort
             instance.timezone = request.timezone
             instance.request_key = str(request.request_id)
             response = await instance.respond(
@@ -123,7 +124,7 @@ async def companion_models(companion_id: str, user: AuthUser = Depends(require_u
     except Exception as exc:
         raise HTTPException(status_code=502, detail="Could not list Ollama models") from exc
     vision = await OllamaProvider(settings).supports_vision(companion.get("conversation_model") or settings.conversation_model)
-    return {"vision": vision, "models": models, "selected": companion.get("conversation_model"),
+    return {"effort_supported": OllamaProvider.effort_supported(companion.get("conversation_model") or settings.conversation_model), "vision": vision, "models": models, "selected": companion.get("conversation_model"),
             "effective": companion.get("conversation_model") or settings.conversation_model,
             "default": settings.conversation_model,
             "memory_model": settings.memory_observation_model or companion.get("conversation_model") or settings.conversation_model}
@@ -294,6 +295,7 @@ async def generate_image(
 async def respond_stream(request: RespondRequest, background_tasks: BackgroundTasks,
                          user: AuthUser = Depends(require_user)):
     instance = CognitionRuntime(settings, user.token, user.id)
+    instance.effort = request.effort
     instance.timezone = request.timezone
     instance.request_key = str(request.request_id)
     if not await instance.db.get_companion(request.companion_id):

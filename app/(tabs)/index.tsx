@@ -43,6 +43,7 @@ import { router, useLocalSearchParams, useFocusEffect } from 'expo-router';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth';
 import { respondToMessage, generateImage, isImageRequest } from '@/lib/cognition';
+import { EffortControl } from '@/components/EffortControl';
 import { imagePromptFromConfirmation } from '@/lib/image-followup';
 import { pickImages, uploadImage, removeStoredFiles, MediaError, type PickedImage } from '@/lib/media';
 import { MessageImages, PendingAttachments, readAttachments } from '@/components/ChatAttachments';
@@ -69,6 +70,7 @@ export default function ChatScreen() {
   const [activeConversation, setActiveConversation] = useState<Conversation | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
   const [inputText, setInputText] = useState('');
+  const [effort, setEffort] = useState<'quick' | 'deep' | 'default'>('quick');
   const [pendingDocument, setPendingDocument] = useState<PrivateDocument | null>(null);
   const [documentBusy, setDocumentBusy] = useState(false);
   const [showAttachments, setShowAttachments] = useState(false);
@@ -399,6 +401,7 @@ export default function ChatScreen() {
           },
           turnKey.current.id,
           document?.id,
+          effort,
         );
       }
       const { data, error: refreshError } = await supabase
@@ -463,7 +466,7 @@ export default function ChatScreen() {
               {item.role === 'assistant' && item.metadata?.my_day_item != null && <DayActionCard item={item.metadata.my_day_item as DayItem} />}
               {item.role === 'assistant' && item.metadata?.web_search != null && <WebSources value={item.metadata.web_search} />}
               {item.role === 'assistant' && item.metadata?.unstuck_draft != null && <UnstuckDraft value={item.metadata.unstuck_draft} companionId={item.companion_id} messageId={item.id}/> }
-              {item.role === 'assistant' && item.metadata?.document_action_draft != null && <DocumentActionDraft value={item.metadata.document_action_draft} companionId={item.companion_id} messageId={item.id} />}
+              {item.role === 'assistant' && item.metadata?.document_action_draft != null && <DocumentActionDraft sources={item.metadata.document_sources} value={item.metadata.document_action_draft} companionId={item.companion_id} messageId={item.id} />}
               {item.role === 'assistant' && item.metadata?.document_sources != null && <DocumentSources value={item.metadata.document_sources} companionId={item.companion_id} />}
               {item.role === 'assistant' && <ProviderRequests value={item.metadata?.provider_requests} />}
               {item.role === 'assistant' && item.metadata?.timings_ms != null && (
@@ -748,6 +751,8 @@ export default function ChatScreen() {
             </View>
           </View>}
         </View>
+        {companion && <EffortControl companionId={companion.id} model={companion.conversation_model} value={effort} onChange={setEffort} disabled={sending} />}
+        {!!pendingDocument && <TouchableOpacity disabled={sending} accessibilityRole="button" onPress={() => setInputText('Work harder: improve this bid into a clear professional proposal. Preserve the original scope, prices, exclusions and warranty terms. Flag missing details.')}><Text style={{ color: colors.primary[300], padding: 8 }}>Work harder · improve this document</Text></TouchableOpacity>}
         <View style={styles.inputContainer}>
           <TouchableOpacity style={styles.inputButton} accessibilityLabel="Search the web" disabled={sending || voiceBusy || documentBusy || !!pendingDocument} onPress={() => setInputText(text => /^search (?:the )?web:/i.test(text) ? text : `Search the web: ${text}`)}>
             <Globe color={colors.primary[400]} size={21} strokeWidth={1.6} />

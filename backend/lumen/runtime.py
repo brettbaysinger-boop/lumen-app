@@ -53,6 +53,7 @@ class CognitionRuntime:
             )
             conversation_id = conversation["id"]
 
+        self.provider.effort = getattr(self, "effort", "default")
         provider = RecordingProvider(self.provider,self.settings,provider_requests)
         if emit:
             await emit({"type": "activity", "text": "Checking memories…"})

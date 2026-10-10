@@ -1,0 +1,51 @@
+const assert=require('node:assert/strict');
+const {chromium}=require(process.env.LUMEN_PLAYWRIGHT_MODULE||'playwright');
+const server=require('./serve-web.cjs').createWebServer(require('node:path').resolve('dist'));
+const U='11111111-1111-4111-8111-111111111111',C='22222222-2222-4222-8222-222222222222',I='33333333-3333-4333-8333-333333333333',M='44444444-4444-4444-8444-444444444444';
+const user={id:U,aud:'authenticated',role:'authenticated',email:'test@example.test',user_metadata:{display_name:'Test'},app_metadata:{provider:'email'},created_at:'2026-10-09T00:00:00Z'};
+const companion={id:C,name:'Raialume',portrait_url:null,persona:{},conversation_model:'chosen',created_at:'2026-10-09T00:00:00Z'};
+const requests=[{kind:'text',provider:'ollama',endpoint:'video.test:11434',model:'chosen',status:'completed',duration_ms:1250},{kind:'image',provider:'comfyui',endpoint:'heavy.test:8188',model:'comfyui-workflow',status:'completed',duration_ms:3100}];
+const messages=[{id:M,companion_id:C,conversation_id:I,role:'assistant',content:'A garden for you.',created_at:'2026-10-09T00:00:00Z',metadata:{provider_requests:requests,document_action_draft:{kind:'note',title:'Reviewed proposal',body:'Rodent service $295. [1]',checklist:[]},document_sources:[{number:1,title:'Original bid',page:1,excerpt:'Rodent service $295.'}]}}];
+let failRoutes=false;let supportsEffort=true;
+(async()=>{await new Promise(resolve=>server.listen(8765,'127.0.0.1',resolve));const browser=await chromium.launch({headless:true,args:['--no-sandbox']});try{
+ const page=await browser.newPage({viewport:{width:390,height:844}}),errors=[];page.on('pageerror',error=>errors.push(error.message));
+ await page.addInitScript(({user})=>localStorage.setItem('sb-127-auth-token',JSON.stringify({access_token:'test-token',refresh_token:'test',expires_at:Math.floor(Date.now()/1000)+36000,expires_in:36000,token_type:'bearer',user})),{user});
+ await page.route('http://127.0.0.1:54321/**',async route=>{const req=route.request(),url=new URL(req.url()),resource=url.pathname.split('/').pop();let result=[];
+  if(resource==='user')result=user;if(resource==='ensure_my_companion')result=C;
+  if(resource==='companions')result=req.headers()['accept']?.includes('object')?companion:[companion];
+  if(resource==='conversations')result=[{id:I,companion_id:C,title:'Garden',last_message_at:'2026-10-09T00:00:00Z'}];
+  if(resource==='messages')result=messages;if(resource==='companion_state')result=null;
+  await route.fulfill({status:200,contentType:'application/json',body:JSON.stringify(result)});
+ });
+ await page.route('http://127.0.0.1:8001/**',async route=>{const url=new URL(route.request().url());let result=[];
+  if(url.pathname.includes('/drafts/'))result={item:null};
+  if(url.pathname.endsWith('/models'))result={effort_supported:supportsEffort,models:['chosen'],effective:'chosen',default:'chosen',selected:'chosen',vision:true,memory_model:'chosen'};
+  if(url.pathname.includes('/v0.9/providers/')){
+   if(failRoutes){await route.fulfill({status:503,contentType:'application/json',body:'{}'});return;}
+   result={routes:[{capability:'Conversation',provider:'Ollama',endpoint:'video.test:11434',model:'chosen',configured:true,note:'Selected conversation model.'},{capability:'Image generation',provider:'ComfyUI',endpoint:'heavy.test:8188',model:'ComfyUI workflow',configured:true,note:'Workflow-defined model.'}]};
+  }
+  await route.fulfill({status:200,contentType:'application/json',body:JSON.stringify(result)});
+ });
+ await page.goto('http://127.0.0.1:8765/?conversation='+I);
+ await page.getByRole('radio',{name:'Quick',exact:true}).waitFor();
+ await page.getByRole('radio',{name:'Think deeper',exact:true}).click();
+ await page.locator('[role=radio][aria-checked=true]').filter({hasText:'Think deeper'}).waitFor();
+ await page.getByRole('button',{name:'Review and save',exact:true}).click();
+ await page.getByLabel('Draft notes',{exact:true}).fill('Edited service $295. [1]');
+ const downloadPromise=page.waitForEvent('download');
+ await page.getByRole('button',{name:'Download editable text',exact:true}).click();
+ const download=await downloadPromise;const fs=require('node:fs');const body=fs.readFileSync(await download.path(),'utf8');
+ assert.match(body,/Edited service/);assert.match(body,/Original bid/);
+ supportsEffort=false;await page.getByRole('button',{name:'Refresh effort support after changing models',exact:true}).click();
+ await page.getByText('Model default · effort control has not been verified for this model.',{exact:true}).waitFor();
+ assert.equal(await page.getByRole('radio',{name:'Think deeper',exact:true}).isDisabled(),true);
+ await page.getByRole('button',{name:'Provider requests'}).click();
+ await page.getByText(/text · ollama · video.test:11434/).waitFor();await page.getByText(/image · comfyui · heavy.test:8188/).waitFor();
+ await page.reload();await page.getByRole('button',{name:'Provider requests'}).click();await page.getByText(/image · comfyui · heavy.test:8188/).waitFor();
+ await page.goto('http://127.0.0.1:8765/settings');await page.getByText('AI providers',{exact:true}).waitFor();await page.getByText('Ollama · video.test:11434',{exact:true}).waitFor();
+ assert.equal(await page.getByText('Infrastructure Nodes',{exact:true}).count(),0);assert.equal(await page.getByText('Planned Model Routing',{exact:true}).count(),0);
+ failRoutes=true;await page.getByRole('button',{name:'Refresh provider routes',exact:true}).click();await page.getByText('Could not load provider routes. Check your session and API.',{exact:true}).waitFor();
+ assert.equal(await page.getByText('Ollama · video.test:11434',{exact:true}).count(),0,'failed refresh clears stale routes');
+ failRoutes=false;await page.getByRole('button',{name:'Refresh provider routes',exact:true}).click();await page.getByText('Ollama · video.test:11434',{exact:true}).waitFor();
+ assert.deepEqual(errors,[]);console.log('Mobile effort selection, unsupported fallback, edited draft download with sources, and provider regressions passed.');
+}finally{await browser.close();await new Promise(resolve=>server.close(resolve));}})().catch(error=>{console.error(error);process.exit(1);});

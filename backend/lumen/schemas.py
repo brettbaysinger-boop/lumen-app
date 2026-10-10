@@ -16,6 +16,7 @@ class Attachment(BaseModel):
 
 
 class RespondRequest(BaseModel):
+    effort: Literal["quick", "deep", "default"] = "default"
     timezone: str = Field(default="UTC", max_length=100)
     request_id: UUID = Field(default_factory=uuid4)
     _timezone = field_validator("timezone")(valid_timezone)

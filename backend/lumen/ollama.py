@@ -29,6 +29,17 @@ class OllamaProvider:
         self.keep_alive = getattr(settings, "ollama_keep_alive", "15m")
         self.max_reply_tokens = getattr(settings, "chat_max_reply_tokens", 8192)
 
+    # Boolean control verified on this exact installed model. Other models retain defaults.
+    @staticmethod
+    def effort_supported(model):
+        return model == "satgeze/gemma4-12b-uncensored-1.5m:latest"
+
+    def thinking_options(self, model):
+        effort = getattr(self, 'effort', 'default')
+        if not self.effort_supported(model) or effort == 'default':
+            return {}
+        return {'think': effort == 'deep'}
+
     async def health_check(self) -> bool:
         try:
             async with httpx.AsyncClient(timeout=3) as client:
@@ -84,6 +95,7 @@ class OllamaProvider:
                     "model": model,
                     "messages": messages,
                     "stream": False,
+                    **self.thinking_options(model),
                     "keep_alive": self.keep_alive,
                     "options": {"temperature": temperature, "num_ctx": self.context_length, "num_predict": self.max_reply_tokens},
                 },
@@ -108,6 +120,7 @@ class OllamaProvider:
         async with httpx.AsyncClient(timeout=600) as client:
             async with client.stream("POST", f"{self.base_url}/api/chat", json={
                 "model": model, "messages": messages, "stream": True,
+                **self.thinking_options(model),
                 "keep_alive": self.keep_alive,
                 "options": {"temperature": 0.7, "num_ctx": self.context_length, "num_predict": self.max_reply_tokens},
             }) as response:

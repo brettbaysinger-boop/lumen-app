@@ -371,3 +371,11 @@ Image-subject correction at `205d6f7` is user-verified. A synthetic streaming
 Ollama benchmark now measures visible-answer latency and token throughput without
 changing application routing. Three offline parser tests passed; live measurement
 is pending. See `docs/conversation-benchmark.md` from the repository root.
+
+## October 9, Phoenix — Effort and document work
+
+Quick / Think deeper / Model default conversation controls and a bounded proposal
+draft–check–revise workflow are implemented. Source-backed drafts support editing,
+plain-text download and reviewed My Day saving. No routing or Helios changes.
+Deployment and user acceptance are pending. See `docs/effort-and-document-work.md`
+and `docs/effort-work-checkpoint.md` from the repository root for scope and evidence.

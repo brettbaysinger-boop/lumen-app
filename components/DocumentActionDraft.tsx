@@ -12,11 +12,11 @@ function isDraft(value: unknown): value is ActionDraft {
   return ['list','note','reminder'].includes(draft.kind) && typeof draft.title==='string' && typeof draft.body==='string'
     && Array.isArray(draft.checklist) && draft.checklist.every(item=>!!item && typeof item.text==='string');
 }
-export function DocumentActionDraft({ value, companionId, messageId }: { value: unknown; companionId: string; messageId: string }) {
+export function DocumentActionDraft({ value, companionId, messageId, sources }: { value: unknown; companionId: string; messageId: string; sources?: unknown }) {
   if (!isDraft(value)) return null;
-  return <DraftCard draft={value} companionId={companionId} messageId={messageId} />;
+  return <DraftCard sources={sources} draft={value} companionId={companionId} messageId={messageId} />;
 }
-function DraftCard({draft,companionId,messageId}:{draft:ActionDraft;companionId:string;messageId:string}) {
+function DraftCard({draft,companionId,messageId,sources}:{draft:ActionDraft;companionId:string;messageId:string;sources?:unknown}) {
   const {colors:c}=useTheme();
   const [title,setTitle]=useState(draft.title),[body,setBody]=useState(draft.body),[steps,setSteps]=useState(draft.checklist.map(item=>item.text).join('\n'));
   const [due,setDue]=useState(''),[editing,setEditing]=useState(false),[busy,setBusy]=useState(false),[loading,setLoading]=useState(true),[error,setError]=useState('');
@@ -46,6 +46,11 @@ function DraftCard({draft,companionId,messageId}:{draft:ActionDraft;companionId:
   return <View style={{backgroundColor:c.neutral[900],borderWidth:1,borderColor:c.neutral[700],padding:16,borderRadius:14,gap:12,marginTop:14}}>
     <Text style={{color:c.primary[300]}}>{draft.kind==='list'?'CHECKLIST':draft.kind.toUpperCase()} · DRAFT</Text>
     <Text style={{color:c.neutral[300]}}>Review the details and source pages before saving. Nothing is scheduled or saved in My Day yet.</Text>
+    {Platform.OS==='web' && <Pressable accessibilityRole="button" onPress={()=>{
+      const refs=Array.isArray(sources)?sources.filter(s=>s&&typeof s.title==='string').map(s=>`[${s.number}] ${s.title} · page ${s.page}\n${s.excerpt || ''}`).join('\n\n'):'';
+      const url=URL.createObjectURL(new Blob(['REVIEW DRAFT\n\n'+title+'\n\n'+body+(steps?'\n\n'+steps:'')+(refs?'\n\nSource excerpts\n'+refs:'')],{type:'text/plain;charset=utf-8'}));
+      const link=document.createElement('a');link.href=url;link.download='companion-draft.txt';link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
+    }}><Text style={{color:c.primary[300]}}>Download editable text</Text></Pressable>}
     {!editing?<>
       <Text style={{color:c.neutral[100]}}>{title}</Text>
       <Text style={{color:c.neutral[300],lineHeight:22}}>{body}</Text>
