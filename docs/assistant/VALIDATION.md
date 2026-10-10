@@ -109,3 +109,10 @@ the preceding pending-acceptance note. A follow-up fixes companion-name greeting
 being mistaken for portrait subjects. The subject fix passed 25 targeted backend
 tests; its deployment and live acceptance remain pending. Full evidence and
 limits: `docs/provider-acceptance-checkpoint.md` (repository-relative path).
+
+## Conversation performance baseline — October 9, Phoenix
+
+Image-subject correction at `205d6f7` is user-verified. A synthetic streaming
+Ollama benchmark now measures visible-answer latency and token throughput without
+changing application routing. Three offline parser tests passed; live measurement
+is pending. See `docs/conversation-benchmark.md` from the repository root.
