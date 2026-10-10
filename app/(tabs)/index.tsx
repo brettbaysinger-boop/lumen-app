@@ -1,3 +1,4 @@
+import { MemoryCorrectionCard } from '@/components/MemoryCorrectionCard';
 import { shouldSendOnEnter } from '@/lib/chat-input';
 import { ModelPicker } from '@/components/ModelPicker';
 import { useEffect, useState, useCallback, useRef, useMemo } from 'react';
@@ -468,6 +469,7 @@ export default function ChatScreen() {
               {item.role === 'assistant' && item.metadata?.unstuck_draft != null && <UnstuckDraft value={item.metadata.unstuck_draft} companionId={item.companion_id} messageId={item.id}/> }
               {item.role === 'assistant' && item.metadata?.document_action_draft != null && <DocumentActionDraft sources={item.metadata.document_sources} value={item.metadata.document_action_draft} companionId={item.companion_id} messageId={item.id} />}
               {item.role === 'assistant' && item.metadata?.document_sources != null && <DocumentSources value={item.metadata.document_sources} companionId={item.companion_id} />}
+              {item.role === 'assistant' && item.metadata?.memory_revision != null && <MemoryCorrectionCard value={item.metadata.memory_revision} />}
               {item.role === 'assistant' && <ProviderRequests value={item.metadata?.provider_requests} />}
               {item.role === 'assistant' && item.metadata?.timings_ms != null && (
                 <View>

@@ -727,3 +727,66 @@ then verify cross-conversation recall, competing memories and attribution.
 
 Preserve Supabase configuration, backup files and unrelated local edits.
 At resume, verify branch/HEAD/status and read the newest appended entries.
+
+<!-- conversational-corrections-candidate-2026-10-10 -->
+## October 10, Phoenix — Recall accepted; conversational correction candidate
+
+User-supplied host evidence confirms db30595 deployed by API restart and health
+API/Ollama/database OK. Browser replies recalled the saved test preference and
+correctly attributed it to the user. The user clarified that the test value was
+not their actual preference; do not treat that fixture as a real user preference.
+373 host tests passed before that deployment and the branch was pushed.
+
+The user requested natural correction through conversation. This candidate adds
+explicit correction/change interpretation, exact-source validation, a scoped
+version-checked update, private revision history and a persisted chat Undo card.
+Clear supported corrections need no separate approval. Missing replacement
+values prompt clarification. Ordinary comments must not rewrite preferences.
+Earlier false facts and later changes are distinguished in revision history.
+
+Development validation: 402 backend tests, 30 isolated PostgreSQL checks,
+TypeScript, web export and direct React component interaction tests passed.
+Chromium download failed, so mocked browser execution remains pending.
+Host tests and installed-model synthetic probes must pass before applying
+20261010190000_memory_corrections.sql and explicitly deploying API/web.
+This entry records a candidate, not application-database migration or deployment.
+See docs/conversational-memory-corrections.md for supported syntax and limits.
+The proposal workstream remains paused; its existing outcome and remaining work
+are preserved. Supabase configuration and unrelated backups remain untouched.
+
+<!-- conversational-corrections-model-fix-2026-10-10 -->
+## October 10 — Conversational correction model compatibility candidate
+
+User-supplied host evidence: initial candidate passed 402 backend tests,
+TypeScript and 30 isolated SQL checks. Installed-model synthetic probes failed.
+Raw synthetic output showed correction/change misclassification, empty outputs,
+omitted certainty, and a short value placed in the full-assertion field.
+
+Process-only probes with reasoning disabled, explicit classification examples
+and all schema fields required passed six of seven cases. The remaining temporal
+case duplicated the new fragment in assertion. This follow-up recovers only
+that exact duplication and still applies all existing fragment evidence,
+attribute, certainty, ownership and revision checks. It does not infer certainty.
+
+406 isolated backend tests pass, including recovery and rejection regressions.
+Full host tests and installed-model probes of this final source remain pending.
+No application migration, deployment or browser correction acceptance is claimed.
+Configuration, backups and unrelated edits remain untouched.
+
+<!-- memory-corrections-host-validation-406 -->
+## October 10, Phoenix — Conversational corrections host validation
+
+User-supplied host evidence confirms guarded follow-up application,
+clean whitespace checks, and 406 backend tests passing in 3.630 seconds.
+All seven installed-model synthetic correction probes passed:
+direct, contextual, missing-value, temporal, casual, negative and hypothetical.
+These probes used mocked database operations, not real memory writes.
+
+Earlier host TypeScript and 30 isolated SQL checks passed. The follow-up
+changed backend parsing/schema instructions and tests, not UI or SQL.
+This supersedes pending host-suite and synthetic-model validation.
+It does not establish universal natural-language correctness.
+
+Application migration, deployment, browser correction, reload persistence
+and Undo acceptance remain pending. Proposal work remains paused.
+Existing configuration, backups and unrelated edits remain preserved.
