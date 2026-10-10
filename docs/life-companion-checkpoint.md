@@ -11,3 +11,9 @@ it is not user-verified. Persistent templates and PDF rendering are not built.
 A follow-up fixes reproducible currency notation rejection and adds stage-only
 failure logging. Seven focused tests passed; live retest is pending. No schema,
 frontend, routing or Helios change. Customer reference data remains outside Git.
+
+Live follow-up: the user supplied `stage=draft_validation error_type=ValueError`.
+This confirms failure after the first generation, not the specific check. A new
+patch logs static reason codes distinguishing missing/unknown/malformed citations
+from unmatched prices (including potentially legitimate computed totals). No model
+output or customer data is logged. Validation rules are unchanged pending evidence.

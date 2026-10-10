@@ -36,14 +36,27 @@ def money_values(text, natural_prices=False):
     return {Decimal(amount.replace(',', '')) for amount in amounts}
 
 
+class ProposalCheckError(ValueError):
+    """Static diagnostic code only; never contains source or generated text."""
+    def __init__(self, code):
+        self.code = code
+        super().__init__(code)
+
+
 def validate_proposal(raw, sources, user_request=""):
     value = Proposal.model_validate_json(raw.strip().removeprefix('```json').removesuffix('```').strip())
-    value.body = normalize_citations(value.body, {s['number'] for s in sources})
+    try:
+        value.body = normalize_citations(value.body, {s['number'] for s in sources})
+    except ValueError as exc:
+        codes = {'No source citations':'citations_missing',
+                 'Unknown citation':'citation_unknown',
+                 'Unsupported citation format':'citation_format'}
+        raise ProposalCheckError(codes.get(str(exc), 'citation_invalid')) from None
     source_text = ' '.join(s['excerpt'] for s in sources) + ' ' + user_request
     # Price notation may differ ($595, $595.00, "price 595"). Do not authorize
     # arbitrary phone, address, duration or count numbers as prices.
     if money_values(value.title + ' ' + value.body) - money_values(source_text, natural_prices=True):
-        raise ValueError('Unsupported price')
+        raise ProposalCheckError('price_not_in_inputs')
     return value
 
 
@@ -91,7 +104,8 @@ async def prepare_work(provider, model, query, sources, emit=None):
         final = validate_proposal(revised,sources,query)
     except Exception as exc:
         # No prompts, customer details, model output or exception bodies in logs.
-        logging.getLogger(__name__).warning('Document work failed stage=%s error_type=%s',stage,type(exc).__name__)
+        reason = exc.code if isinstance(exc, ProposalCheckError) else 'schema_or_provider_error'
+        logging.getLogger(__name__).warning('Document work failed stage=%s error_type=%s reason=%s',stage,type(exc).__name__,reason)
         return {'content':'The proposal workflow could not complete its source checks. No proposal was saved to My Day. Try a narrower request or another model.',
                 'model':'document-work','document_sources':sources}
     return {'content':f'I drafted, checked and revised a proposal using {len(sources)} document excerpts. '

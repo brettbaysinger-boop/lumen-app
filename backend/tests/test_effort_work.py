@@ -30,6 +30,15 @@ class EffortTests(unittest.TestCase):
         self.assertEqual(money_values('1151 Main St; 6-8 stations; 4-5 weeks; 5206682866',True),set())
         self.assertIn('$595.00',validate_proposal(DRAFT.replace('$295','$595.00'),SOURCES,'price 595').body)
 
+    def test_diagnostics_distinguish_prices_and_citations_without_content(self):
+        from lumen.document_work import ProposalCheckError
+        for raw, code in [(DRAFT.replace('[1]', ''), 'citations_missing'),
+                          (DRAFT.replace('[1]', '[9]'), 'citation_unknown'),
+                          (DRAFT.replace('$295', '$999'), 'price_not_in_inputs')]:
+            with self.assertRaises(ProposalCheckError) as raised:
+                validate_proposal(raw, SOURCES)
+            self.assertEqual(str(raised.exception), code)
+
     def test_explicit_work_intent(self):
         self.assertTrue(work_request('Work harder: improve this document'))
         self.assertTrue(work_request('Draft a bid from this document'))
