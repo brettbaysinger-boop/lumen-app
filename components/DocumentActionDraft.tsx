@@ -2,6 +2,7 @@ import { createElement, useEffect, useState } from 'react';
 import { View, Text, TextInput, Pressable, Platform } from 'react-native';
 import { useTheme } from '@/lib/theme-context';
 import { documentRequest } from '@/lib/documents';
+import { proposalPDF } from '@/lib/proposal-pdf';
 import { userTimezone, type DayItem } from '@/lib/my-day';
 import { DayActionCard } from './DayActionCard';
 
@@ -21,6 +22,15 @@ function DraftCard({draft,companionId,messageId,sources}:{draft:ActionDraft;comp
   const [title,setTitle]=useState(draft.title),[body,setBody]=useState(draft.body),[steps,setSteps]=useState(draft.checklist.map(item=>item.text).join('\n'));
   const [due,setDue]=useState(''),[editing,setEditing]=useState(false),[busy,setBusy]=useState(false),[loading,setLoading]=useState(true),[error,setError]=useState('');
   const [saved,setSaved]=useState<DayItem|null>(null);
+  const [pdfUrl,setPdfUrl]=useState(''),[pdfBusy,setPdfBusy]=useState(false);
+  useEffect(()=>{setPdfUrl('');},[title,body]);
+  useEffect(()=>()=>{if(pdfUrl)URL.revokeObjectURL(pdfUrl);},[pdfUrl]);
+  const previewPDF=async()=>{
+    setPdfBusy(true);setBusy(true);setError('');
+    try { const blob=await proposalPDF(companionId,messageId,title,body);setPdfUrl(URL.createObjectURL(blob)); }
+    catch(error){setError(error instanceof Error?error.message:'Could not create PDF.');}
+    finally {setPdfBusy(false);setBusy(false);}
+  };
   useEffect(()=>{
     let active=true;
     documentRequest<{item:DayItem|null}>(companionId,`/drafts/${messageId}`).then(result=>{if(active)setSaved(result.item);})
@@ -51,6 +61,13 @@ function DraftCard({draft,companionId,messageId,sources}:{draft:ActionDraft;comp
       const url=URL.createObjectURL(new Blob(['REVIEW DRAFT\n\n'+title+'\n\n'+body+(steps?'\n\n'+steps:'')+(refs?'\n\nSource excerpts\n'+refs:'')],{type:'text/plain;charset=utf-8'}));
       const link=document.createElement('a');link.href=url;link.download='companion-draft.txt';link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
     }}><Text style={{color:c.primary[300]}}>Download editable text</Text></Pressable>}
+    {Platform.OS==='web' && draft.kind==='note' && <>
+      <Pressable accessibilityRole="button" disabled={pdfBusy||busy||loading} onPress={()=>void previewPDF()}><Text style={{color:c.primary[300]}}>{pdfBusy?'Preparing PDF…':'Preview proposal PDF'}</Text></Pressable>
+      {!!pdfUrl && <>
+        {createElement('iframe',{src:pdfUrl,title:'Proposal PDF preview',style:{width:'100%',height:520,border:0,borderRadius:8}})}
+        <Pressable accessibilityRole="button" onPress={()=>{const link=document.createElement('a');link.href=pdfUrl;link.download='proposal-review-draft.pdf';link.click();}}><Text style={{color:c.primary[300]}}>Download PDF</Text></Pressable>
+      </>}
+    </>}
     {!editing?<>
       <Text style={{color:c.neutral[100]}}>{title}</Text>
       <Text style={{color:c.neutral[300],lineHeight:22}}>{body}</Text>
