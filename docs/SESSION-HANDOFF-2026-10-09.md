@@ -1,323 +1,137 @@
-# Lumen — Authoritative Project Status
+# Raialume — Development Session Handoff
+Date: October 9, 2026
 
-**Checkpoint:** October 8, 2026
-**Development branch:** `feat/lumen-take2-local`
-**Last user-verified feature deployment:** `eb7cea4`
-**Previous documentation checkpoint:** `1ea6142`
+## Current state
 
-This document is the canonical summary of Lumen's current development
-position. Detailed feature documentation, architecture decisions, and
-validation history remain in their respective files.
+Raialume is operational on the existing local-first AI infrastructure.
 
-## Project direction
+This session completed companion-initiated image generation and
+natural image-response polishing.
 
-Lumen is a local-first, privacy-conscious AI companion designed to
-remember useful context, assist with everyday life, support ongoing
-goals, understand documents and images, and use local AI infrastructure.
+The image-generation feature has been verified by the user in the
+live application. The subsequent response-polish change has been
+tested and deployed, but its wording has not yet been rechecked
+in a fresh live conversation.
 
-The repository is authoritative for implementation status. Chat
-history is not a substitute for checking the current code and records.
+## Git state
 
-## Infrastructure
-
-| Node | Responsibility |
-| --- | --- |
-| `aiLumen-llm-video` | Application, backend, database, orchestration |
-| `aiLumen-llm-tts-stt` | Helios speech recognition and synthesis |
-| `aiLumen-llm-heavy` | RTX 5060 Ti 16GB GPU compute node |
+Repository: `~/lumen-push`
 
-Heavy is documented as an image-generation provider through ComfyUI.
-Its current runtime utilization and broader inference capabilities
-have not yet been audited.
+Branch: `feat/lumen-take2-local`
 
-## Implemented foundations
-
-### Companion experience
-
-- Take 2 interface and appearance customization.
-- Companion name, persona, portrait, and visual identity editing.
-- Companion-specific Helios voice selection and preview.
-- Animated companion presence and speech-state effects.
-- Persistent conversations and companion state.
-
-### Everyday assistant
-
-- My Day items, reminders, notes, and checklists.
-- Conversational capture into named lists.
-- Gift ideas and quick notes.
-- Reviewed small-step plans with persistent completion.
-- Goals, practice sessions, and explicit progress saving.
-
-### Research and understanding
-
-- Local SearXNG-backed web research with cited excerpts.
-- Private PDF/TXT/Markdown document imports and search.
-- Document questions with source/page references.
-- Reviewed document-to-checklist, note, and reminder drafts.
-- Local photo understanding using a vision-capable Ollama model.
-- Existing ComfyUI image-generation provider integration.
-
-## Verification and evidence
-
-- October 6: user-reported mobile HTTPS login, camera,
-  microphone, photo understanding, and document attachment checks.
-- October 7: user-reported document action and practice-flow checks.
-- October 8: user-reported everyday capture and small-step plan checks.
-- October 8: user reported daily use of shopping lists and reminders.
-- Latest documented automated checkpoint: 207 backend tests,
-  TypeScript check, clean web export, SQL privacy/persistence checks,
-  and mobile-sized mocked browser verification.
-
-User reports, automated checks, implementation inspection, and
-unverified runtime behavior must remain clearly distinguished.
-
-## Known limitations
-
-- Closed-app push and recurring reminder notifications remain future work.
-- Document and memory retrieval are primarily lexical, not semantic.
-- Scanned PDF OCR and richer document layout extraction remain future work.
-- Companion portrait generation-to-selection flow needs verification.
-- Heavy's active GPU workloads, available VRAM, model inventory,
-  and inference routing need direct runtime inspection.
-- Existing image generation does not establish that Heavy is
-  currently serving conversation or vision inference.
-- Provider/capability registry remains a planned architectural increment.
-
-## Current priority
-
-**Improve utilization of `aiLumen-llm-heavy` without duplicating
-already implemented Companion UI, voice, vision, or research features.**
-
-Next steps:
-
-1. Inspect Heavy's actual GPU services, models, memory, and utilization.
-2. Inspect backend Ollama and ComfyUI routing and deployed endpoints.
-3. Identify one safe, measurable GPU workload improvement.
-4. Validate behavior, responsiveness, and VRAM contention.
-5. Verify companion portrait generation and saved-portrait integration.
-6. Update this checkpoint after each completed workstream.
-
-## October 9, 2026 — Image generation and gallery recovery
-
-**State:** Database recovery applied and verified. Application changes tested
-locally but not yet committed, deployed, or user-verified in the browser.
-
-### Confirmed infrastructure
-
-- `aiLumen-llm-heavy` serves ComfyUI at `192.168.86.50:8188`.
-- Heavy reports an NVIDIA RTX 5060 Ti with 16 GB VRAM.
-- Required FLUX.2 Klein 4B FP8 model assets and workflow nodes are available.
-- A live backend-provider generation returned a valid 1024×1024 PNG
-  in approximately 3.04 seconds.
-- The application backend is configured to use Heavy for image generation.
-- This does not establish that Heavy serves conversational or vision inference.
-
-### Image and gallery repairs
-
-- Expanded direct image-request detection.
-- Added contextual handling for confirmations of explicit image offers.
-- Preserved the user's literal confirmation separately from the resolved
-  image-generation prompt.
-- Added gallery registration for generated images and user-uploaded images.
-- Added authenticated signed-URL rendering for private gallery images.
-- Added signed-URL renewal for longer-lived gallery sessions.
-- Gallery registration failures are logged without losing chat messages.
-
-### Historical gallery recovery
-
-Applied migration:
-`20261009190000_backfill_chat_image_gallery.sql`
-
-- 48 generated images recovered.
-- 21 user-uploaded image attachments recovered.
-- 69 unique gallery entries verified.
-- All 69 entries have storage paths and original-message references.
-- All 69 referenced storage objects and companion/conversation relationships
-  were verified before recovery.
-- One additional unreferenced chat-media object was left untouched.
-- Recovery uses deterministic UUIDv5 IDs and conflict-safe insertion.
-- Original message timestamps are preserved.
-
-### Automated validation
-
-- TypeScript typecheck passed.
-- Six frontend image-follow-up tests passed.
-- Eight backend image/gallery tests passed.
-- `git diff --check` passed.
-- Recovery migration dry run inserted 69 records and rolled back cleanly.
-- Supabase migration applied and appears in local migration history.
-
-### Remaining acceptance work
-
-1. Review and commit the intended application, test, documentation,
-   and migration changes.
-2. Build and deploy the updated web frontend and backend.
-3. Verify that all 69 historical images appear in the browser gallery.
-4. Test a new direct image request and a conversational confirmation.
-5. Confirm new generated and uploaded images appear in Gallery.
-6. Continue the broader Heavy workload and inference-routing audit.
-
-Do not stage unrelated `supabase/config.toml` changes or backup files.
-
-## Cross-chat development protocol
-
-At the beginning of every new Lumen development conversation:
-
-1. Read this document.
-2. Check `git branch --show-current`, `git log -1`, and `git status`.
-3. Consult the relevant feature documentation and current implementation.
-4. Distinguish implemented, tested, deployed, and user-verified states.
-5. Never recommend rebuilding a completed feature without identifying
-   a specific missing capability.
-6. Make one bounded change, test it, review it, commit, and push.
-7. Update this checkpoint whenever a workstream is completed.
-
-## Local configuration protection
-
-At this checkpoint, the following files have unrelated local changes:
-
-- `supabase/config.toml`
-- `supabase/config.toml.before-tail-redirects`
-- `supabase/config.toml.before-tail-site-url`
-
-Do not stage, overwrite, reset, clean, or commit these files as part
-of documentation or feature work without explicit user approval.
-
-## Supporting records
-
-- `ROADMAP.md`
-- `docs/architecture.md`
-- `docs/product-design.md`
-- `docs/redesign/TAKE2.md`
-- `docs/assistant/STATUS.md`
-- `docs/assistant/VALIDATION.md`
-- `docs/everyday-capture.md`
-- `docs/getting-unstuck.md`
-- `docs/goals-and-practice.md`
-- `docs/image-generation.md`
-- `docs/vision.md`
-- `docs/documents.md`
-- `docs/document-actions.md`
-- `docs/web-research.md`
-
-## Chat typing performance optimization — October 9, 2026
-
-**Status:** Implemented and locally validated; browser acceptance pending.
-
-- Extracted the chat message renderer into a `useCallback` with explicit dependencies.
-- Memoized individual web conversation message rows so ordinary draft typing
-  does not unnecessarily re-render unchanged message content.
-- Preserved the existing native `FlatList` implementation.
-- Added `tests/conversation-render-performance.test.cjs` with three regression checks.
-- Validation: 3/3 regression tests pass, TypeScript passes, and `git diff --check` passes.
-- The user is testing remotely through Tailscale. Browser responsiveness must
-  still be verified before claiming the typing lag is resolved.
-- The previous image-generation and gallery recovery work was deployed and
-  subsequently confirmed working by the user in the browser.
-
-## October 9, 2026 — Companion-initiated image generation
-
-**State:** Implementation and automated tests complete. Live deployment
-and user acceptance remain to be verified.
-
-### Implemented
-
-- Conversational model can request an image through a structured internal
-  `generate_image` action rather than displaying action JSON in chat.
-- Supports companion self-portraits using saved visual identity.
-- Uses the existing Heavy/ComfyUI image-generation integration.
-- Saves generated images in private chat-media storage.
-- Attaches the image to the companion's persisted chat message.
-- Registers generated images in Gallery using deterministic IDs.
-- Preserves ordinary incremental chat streaming while filtering internal
-  image-action markup and standalone legacy JSON.
-- Handles generation failures without claiming an image was created.
-- Limits image-action execution to the conversational model reply branch.
-- Keeps user-uploaded photo Gallery registration intact.
-
-### Automated validation
-
-- 249 backend tests passed.
-- TypeScript typecheck passed.
-- Python compilation passed.
-- `git diff --check` passed.
-
-### Remaining acceptance
-
-1. Commit the intended backend implementation and tests.
-2. Deploy the backend API.
-3. Ask Raialume to show something about herself.
-4. Verify a real image appears in chat and Gallery.
-5. Verify ordinary text replies still stream smoothly.
-6. Confirm generated self-portraits reflect saved visual identity.
-
-### October 9 — Live companion-image acceptance
-
-**User-verified:** Companion-initiated image generation succeeded in the
-deployed application at commit `3b47f68`.
-
-- The companion independently chose to illustrate a "Memory Garden".
-- Heavy generated the image successfully.
-- The image appeared in the companion's chat response.
-- The user confirmed the same image appeared in Gallery.
-- No internal image-action JSON was visible in the response.
-- The user requested removal of the redundant backend-generated
-  "Here's the image I made for you" sentence.
-
-**Follow-up polish:** Successful image replies now preserve the companion's
-own prose without appending a canned sentence. When no prose exists, a
-short natural fallback is used. Failure replies remain explicit and truthful.
-
-**Polish deployment:** Pending.
-
-### October 9 — Session closeout and deployment verification
-
-**Status: deployed, tested, pushed, and partially user-verified.**
-
-Repository:
-- Branch: `feat/lumen-take2-local`
-- Latest application commit: `0cde482`
-- Remote: `git@github.com:brettbaysinger-boop/lumen-app.git`
-- Branch pushed successfully to GitHub.
-
-Companion-initiated images:
-- Commit `3b47f68` implemented companion-requested image generation.
-- User verified a generated "Memory Garden" image appeared in chat.
-- User independently confirmed the same image appeared in Gallery.
-- Internal image-action JSON was not exposed in that interaction.
-- Image generation uses the existing Heavy provider and Gallery pipeline.
-
-Natural response polish:
-- Commit `0cde482` removes the redundant successful-image sentence:
-  "Here's the image I made for you."
-- Companion-authored prose is preserved.
-- Empty successful replies receive a short natural fallback.
-- Failed image generation retains truthful error messaging.
-- Backend deployed successfully after the change.
-- Fresh user-facing acceptance of the polished wording remains pending.
-
-Verification:
-- 251 backend tests passed.
-- Frontend TypeScript typecheck passed.
-- Python compilation and Git patch checks passed.
-- `lumen-api.service` active following restart.
-- Local API health returned OK.
-- HTTPS API health returned OK.
-- Ollama and database health returned OK.
-- GitHub push completed successfully.
-
-Existing unrelated local changes were intentionally preserved:
+Remote: `git@github.com:brettbaysinger-boop/lumen-app.git`
+
+Latest application commit: `0cde482`
+
+Relevant commits:
+
+- `2c157b3` — Recover image Gallery functionality.
+- `7f7877a` — Avoid rerendering chat history while typing.
+- `3b47f68` — Enable companion-initiated image generation.
+- `0cde482` — Preserve natural companion image replies.
+
+All four commits were included in the successful GitHub push.
+
+## Verified functionality
+
+### Companion-initiated images
+
+The user asked Raialume to share something meaningful about herself.
+
+Raialume described an imagined "Memory Garden" and generated
+an accompanying image.
+
+Confirmed by the user:
+
+- Image generation completed.
+- Image appeared directly in the conversation.
+- Image appeared in Gallery.
+- The conversation did not expose internal action JSON.
+
+### Response polish
+
+Successful image generation now preserves the companion's
+own explanation without appending a canned success sentence.
+
+When no companion prose exists, a short fallback is used.
+
+Generation failures retain explicit, truthful failure messaging.
+
+Automated verification passed; fresh live acceptance remains pending.
+
+## Test results
+
+- Backend: 251 tests passed.
+- Frontend: TypeScript typecheck passed.
+- Python compilation: passed.
+- Git diff checks: passed.
+
+Some backend tests intentionally exercise failure paths and emit
+diagnostic warnings or stack traces. The complete suite passed.
+
+## Deployment
+
+Application backend service: `lumen-api.service`
+
+Local health endpoint:
+`http://127.0.0.1:8001/health`
+
+Tailscale HTTPS health endpoint:
+`https://ailumen-llm-video.tail577ac1.ts.net:8444/health`
+
+Both endpoints returned:
+
+`{"status":"ok","ollama":"ok","database":"ok"}`
+
+Backend service was active following deployment.
+
+## Hardware and infrastructure
+
+The application uses existing local AI infrastructure.
+
+Heavy image generation is hosted separately through the
+existing ComfyUI pipeline.
+
+The project has an RTX 5060 Ti 16 GB GPU available for
+image-generation workloads.
+
+TTS/STT infrastructure must not be modified without explicit
+user approval.
+
+Hardware topology, GPU assignments, and current model deployments
+should be confirmed on the home LAN before making changes.
+
+## Preserve existing local files
+
+The following files were intentionally not staged or modified
+during this workstream:
+
 - `supabase/config.toml`
 - `lib/image-followup.ts.before-subject-fix`
 - `supabase/config.toml.before-tail-redirects`
 - `supabase/config.toml.before-tail-site-url`
 
-Next session:
-- Resume development on the home LAN with local hardware access.
-- Review this status file and the session handoff first.
-- Verify a fresh companion-generated image uses natural closing prose.
-- Confirm service and GPU health before starting new development.
-- Do not modify TTS/STT infrastructure without explicit approval.
+Do not delete or overwrite these files without reviewing them.
+
+## Recommended next-session startup
+
+1. Read `docs/PROJECT-STATUS.md` and this handoff.
+2. Check Git branch, remote synchronization, and working-tree status.
+3. Confirm the running application and service health.
+4. Review GPU availability and hardware assignments.
+5. Test a new companion-generated image and confirm the response
+   no longer includes the redundant canned ending.
+6. Choose the next development milestone based on the current
+   project roadmap and actual repository state.
+
+## Development principles
+
+- Preserve working functionality.
+- Avoid duplicating existing systems.
+- Distinguish implemented, tested, deployed, and user-verified work.
+- Prefer targeted changes with regression tests.
+- Protect local user data and existing infrastructure.
+- Never assume a feature is deployed merely because it is committed.
 
 <!-- provider-visibility-2026-10-10 -->
 ## October 10 — Provider visibility checkpoint

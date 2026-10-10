@@ -113,3 +113,28 @@ synthetic probes previously passed, including explicit offer retention,
 unapproved-offer omission, supplied schedules and blank acceptance fields.
 This supersedes pending host-suite status. Deployment and actual-request
 browser acceptance remain pending.
+
+<!-- proposal-wording-deployed-e09f74a -->
+## October 10, Phoenix — Proposal wording deployed and browser checked
+
+User-supplied terminal evidence confirms e09f74a committed, API restarted,
+and API/Ollama/database health all OK. The host suite passed 357 tests.
+Four installed-model synthetic cases passed before deployment.
+
+The supplied fresh browser request, draft and exported PDF were inspected.
+The actual request completed draft/review/revision in three model calls.
+Supplied schedule, prices, conditional complimentary treatment, recurring
+service and warranty remained. The unrequested price-match offer was omitted.
+Unnecessary confirmation tags were removed and acceptance fields left blank.
+Both PDF pages were rendered and inspected: branded proposal and acceptance
+fit on page one; anonymous source-reference labels remain on page two.
+
+This verifies the targeted corrections for this request, not universal
+semantic correctness. Remaining content issues: reference sanitation wording
+may imply unrequested cleanup, and the acceptance disclaimer is duplicated.
+Do not treat a source citation alone as authorization for additional work.
+
+Next work includes owner-private approved business defaults with service
+applicability and per-job overrides. Saved visual styles/logos already exist;
+persistent approved terms and exact example-layout reproduction do not.
+Existing configuration, backups and unrelated edits remain intact.

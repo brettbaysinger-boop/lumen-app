@@ -32,3 +32,21 @@ reference offers carried into new jobs, and exact example-layout matching.
 User-supplied host output confirms checksum verification, guarded
 application, clean whitespace checks, and 357 backend tests passing
 in 3.616 seconds. Deployment and new browser PDF acceptance remain pending.
+
+<!-- compact-header-deployed-a2cca68 -->
+## October 10, Phoenix — Compact header deployed and PDF inspected
+
+User-supplied terminal evidence confirms a2cca68 committed and the API
+restarted successfully, with API/Ollama/database health all OK. The earlier
+host suite passed 357 tests. The newly uploaded browser PDF was rendered
+and both pages visually inspected: the branded proposal and acceptance
+fit on page one; readable private reference labels remain on page two.
+This closes the bounded compact-header layout acceptance for that sample.
+It does not establish that every future proposal fits on one page.
+
+The exported content still has an unnecessary confirmation on a supplied
+schedule and an unapproved reference price-match offer. The next investigation
+tests stricter offer authorization, supplied-fact handling and unsigned
+acceptance blanks using invented inputs through the installed provider.
+The candidate runs only in the diagnostic process; no generation patch or
+deployment is performed. Exact example-layout reproduction remains pending.

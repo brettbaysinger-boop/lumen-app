@@ -96,3 +96,65 @@ Isolated PostgreSQL tests passed owner CRUD, cross-owner isolation,
 ownership-transfer denial, size limits and anonymous-access denial.
 This supersedes pending host test status. The application database
 migration, deployment and browser acceptance remain pending.
+
+<!-- document-style-deployed-74659b0 -->
+## October 10, Phoenix — Private document style deployed
+
+User-supplied evidence confirms commit 74659b0 deployed after 353 backend
+tests, full TypeScript checks and isolated PostgreSQL ownership checks passed.
+Migration 20261010170000 applied locally and migration history is synchronized.
+Web export succeeded; API/web services are active; API/Ollama/database
+health all report OK.
+
+The uploaded browser-exported PDF was visually inspected: the user's logo
+and green accent appear correctly, with readable tables and preserved source
+references. The user reported improvement. This confirms branded export;
+reload persistence, reset, example-import behavior and second-account browser
+isolation have not yet been separately verified.
+
+Remaining work: compact the branded header to avoid a separate acceptance
+page; correct unnecessary confirmation placeholders and unapproved offer
+carryover. Exact example-layout reproduction remains unimplemented.
+Existing configuration, backups and unrelated status edits remain intact.
+
+<!-- compact-proposal-header-candidate-2026-10-10 -->
+## October 10 — Compact branded header candidate
+
+Continuing from deployed 74659b0 with 353 passing host backend tests. The
+user supplied successful migration/build/health output and a branded PDF.
+Its logo and green accent work, but acceptance spilled onto a separate page.
+This renderer-only candidate places the logo beside the title/header instead
+of stacking it above. Proposal wording and all validation remain unchanged.
+
+60 isolated tests passed, including four new header regressions. Synthetic
+pages were visually inspected. A private re-render of the supplied draft/logo
+fits proposal and acceptance on page one, references on page two. No real
+customer content or logo is in tests or Git. Full host tests, deployment and
+new browser PDF acceptance remain pending. No migration or frontend build
+is needed. Wording corrections and richer example matching remain pending.
+See docs/compact-proposal-header.md.
+
+<!-- compact-header-host-tests-357 -->
+## October 10 — Compact header host validation
+
+User-supplied host output confirms checksum verification, guarded
+application, clean whitespace checks, and 357 backend tests passing
+in 3.616 seconds. Deployment and new browser PDF acceptance remain pending.
+
+<!-- compact-header-deployed-a2cca68 -->
+## October 10, Phoenix — Compact header deployed and PDF inspected
+
+User-supplied terminal evidence confirms a2cca68 committed and the API
+restarted successfully, with API/Ollama/database health all OK. The earlier
+host suite passed 357 tests. The newly uploaded browser PDF was rendered
+and both pages visually inspected: the branded proposal and acceptance
+fit on page one; readable private reference labels remain on page two.
+This closes the bounded compact-header layout acceptance for that sample.
+It does not establish that every future proposal fits on one page.
+
+The exported content still has an unnecessary confirmation on a supplied
+schedule and an unapproved reference price-match offer. The next investigation
+tests stricter offer authorization, supplied-fact handling and unsigned
+acceptance blanks using invented inputs through the installed provider.
+The candidate runs only in the diagnostic process; no generation patch or
+deployment is performed. Exact example-layout reproduction remains pending.
