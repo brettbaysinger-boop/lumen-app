@@ -113,7 +113,7 @@ def render_proposal_pdf(title, body, sources, *, style=None):
     from reportlab.lib import colors
     from reportlab.lib.styles import ParagraphStyle
     from reportlab.lib.pagesizes import letter, A4
-    from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, PageBreak, LongTable, TableStyle, KeepTogether, Image
+    from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, PageBreak, LongTable, TableStyle, KeepTogether, Image, Table
     _fonts()
     from .document_style_model import DocumentStyle
     style = style if isinstance(style, DocumentStyle) else DocumentStyle.model_validate(style or {})
@@ -205,27 +205,37 @@ def render_proposal_pdf(title, body, sources, *, style=None):
             index += 1
         return result
 
-    story = [paragraph(title, title_style),
-             paragraph('Review draft. Confirm the scope, prices, terms and any unresolved details before use.', small),
-             Spacer(1, 8)]
-    brand = []
+    heading_content = [paragraph(title, title_style),
+                       paragraph('Review draft. Confirm the scope, prices, terms and any unresolved details before use.', small)]
+    identity_style = ParagraphStyle('identity', parent=normal, alignment=alignment)
+    if style.company_name:
+        heading_content.append(paragraph(style.company_name, identity_style))
+    if style.contact_line:
+        heading_content.append(paragraph(style.contact_line,
+            ParagraphStyle('contact', parent=small, alignment=alignment)))
     if style.logo_png:
         import base64
         from PIL import Image as PILImage
         raw_logo = base64.b64decode(style.logo_png, validate=True)
         with PILImage.open(io.BytesIO(raw_logo)) as logo:
-            factor = min(130 / logo.width, 52 / logo.height)
+            # One bounded header row, not a separate logo-height block.
+            factor = min(86 / logo.width, 44 / logo.height)
             logo_width, logo_height = logo.width * factor, logo.height * factor
-        brand.append(Image(io.BytesIO(raw_logo), width=logo_width, height=logo_height,
-                           hAlign='CENTER' if alignment else 'LEFT'))
-        brand.append(Spacer(1, 6))
-    identity_style = ParagraphStyle('identity', parent=normal, alignment=alignment)
-    if style.company_name:
-        brand.append(paragraph(style.company_name, identity_style))
-    if style.contact_line:
-        brand.append(paragraph(style.contact_line, ParagraphStyle('contact', parent=small, alignment=alignment)))
-    if brand:
-        story[0:0] = [KeepTogether(brand + [Spacer(1, 8)])]
+        logo_flow = Image(io.BytesIO(raw_logo), width=logo_width, height=logo_height)
+        logo_column = logo_width + 12
+        header = Table([[logo_flow, heading_content]],
+                       colWidths=[logo_column, width - logo_column], hAlign='LEFT')
+        header.setStyle(TableStyle([
+            ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+            ('LEFTPADDING', (0, 0), (-1, -1), 0),
+            ('RIGHTPADDING', (0, 0), (0, 0), 12),
+            ('RIGHTPADDING', (1, 0), (1, 0), 0),
+            ('TOPPADDING', (0, 0), (-1, -1), 0),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 0),
+        ]))
+        story = [header, Spacer(1, 8)]
+    else:
+        story = heading_content + [Spacer(1, 8)]
     for heading, lines in _sections(body):
         flows = ([paragraph(heading, heading_style)] if heading else []) + section_content(heading, lines)
         if heading and heading.casefold() == 'acceptance' and sum(map(len, lines)) <= 1300 and len(lines) <= 16:
