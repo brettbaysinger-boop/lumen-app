@@ -81,3 +81,35 @@ correctness. No customer records were used by these synthetic probes.
 Deployment and browser acceptance remain pending. The candidate uses
 neutral PDF branding; owner-specific business profiles and logos remain
 to be implemented.
+
+<!-- proposal-wording-live-probes-2026-10-10 -->
+## October 10 — Proposal wording candidate validated with installed model
+
+Continuing from deployed a2cca68. Four user-run synthetic probes passed
+through the installed OllamaProvider and full draft/review/revision flow,
+using three calls each. Printed invented drafts were also inspected.
+
+New-job examples did not import unapproved promotions. Explicitly approved
+license information, service warranty limitations and the 10% price-match
+offer were retained. Same-job offers survived. Supplied schedules were
+not marked unconfirmed; unsigned acceptance fields remained blank.
+
+The exact probed JOB_REFERENCE_RULES change is now applied locally.
+Source selection, citation checks, price checks, final validation, model,
+routing and call budgets are unchanged. No customer data is in fixtures.
+The prior 60 isolated tests passed; full host-suite validation, deployment
+and actual-request browser acceptance remain pending for this candidate.
+These examples do not establish universal semantic correctness.
+
+Persistent approved business defaults and exact example-layout matching
+remain unimplemented. Existing private logo/style behavior is preserved.
+
+<!-- proposal-wording-host-tests-357 -->
+## October 10 — Proposal wording host validation
+
+User-supplied host evidence confirms guarded application, clean whitespace
+checks and 357 backend tests passing in 3.711 seconds. Four installed-model
+synthetic probes previously passed, including explicit offer retention,
+unapproved-offer omission, supplied schedules and blank acceptance fields.
+This supersedes pending host-suite status. Deployment and actual-request
+browser acceptance remain pending.
