@@ -31,3 +31,11 @@ Local checks: 259 backend tests, TypeScript, clean web export, and a mocked mobi
 No migration or new dependency is required. Build with the existing HTTPS API and Supabase addresses, then restart API and web services. Run `python3 scripts/update-provider-checkpoint.py` to append the versioned checkpoint to the existing local project status and session handoff; it preserves their contents and skips already-recorded entries. Those local documentation changes must be explicitly committed when checkpointing. Configuration and backup files must not be included accidentally.
 
 Acceptance: open Settings → AI providers; check hosts/models; send a normal message and expand Provider requests; request a companion image and confirm chat/Gallery, natural wording and image request details. Reload to confirm records remain. Speech infrastructure is unchanged.
+
+## Live acceptance and subject correction — October 9, Phoenix
+
+Provider visibility at `db21282` is now deployed and user-verified, superseding
+the preceding pending-acceptance note. A follow-up fixes companion-name greetings
+being mistaken for portrait subjects. The subject fix passed 25 targeted backend
+tests; its deployment and live acceptance remain pending. Full evidence and
+limits: `docs/provider-acceptance-checkpoint.md` (repository-relative path).

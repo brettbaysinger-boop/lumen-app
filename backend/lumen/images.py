@@ -209,7 +209,13 @@ def compose_image_prompt(
     patterns = list(_COMPANION_SELF_PATTERNS)
 
     if companion_name:
-        patterns.append(rf"\b{re.escape(companion_name)}\b")
+        # A name used to address the companion is not an image subject.
+        # Require a depiction relationship: "of Lumen", "paint Lumen", etc.
+        name = re.escape(companion_name)
+        patterns.append(
+            rf"\b(?:of|with|featuring|depicting|showing|include|depict|draw|paint|render|illustrate)"
+            rf"\s+{name}\b"
+        )
 
     if not any(re.search(pattern, user_prompt, re.IGNORECASE) for pattern in patterns):
         return user_prompt, None

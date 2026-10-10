@@ -68,6 +68,28 @@ class ImageIdentityTests(unittest.TestCase):
         self.assertIsNone(subject)
         self.assertEqual(prompt, original)
 
+    def test_addressing_companion_does_not_add_her_to_scene(self):
+        requests = [
+            "lumen will you paint me a oil style painting of A soft golden light spills across a quiet alpine meadow at dawn.",
+            "Hey Lumen! Paint me a landscape with a crystal-clear lake.",
+            "Paint me a sunset, Lumen.",
+            "Lumen, paint me something different. Anything you want, you choose.",
+        ]
+        for original in requests:
+            with self.subTest(original=original):
+                prompt, subject = compose_image_prompt(original, "Lumen", IDENTITY)
+                self.assertIsNone(subject)
+                self.assertEqual(prompt, original)
+
+    def test_explicit_named_depiction_retains_identity(self):
+        for original in ["Paint Lumen by a lake.", "A garden featuring Lumen.",
+                         "Lumen, paint yourself in an alpine meadow.",
+                         "Paint a landscape with you beside the lake."]:
+            with self.subTest(original=original):
+                prompt, subject = compose_image_prompt(original, "Lumen", IDENTITY)
+                self.assertEqual(subject, "companion")
+                self.assertIn(IDENTITY, prompt)
+
     def test_missing_visual_identity_preserves_prompt(self):
         original = "Send me a picture of yourself."
 

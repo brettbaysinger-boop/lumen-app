@@ -356,3 +356,11 @@ mobile browser checks). Direct-image reply wording is also refined. Deployment a
 new-feature user acceptance remain pending. Prior companion-image prose and Gallery
 behavior were user-verified at `0cde482`. Routing and Helios remain unchanged.
 See [docs/provider-visibility.md](docs/provider-visibility.md) for scope, hardware evidence and acceptance checks.
+
+## Live acceptance and subject correction — October 9, Phoenix
+
+Provider visibility at `db21282` is now deployed and user-verified, superseding
+the preceding pending-acceptance note. A follow-up fixes companion-name greetings
+being mistaken for portrait subjects. The subject fix passed 25 targeted backend
+tests; its deployment and live acceptance remain pending. Full evidence and
+limits: `docs/provider-acceptance-checkpoint.md` (repository-relative path).

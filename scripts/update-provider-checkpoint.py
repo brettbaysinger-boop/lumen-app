@@ -5,13 +5,20 @@ MARKER = '<!-- provider-visibility-2026-10-10 -->'
 
 
 def update(root):
-    entry = (root / 'docs/provider-checkpoint-entry.md').read_text()
+    entries = [(root / 'docs' / name).read_text() for name in (
+        'provider-checkpoint-entry.md', 'provider-acceptance-checkpoint.md'
+    )]
     targets = [root / 'docs/PROJECT-STATUS.md', root / 'docs/SESSION-HANDOFF-2026-10-09.md']
     # Read both before writing so missing host notes cannot cause a partial update.
     originals = [(path, path.read_text()) for path in targets]
     for path, original in originals:
-        if MARKER not in original:
-            path.write_text(original.rstrip() + '\n\n' + entry)
+        updated = original
+        for entry in entries:
+            marker = entry.splitlines()[0]
+            if marker not in updated:
+                updated = updated.rstrip() + '\n\n' + entry
+        if updated != original:
+            path.write_text(updated)
             print(f'Appended checkpoint: {path.name}')
         else:
             print(f'Already recorded: {path.name}')
