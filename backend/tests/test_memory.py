@@ -174,7 +174,7 @@ class MemoryFlow(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(r.provider.generate.await_count, 2)
         r.db.remember.assert_not_awaited()
 
-    async def test_unverified_update_claim_is_rewritten_without_write(self):
+    async def test_update_confirmation_without_proposal_never_claims_write(self):
         r=self.runtime()
         r.provider.generate.side_effect=[
             dict(content="I've updated your preference to red.", model="test-model",
@@ -183,7 +183,7 @@ class MemoryFlow(unittest.IsolatedAsyncioTestCase):
                  latency_ms=1,tokens_in=1,tokens_out=1)]
         reply=await r.respond("companion","chat","yes update it")
         self.assertNotIn("updated",reply.content)
-        self.assertEqual(r.provider.generate.await_count,2)
+        r.provider.generate.assert_not_awaited()
         r.db.remember.assert_not_awaited()
         self.assertEqual(reply.memory_status,"none")
 

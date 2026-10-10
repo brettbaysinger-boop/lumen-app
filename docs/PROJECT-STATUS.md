@@ -853,3 +853,45 @@ Remaining work: grounded handling of bare preference changes followed by
 "yes update it"; more precise wording when no saved fact is available;
 broader natural-memory acceptance and the original companion goal-list review.
 Proposal work remains paused. Configuration and existing backups are preserved.
+
+<!-- natural-memory-confirmation-candidate-2026-10-10 -->
+## October 10, Phoenix — Grounded natural preference confirmation candidate
+
+Continuing from pushed ae9c0b0. Prior browser acceptance covers correction,
+reload, Undo, deletion and fresh-chat recall. Skills/language/website learning
+is paused at the user's request; its separate scratch candidate was not applied,
+pushed or deployed.
+
+This candidate recognizes bounded first-person facts matching an existing
+loaded user-memory attribute. A conflicting value produces an explicit proposal
+containing the exact old and new text; no memory write or automatic observation
+occurs for that proposal. "Yes, update it" (and bounded affirmative variants)
+confirms only the immediately preceding persisted proposal and user assertion.
+"No" cancels. Unrelated conversation expires the confirmation opportunity.
+Missing proposals cannot be reconstructed from model-generated promises.
+
+Confirmation rechecks owner-scoped active records, unique attribute/topic,
+exact source-message identity, old text and revision version. The existing
+atomic correction RPC supplies concurrency protection, revision receipt and Undo.
+Retries recover confirmed receipts; already-undone requests are not reapplied.
+No database, frontend, model/provider configuration or deployment change.
+
+424 isolated backend tests pass, including a complete runtime two-turn flow,
+proposal persistence, cancellation, stale/deleted/duplicate target refusal,
+unverified assistant prose, request replay and write-time uncertainty.
+The new route itself makes no model call. Full host validation and browser
+acceptance remain pending.
+
+Boundaries: lexical attributes and a matching memory in the current retrieval
+context are required; this is not arbitrary semantic conflict resolution.
+New unrelated facts retain the existing natural-memory observation behavior.
+This does not add history erasure or temporal change inference.
+
+<!-- natural-memory-confirmation-host-tests-424 -->
+## October 10 — Natural memory confirmation host validation
+
+User-supplied evidence confirms checksum verification, guarded application,
+clean whitespace checks and 424 backend tests passing in 3.649 seconds.
+This supersedes pending host-suite validation for this candidate.
+Deployment and browser acceptance remain pending.
+No migration or frontend build is required. Skills work remains paused.
