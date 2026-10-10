@@ -1,3 +1,25 @@
+<!-- roadmap-reconciliation-2026-10-10 -->
+## Current reconciliation — October 10, Phoenix
+
+Current deployed development branch: feat/lumen-take2-local.
+Latest application checkpoint: 19acf46. Read the newest appended entries
+in docs/PROJECT-STATUS.md and docs/SESSION-HANDOFF-2026-10-09.md.
+
+Older branch/status labels below are historical, not current acceptance:
+My Day actions and Goals & practice are present on Take 2 with reported
+user verification. Query-aware lexical memory retrieval, correction revision
+history, grounded update confirmation and Undo-aware recall are implemented.
+Natural preference saving and fresh-chat project recall have bounded browser
+acceptance. Semantic retrieval and durable automatic retry remain future work.
+
+Branded printable proposal PDFs exist and were browser-checked at e09f74a.
+Persistent approved business terms and exact reusable example-layout matching
+remain incomplete; proposal work is paused. Skills expansion is also paused.
+
+Current priority: evaluate natural-memory relevance and continuity with
+different wording, then improve measured gaps. No claim of universal
+extraction accuracy, exhaustive recall or consciousness is established.
+
 > **Canonical project checkpoint:** [Project Status](../PROJECT-STATUS.md).
 
 # Lumen: personal, helpful, engaging

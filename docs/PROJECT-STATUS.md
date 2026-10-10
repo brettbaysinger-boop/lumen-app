@@ -1036,3 +1036,31 @@ Real database conflict checks may leave one for review; both auto-saves are
 not established. Existing evidence, sensitivity, ownership and conflict
 protection remain intact. Broader natural-memory acceptance remains ongoing.
 Skills and proposal work remain paused. Configuration and backups are preserved.
+
+<!-- natural-memory-browser-acceptance-2026-10-10 -->
+## October 10, Phoenix — Natural memory browser acceptance
+
+19acf46 was committed, pushed and deployed. API/Ollama/database health
+reported OK; the host backend suite passed 445 tests.
+
+User testing verified ordinary preference extraction with correct user
+ownership and fresh-chat recall. A hypothetical guitar statement produced
+no visible memory or proposal. Following the extraction fix and retries,
+previously failed checks populated memories and the UI reported no
+unfinished checks. A fresh conversation correctly recalled the Lumen
+natural-memory project and its next step. The user subsequently confirmed
+a new memory populated automatically without pressing Retry.
+
+The user reported an unwanted suggestion was removed and did not return.
+This is bounded reported suppression acceptance, not a comprehensive replay
+or duplicate-accuracy evaluation. The recovered backlog's full accuracy
+has not been audited.
+
+Remembered project facts do not automatically create My Day projects or
+Goals & practice records. The existing-chat Undo recall fix at efc22bf
+was also browser-verified for direct recall, certainty and ordinary explanation.
+
+Next: evaluate differently worded project recall, relevant retrieval as
+memory grows, and conversational continuity. Durable automatic retry workers,
+semantic/temporal retrieval and evidence-linked reflection remain open.
+Skills and proposal work remain paused. Configuration and backups are preserved.
