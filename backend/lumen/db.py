@@ -59,16 +59,22 @@ class SupabaseRepository:
             },
         )
 
-    async def get_relevant_memories(self, companion_id: str, limit: int = 12):
-        return await self._request(
+    async def get_relevant_memories(self, companion_id: str, limit: int = 12, *, query: str = ""):
+        from .memory_retrieval import rank_memories, terms
+        if limit <= 0:
+            return []
+        # Keep the original listing path; rank a bounded pool for specific turns.
+        pool_limit = max(limit, 500) if terms(query) else limit
+        rows = await self._request(
             "GET", "memories",
             params={
                 "companion_id": f"eq.{companion_id}",
                 "is_active": "eq.true",
-                "order": "importance.desc,updated_at.desc",
-                "limit": str(limit),
+                "order": "importance.desc,updated_at.desc,id.asc",
+                "limit": str(pool_limit),
             },
         )
+        return rank_memories(rows, query, limit)
 
     async def create_conversation(self, companion_id: str, title: str):
         rows = await self._request(

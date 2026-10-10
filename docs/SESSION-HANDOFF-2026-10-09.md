@@ -508,3 +508,36 @@ Next work includes owner-private approved business defaults with service
 applicability and per-job overrides. Saved visual styles/logos already exist;
 persistent approved terms and exact example-layout reproduction do not.
 Existing configuration, backups and unrelated edits remain intact.
+
+<!-- memory-retrieval-host-checkpoint-2026-10-10 -->
+## October 10, Phoenix — Companion memory work resumed
+
+The proposal/document workstream is paused. Its deployed checkpoint is
+e09f74a; the preceding October 10 entries retain its acceptance evidence
+and remaining work. Private logo/style and compact PDF rendering exist.
+Approved business defaults, service applicability, exact example-layout
+reproduction, sanitation wording and duplicate disclaimer remain follow-up work.
+
+Current direction: a lifelong local companion with useful memory,
+natural continuity and grounded self-model research. Do not rebuild
+the existing companion, voice, image or everyday-assistant foundations.
+
+Question-aware memory retrieval is applied and the full host backend suite
+passed 373 tests from the backend directory. All 16 new retrieval/runtime
+tests passed. The earlier root-directory run failed importing test_images
+because backend Settings could not load required Supabase configuration;
+that run was not a passing full-suite checkpoint.
+
+The candidate passes the current message into retrieval and ranks up to
+500 active saved memories by lexical content/topic matches before selecting
+the normal 12. Subject labels, authorization and active-memory filtering
+remain. This is bounded lexical retrieval, not semantic recall or a search
+of all historical conversations. See docs/question-aware-memory.md.
+
+No service restart, migration or deployment was performed for this candidate.
+Browser acceptance and live recall remain pending. Last supplied healthy
+deployment is e09f74a. Next: review and explicitly deploy the memory candidate,
+then verify cross-conversation recall, competing memories and attribution.
+
+Preserve Supabase configuration, backup files and unrelated local edits.
+At resume, verify branch/HEAD/status and read the newest appended entries.

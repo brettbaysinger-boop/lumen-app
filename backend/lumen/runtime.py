@@ -58,7 +58,10 @@ class CognitionRuntime:
         if emit:
             await emit({"type": "activity", "text": "Checking memories…"})
         state = await self.db.get_state(companion_id)
-        memories = await self.db.get_relevant_memories(companion_id)
+        memories = await self.db.get_relevant_memories(
+            companion_id,
+            query="" if is_memory_recall(user_message, companion["name"]) else user_message,
+        )
         recent = await self.db.get_recent_messages(conversation_id, limit=20)
 
         profile = await self.db.get_profile(self.user_id) if getattr(self, "user_id", None) else None
