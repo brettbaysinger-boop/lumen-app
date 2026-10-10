@@ -15,6 +15,7 @@ from .companion_images import create_companion_image
 from .image_response import image_reply, clean_image_intro
 from .stream_guard import LegacyImageJSONGuard
 from .natural_memory_updates import natural_memory_update
+from .memory_turn_context import memory_turn_context
 from .memory_corrections import correction_candidate, correct_memory
 
 from .config import Settings
@@ -74,6 +75,10 @@ class CognitionRuntime:
             messages.append(await practice_context(self.db,companion_id,conversation))
         for message in reversed(recent[:8] if practice else recent):
             messages.append({"role": message["role"], "content": message["content"][:1500] if practice else message["content"]})
+        current_memory_context = await memory_turn_context(
+            self.db, companion_id, conversation_id, recent, memories, user_message, companion["name"])
+        if current_memory_context:
+            messages.append({k: current_memory_context[k] for k in ("role", "content")})
         vision_used = False
         action = None
         if attachments:
@@ -103,8 +108,8 @@ class CognitionRuntime:
                     action = {"content": str(exc), "model": "vision-unavailable"}
         else:
             messages.append({"role": "user", "content": user_message})
-            action = None
-            if not document_id and not practice:
+            action = (current_memory_context or {}).get("recall_action") if not document_id and not practice else None
+            if not action and not document_id and not practice:
                 action = await natural_memory_update(
                     self.db, companion_id, conversation_id, user_message, recent, memories,
                     getattr(self, "request_key", str(uuid4())), companion["name"])
@@ -323,7 +328,7 @@ class CognitionRuntime:
             "tokens_in": result["tokens_in"],
             "tokens_out": result["tokens_out"],
             "latency_ms": result["latency_ms"],
-            "metadata": {**(companion_image_metadata or {}), "provider_requests": provider_requests, "provider": provider.name, "runtime": "v0.1", "memory_status": memory_status, "memory_subject": saved_subject, "timings_ms": result.get("timings_ms", {}), "memory_update_proposal": {**action["memory_update_proposal"], "source_message_id": user_row["id"]} if action and action.get("memory_update_proposal") else None, "memory_correction_pending": action.get("memory_correction_pending") if action else None, "memory_revision": action.get("memory_revision") if action else None, "my_day_item": action.get("item") if action else None, "unstuck_draft": action.get("unstuck_draft") if action else None, "pending_reminder": action.get("pending_reminder") if action else None, "web_search": action.get("web_search") if action else None, "goal_session": action.get("goal_session") if action else None, "goal_summary_method": action.get("goal_summary_method") if action else None, "vision_used": vision_used, "document_sources": action.get("document_sources") if action else None, "document_action_draft": action.get("document_action_draft") if action else None, "document_work_context": {**action["document_work_context"], "request_message_id": user_row["id"]} if action and action.get("document_work_context") else None},
+            "metadata": {**(companion_image_metadata or {}), "provider_requests": provider_requests, "provider": provider.name, "runtime": "v0.1", "memory_status": memory_status, "memory_subject": saved_subject, "timings_ms": result.get("timings_ms", {}), "memory_recall_attribute": action.get("memory_recall_attribute") if action else None, "memory_update_proposal": {**action["memory_update_proposal"], "source_message_id": user_row["id"]} if action and action.get("memory_update_proposal") else None, "memory_correction_pending": action.get("memory_correction_pending") if action else None, "memory_revision": action.get("memory_revision") if action else None, "my_day_item": action.get("item") if action else None, "unstuck_draft": action.get("unstuck_draft") if action else None, "pending_reminder": action.get("pending_reminder") if action else None, "web_search": action.get("web_search") if action else None, "goal_session": action.get("goal_session") if action else None, "goal_summary_method": action.get("goal_summary_method") if action else None, "vision_used": vision_used, "document_sources": action.get("document_sources") if action else None, "document_action_draft": action.get("document_action_draft") if action else None, "document_work_context": {**action["document_work_context"], "request_message_id": user_row["id"]} if action and action.get("document_work_context") else None},
         })
         if companion_image_metadata:
             image_path = companion_image_metadata["attachments"][0]["path"]

@@ -744,3 +744,78 @@ clean whitespace checks and 428 backend tests passing in 3.738 seconds.
 This supersedes pending host-suite validation for the season wording candidate.
 Deployment and browser acceptance remain pending.
 No migration or frontend build is required. Skills work remains paused.
+
+<!-- memory-undo-context-candidate-2026-10-10 -->
+## October 10, Phoenix — Season wording accepted; stale-chat Undo investigation
+
+User-supplied evidence confirms ea8be99 pushed, API restarted and
+API/Ollama/database health OK. Earlier host suite: 428 tests passed.
+Browser transcript confirms season-alias proposals, cancellation, affirmative
+save and clarification for morning. The user reports Undo restored summer in
+Memories and a new chat, but the existing chat incorrectly answered autumn
+and defended that answer. Do not record existing-chat Undo recall as accepted.
+
+Code inspection confirms old correction messages enter history with their
+original text, while the generic current-value precedence instruction is earlier
+in the prompt. The model receives no explicit database Undo status in that history.
+
+This candidate adds a current memory snapshot after historical messages,
+including fresh owner/companion/conversation-scoped status for referenced
+revision receipts and current associated memory rows. Undone or superseded
+receipts are labeled historical; inactive memories are excluded from current
+facts. A status lookup failure is marked unavailable rather than inventing Undo.
+The persistent transcript is unchanged. No memory writes are performed by this check.
+
+438 isolated backend tests pass, including Undo, current/superseded receipts,
+inactive facts, unavailable state, identity filtering and context placement.
+A synthetic installed-model probe covers same-chat Undo recall, a certainty
+follow-up after a stale answer, and deletion with old history. Host suite,
+installed-model probe, deployment and browser acceptance remain pending.
+This context change is not a guarantee of universal model adherence.
+No migration, frontend, model/provider configuration or backup change.
+Skills/language/website work remains paused.
+
+<!-- memory-undo-recall-followup-candidate-2026-10-10 -->
+## October 10 — Undo context host probes and direct recall follow-up
+
+User-supplied host evidence: guarded context candidate applied, whitespace
+checks passed and 438 backend tests passed in 3.771 seconds.
+The same-chat Undo synthetic answer used summer. The certainty answer corrected
+autumn to summer but offered to reapply autumn. The deleted-memory probe failed:
+the model invented an established morning preference and offered to save autumn.
+No migration, commit or deployment was performed for that candidate.
+
+This follow-up answers bounded direct saved-preference questions and
+immediate certainty follow-ups from the checked current-memory snapshot.
+The model does not select those current values. Inactive facts cannot become
+current preferences from old chat. Missing facts are described as unavailable
+current saved values; conflicting current values require review. Verified
+Undo status can explain an earlier correction without soliciting restoration.
+The historical transcript remains intact; no memory writes are added.
+
+445 isolated backend tests pass locally, including the direct recall path,
+certainty, deleted facts, subject ownership, conflicting entries, unsupported
+queries and repeat follow-up metadata. Ordinary conversation still uses the
+late current-memory context with explicit historical receipt status.
+
+The updated synthetic host probe reports provider-call counts: direct recall
+cases need no inference; an ordinary explanatory conversation case uses the
+selected installed model. Host tests, probe, deployment and browser acceptance
+remain pending. This is bounded recall routing, not universal semantic recall.
+No migration, frontend, provider configuration or backup change.
+
+<!-- memory-undo-context-host-validation-445 -->
+## October 10, Phoenix — Undo-aware memory context host validation
+
+User-supplied host evidence confirms guarded application, clean whitespace
+checks and 445 backend tests passing in 3.742 seconds.
+
+All four synthetic runtime probes passed. Same-chat recall after Undo,
+certainty after a stale answer, and deleted-memory recall used zero provider
+calls. Ordinary conversation used one installed-model provider call and
+correctly recognized the restored summer value and undone autumn correction.
+Database operations were mocked; no real memory writes were made.
+
+Commit, deployment and actual same-chat browser acceptance remain pending.
+No migration or frontend build is required. Skills and proposal work remain
+paused. Existing configuration and backups are preserved.
