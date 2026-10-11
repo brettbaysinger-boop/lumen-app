@@ -1249,3 +1249,23 @@ and generated companion portrait preview/regenerate/use flow.
 These enhancements are pending.
 Configuration and backups preserved.
 Memory relevance, skills and proposal work remain paused.
+
+<!-- companion-customization-accepted-2026-10-11 -->
+## October 11, Phoenix — Companion customization accepted
+
+Host TypeScript, all 31 Node tests and all 450 backend tests passed.
+Android preview build completed successfully and ADB installation succeeded.
+Brett reports all requested phone acceptance checks passed:
+name suggestions, removal of the pronoun field, romantic personality,
+appearance description builder, native voice samples, and generated
+portrait preview/regenerate/use/save persistence.
+
+APK SHA256:
+f77f825a5b6fa0c51393fe7bfcf5725ce16e52876e683c7d0761b2bc9bf1a341
+Previous APK:
+/home/brett/lumen-android-builds/preview.ijhcJd/before-customization.7aZ7cl.apk
+
+No new database migration was required.
+Configuration, database backups and prior preview APK preserved.
+Memory relevance, skills and proposal work remain paused.
+Push notifications, further mobile UI polish and iOS testing remain pending.

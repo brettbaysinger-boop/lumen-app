@@ -1,8 +1,9 @@
+import { previewVoice } from '@/lib/voice-preview';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { View, Text, Pressable, Modal, ScrollView, Platform, ActivityIndicator } from 'react-native';
 import { useFocusEffect } from 'expo-router';
 import { useTheme } from '@/lib/theme-context';
-import { chooseVoice, getVoiceOptions, playReply, type VoiceOptions } from '@/lib/voice';
+import { chooseVoice, getVoiceOptions, type VoiceOptions } from '@/lib/voice';
 
 export function VoicePicker({ companionId, name }: { companionId: string; name: string }) {
   const { colors: c } = useTheme();
@@ -34,7 +35,7 @@ export function VoicePicker({ companionId, name }: { companionId: string; name: 
     audio.current?.abort();
     if (preview === voice) { setPreview(null); return; }
     const controller = new AbortController(); audio.current = controller; setPreview(voice); setError('');
-    try { await playReply(`Hello, I'm ${name}. It's good to be here with you.`, controller.signal, () => { if (audio.current === controller) setPreview(null); }, { companionId, voice }); }
+    try { await previewVoice(companionId, name, voice, controller.signal, () => { if (audio.current === controller) setPreview(null); }); }
     catch (e) { if (!controller.signal.aborted) { setError(e instanceof Error ? e.message : 'Could not preview voice.'); setPreview(null); } }
   };
   const close = () => { if (busy) return; audio.current?.abort(); setPreview(null); setOpen(false); };
@@ -53,7 +54,7 @@ export function VoicePicker({ companionId, name }: { companionId: string; name: 
             <Pressable disabled={busy} onPress={() => void save(null)} style={{ paddingVertical: 16 }}><Text style={{ color: c.neutral[100] }}>{catalog?.selected == null ? '✓ ' : ''}Use server default</Text></Pressable>
             {catalog?.voices.map(voice => <View key={voice.id} style={{ flexDirection: 'row', alignItems: 'center', borderTopWidth: 1, borderColor: c.neutral[800], gap: 12 }}>
               <Pressable disabled={busy} onPress={() => void save(voice.id)} style={{ flex: 1, paddingVertical: 16 }}><Text style={{ color: catalog.selected === voice.id ? c.primary[300] : c.neutral[100] }}>{catalog.selected === voice.id ? '✓ ' : ''}{voice.name}</Text><Text style={{ color: c.neutral[400], fontSize: 11, marginTop: 6 }}>{[voice.language, voice.gender].filter(Boolean).join(' · ')}</Text></Pressable>
-              <Pressable accessibilityLabel={`Preview ${voice.name}`} disabled={busy || Platform.OS !== 'web'} onPress={() => void listen(voice.id)} style={{ padding: 12 }}><Text style={{ color: c.primary[300] }}>{preview === voice.id ? 'Stop' : 'Preview'}</Text></Pressable>
+              <Pressable accessibilityLabel={`Preview ${voice.name}`} disabled={busy} onPress={() => void listen(voice.id)} style={{ padding: 12 }}><Text style={{ color: c.primary[300] }}>{preview === voice.id ? 'Stop' : 'Preview'}</Text></Pressable>
             </View>)}
             {catalog?.voices.length === 0 && <Text style={{ color: c.neutral[400] }}>No voices available for this model on Helios.</Text>}
           </ScrollView>
