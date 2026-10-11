@@ -1238,3 +1238,32 @@ Supabase configuration and existing backups remain outside this commit.
 No backend changes, migration or web deployment.
 iOS acceptance/push, broader mobile polish and chat consolidation remain open.
 Memory relevance, skills and proposal work remain paused.
+
+<!-- mobile-navigation-accepted-2026-10-11 -->
+
+## October 11, Phoenix — Mobile navigation accepted
+
+Mobile navigation now shows Chat, My Day, Gallery and More.
+More contains Memories, Companion and Settings, with the current destination
+indicated. Mobile labels and touch targets are larger.
+
+Brett reports all Galaxy S22 checks passed on both accounts:
+primary navigation, all More destinations, selected state, close button,
+outside-tap and Android Back dismissal, keyboard hide/restore behavior,
+and unsent chat draft preservation when switching screens.
+
+Host TypeScript and all 47 Node tests passed.
+Android release build and update installation succeeded. Public frontend
+settings were verified against the previous and rebuilt APK.
+Desktop browser and iOS acceptance were not performed for this increment.
+
+Accepted APK SHA256:
+ec5bd6eb23d43bb5b87362ea671427dd832da677248676118beba5f0a46c53d7
+
+Previous working APK and navigation source:
+/home/brett/lumen-android-builds/before-mobile-nav.8efx5wqu
+
+No backend changes, migration or web deployment.
+Local Supabase configuration and existing backups remain outside the commit.
+Further mobile polish, chat consolidation and iOS acceptance/push remain open.
+Memory relevance, skills and proposal work remain paused.
