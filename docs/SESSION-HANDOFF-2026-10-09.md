@@ -983,3 +983,39 @@ the test setup mismatch.
 Live phone acceptance, deployment and native builds remain pending.
 Configuration and backups remain preserved. No services were restarted.
 Memory relevance, skills and proposal work remain paused.
+
+<!-- android-preview-phone-acceptance-2026-10-10 -->
+## October 10, Phoenix — Android preview passed live phone acceptance
+
+User-supplied host evidence confirms the isolated Android release build
+completed successfully from cached-chat commit b1e1f34 with the native
+session-storage and foreground token-refresh changes overlaid.
+
+Build directory: /home/brett/lumen-android-builds/preview.ijhcJd
+APK: android/app/build/outputs/apk/release/app-release.apk
+Package: com.raialume.preview
+Label: Raialume Preview
+Architecture: arm64-v8a
+Minimum Android SDK: 24
+APK signature verification passed.
+APK SHA256: 36cff44d618fc6ff814bda0e705edcdf547fdce796214b666c3ec4faaca211ca
+
+ADB installation succeeded on Samsung SM-S901U (Galaxy S22).
+Brett reports all live phone acceptance checks passed:
+- Email/password sign-in and successful chat reply.
+- Session and chat history retained after closing and reopening.
+- Cached history and unsent draft retained during airplane-mode reopening.
+- Connectivity restoration and chat recovery.
+Brett reports smoother operation and easier navigation.
+
+Native auth candidate passed host TypeScript and all 18 Node tests.
+This is a private preview using the existing backend; production release,
+iOS testing and push notifications remain pending. Native voice and
+document attachments remain pending. No production services were deployed
+or restarted for this checkpoint.
+
+Next work: chat rename/archive/delete with cache invalidation, followed by
+personalized companion onboarding, mobile UI polish and push notifications.
+Chat consolidation semantics remain to be defined before implementation.
+Memory relevance, skills and proposal work remain paused.
+Configuration and backups remain preserved.

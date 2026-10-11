@@ -1,3 +1,4 @@
+import { AppState, Platform } from 'react-native';
 import { chatCache } from './chat-cache-storage';
 import { createContext, useContext, useEffect, useState, type ReactNode } from 'react';
 import type { Session } from '@supabase/supabase-js';
@@ -24,6 +25,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (active) { setSession(data.session); setError(err?.message || null); setLoading(false); }
     }).catch(() => { if (active) { setError('Could not load your session. Try signing in again.'); setLoading(false); } });
     return () => { active = false; subscription.unsubscribe(); };
+  }, []);
+  useEffect(() => {
+    if (Platform.OS === 'web') return;
+    const refresh = (state: string) => {
+      if (state === 'active') supabase.auth.startAutoRefresh();
+      else supabase.auth.stopAutoRefresh();
+    };
+    refresh(AppState.currentState);
+    const subscription = AppState.addEventListener('change', refresh);
+    return () => { subscription.remove(); supabase.auth.stopAutoRefresh(); };
   }, []);
   const userId = session?.user.id;
   useEffect(() => {
