@@ -1,5 +1,49 @@
 # Social sign-in with local Supabase
 
+<!-- consolidated-mobile-checkpoint-2026-10-11 -->
+
+## Current checkpoint — October 11, 2026 (America/Phoenix)
+
+Latest accepted application commit: `a5d184e`.
+Branch: `feat/lumen-take2-local`.
+Active checkout: `/home/brett/lumen-push` on `aiLumen-llm-video`.
+
+Android Galaxy S22 acceptance passed on the existing Lumen account and a
+second test account: chat/login keyboard positioning, companion reply
+playback, tap-to-start/tap-to-stop STT, transcript review before sending,
+five-minute native recording limit, leaving/background cancellation,
+and notification regression checks.
+
+Companion creation/customization and Android reminder push were also
+accepted earlier on both account flows. Push implementation is committed
+at `8522280`; mobile keyboard/voice implementation at `a5d184e`.
+
+Host validation: TypeScript and all 47 Node tests passed for mobile fixes.
+Earlier Android push host checkpoint: 459 backend tests, queue/ownership/
+permission checks and pip check passed. Backend tests were not rerun for
+the frontend-only mobile fixes. Assistant component regression checks and
+platform exports passed; final STT follow-up Android export passed.
+
+Chrome Google sign-in/sign-out passed twice after the local auth allowlist
+added `raialume-preview://login`. Running allowlist verified.
+API and push worker active; API/Ollama/database health reported OK.
+The redirect configuration remains a local, uncommitted setting.
+Firebase service-account credentials remain outside Git and the APK.
+
+Native STT uses Helios via the authenticated backend, mono AAC at 64 kbps,
+and a five-minute recording limit. Backend limits remain 10 MB per upload
+and 120 seconds for the upstream speech request. Web recording retains
+its existing one-minute limit.
+
+Pending: Firefox native Google-login verification, iOS device acceptance
+and iOS push. Broader mobile polish and chat consolidation remain open.
+Memory relevance, skills and proposal work remain paused.
+
+Hardware evidence: [AI infrastructure](AI-INFRASTRUCTURE.md).
+This checkpoint does not deploy the web frontend.
+Historical sections below retain their original scope and dates.
+
+
 The login screen discovers enabled providers from your own Supabase Auth service's public `/auth/v1/settings` endpoint, then offers Continue with Google/X and other supported configured providers (Apple, GitHub, Microsoft, Facebook). Email/password remains available. An unavailable provider is not advertised as a working option. No provider secrets enter the frontend, API responses, or repository.
 
 Social login signs up new users as well as signing in existing users. It still uses local Supabase user IDs and existing RLS. It does not migrate conversations to a cloud database. Google/X contact their identity services for authentication. Supabase may automatically link the same verified email to an existing account; a different email can create a separate account. For an existing companion, sign in with email first and use Account → Connect Google/X. Enable manual linking on the Auth server. Do not merge account rows or change owner IDs manually.
