@@ -1,12 +1,13 @@
 import { useState } from 'react';
-import { Modal, View, Text, TextInput, TouchableOpacity, ActivityIndicator } from 'react-native';
-import type { Conversation } from '@/types/database';
+import { Modal, View, Text, TextInput, TouchableOpacity, ActivityIndicator, ScrollView, KeyboardAvoidingView, Platform } from 'react-native';
+import type { Conversation, ChatCollection } from '@/types/database';
 import { useTheme } from '@/lib/theme-context';
 
-export type ChatChange = { title: string } | { is_active: boolean } | 'delete';
+export type ChatChange = { title: string } | { is_active: boolean } | { collection_id: string | null } | 'delete';
 
-export function ChatManagement({ chat, busy, error, onClose, onChange }: {
+export function ChatManagement({ chat, busy, error, onClose, onChange, collections = [] }: {
   chat: Conversation | null; busy: boolean; error: string | null;
+  collections?: ChatCollection[];
   onClose: () => void; onChange: (chat: Conversation, change: ChatChange) => Promise<void>;
 }) {
   const { colors } = useTheme();
@@ -20,8 +21,8 @@ export function ChatManagement({ chat, busy, error, onClose, onChange }: {
     </TouchableOpacity>
   );
   return <Modal visible transparent animationType="fade" onRequestClose={() => { if (!busy) onClose(); }}>
-    <View style={{ flex: 1, backgroundColor: '#0009', justifyContent: 'center', padding: 24 }}>
-      <View style={{ backgroundColor: colors.neutral[900], padding: 20, borderRadius: 16, gap: 8 }}>
+    <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1, backgroundColor: '#0009', justifyContent: 'center', padding: 24 }}>
+      <ScrollView keyboardShouldPersistTaps="handled" style={{ maxHeight: '90%', backgroundColor: colors.neutral[900], padding: 20, borderRadius: 16, gap: 8 }}>
         <Text accessibilityRole="header" style={{ color: colors.neutral[100], fontSize: 20 }}>
           {confirmDelete ? 'Delete this chat?' : 'Manage chat'}
         </Text>
@@ -42,12 +43,21 @@ export function ChatManagement({ chat, busy, error, onClose, onChange }: {
           {button(chat.is_active === false ? 'Restore chat' : 'Archive chat', () => {
             void onChange(chat, { is_active: chat.is_active === false });
           })}
+          <Text style={{ color: colors.neutral[200], marginTop: 8 }}>Collection</Text>
+          {button(`${!chat.collection_id ? '✓ ' : ''}Unfiled`, () => {
+            void onChange(chat, { collection_id: null });
+          })}
+          {collections.map(collection => <View key={collection.id}>
+            {button(`${chat.collection_id === collection.id ? '✓ ' : ''}${collection.name}`, () => {
+              void onChange(chat, { collection_id: collection.id });
+            })}
+          </View>)}
           {button('Delete chat…', () => setConfirmDelete(true), true)}
         </>}
         {busy && <ActivityIndicator color={colors.primary[300]} />}
         {error && <Text accessibilityRole="alert" style={{ color: '#ff8e8e' }}>{error}</Text>}
         {button('Cancel', onClose)}
-      </View>
-    </View>
+      </ScrollView>
+    </KeyboardAvoidingView>
   </Modal>;
 }

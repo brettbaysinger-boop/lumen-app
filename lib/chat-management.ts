@@ -17,7 +17,9 @@ export function reconcileChats(snapshot: ChatSnapshot, conversations: Conversati
   };
 }
 
-export function visibleChats(conversations: Conversation[], archived: boolean, query: string): Conversation[] {
+export function visibleChats(conversations: Conversation[], archived: boolean, query: string, collection: string | null = null): Conversation[] {
   const term = query.trim().toLocaleLowerCase();
-  return conversations.filter(row => (row.is_active === false) === archived && row.title.toLocaleLowerCase().includes(term));
+  return conversations.filter(row => (row.is_active === false) === archived && row.title.toLocaleLowerCase().includes(term) &&
+    (collection === null || (collection === 'unfiled'
+      ? !row.collection_id : row.collection_id === collection)));
 }

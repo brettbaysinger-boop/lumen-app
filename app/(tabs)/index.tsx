@@ -1,5 +1,6 @@
 import { useKeyboardVisible } from '@/hooks/useKeyboardVisible';
 import { playReply } from '@/lib/reply-audio';
+import { CollectionManager } from '@/components/CollectionManager';
 import { ChatManagement, type ChatChange } from '@/components/ChatManagement';
 import { chatTitle, reconcileChats, visibleChats } from '@/lib/chat-management';
 import { chatRead } from '@/lib/chat-read';
@@ -62,7 +63,7 @@ import { useTheme } from '@/lib/theme-context';
 import { Spacing, Radius, Typography, type ExtendedThemeColors } from '@/lib/theme';
 import { StateGlow } from '@/components/StateGlow';
 import { useCompanionState, getMoodFromState } from '@/hooks/useCompanionState';
-import type { Companion, Conversation, Message } from '@/types/database';
+import type { Companion, Conversation, Message, ChatCollection } from '@/types/database';
 
 export default function ChatScreen() {
   const { colors } = useTheme();
@@ -109,6 +110,9 @@ export default function ChatScreen() {
   const [managementError, setManagementError] = useState<string | null>(null);
   const [showArchived, setShowArchived] = useState(false);
   const [chatSearch, setChatSearch] = useState('');
+  const [collections, setCollections] = useState<ChatCollection[]>([]);
+  const [collectionFilter, setCollectionFilter] = useState<string | null>(null);
+  const [showCollections, setShowCollections] = useState(false);
   const [syncStatus, setSyncStatus] = useState<'refreshing' | 'current' | 'cached'>('refreshing');
   const persistCache = useCallback(() => {
     const userId = accountRef.current;
@@ -271,15 +275,25 @@ export default function ChatScreen() {
   const loadConversations = useCallback(async (companionId: string, userId: string) => {
     if (managementBusyRef.current) return;
     const version = ++conversationVersion.current;
-    const { data, error: err } = await chatRead(signal => supabase.from('conversations').select('*')
-      .eq('companion_id', companionId).order('last_message_at', { ascending: false }).abortSignal(signal));
+    const [chatResult, collectionResult] = await Promise.all([
+      chatRead(signal => supabase.from('conversations').select('*')
+        .eq('companion_id', companionId).order('last_message_at', { ascending: false }).abortSignal(signal)),
+      chatRead(signal => supabase.from('chat_collections').select('*')
+        .eq('companion_id', companionId).order('name').abortSignal(signal)),
+    ]);
+    const { data, error: err } = chatResult;
     if (accountRef.current !== userId || version !== conversationVersion.current || managementBusyRef.current) return;
     if (err) throw err;
+    if (collectionResult.error) throw collectionResult.error;
+    const collectionRows = (collectionResult.data || []) as ChatCollection[];
+    setCollections(collectionRows);
+    setCollectionFilter(previous => previous === 'unfiled' ||
+      collectionRows.some(c => c.id === previous) ? previous : null);
     const rows = (data || []) as Conversation[];
     setConversations(rows);
     setActiveConversation(previous => rows.find(c => c.id === previous?.id && c.is_active !== false) ?? rows.find(c => c.is_active !== false) ?? null);
     if (cacheRef.current?.companion.id === companionId) {
-      cacheRef.current = reconcileChats(cacheRef.current, rows);
+      cacheRef.current = { ...reconcileChats(cacheRef.current, rows), collections: collectionRows };
       persistCache();
     }
   }, [persistCache]);
@@ -347,6 +361,7 @@ export default function ChatScreen() {
           cacheRef.current = cached;
           setCompanion(cached.companion);
           setConversations(cached.conversations);
+          setCollections(cached.collections ?? []);
           setActiveConversation(cached.conversations.find(c => c.is_active !== false) ?? null);
           setLoading(false);
         }
@@ -465,7 +480,10 @@ export default function ChatScreen() {
         return rows.find(c => c.id === chat.id && c.is_active !== false) ?? rows.find(c => c.is_active !== false) ?? null;
       });
       if (cacheRef.current) {
-        cacheRef.current = reconcileChats(cacheRef.current, rows);
+        cacheRef.current = reconcileChats(
+        cacheRef.current,
+        rows,
+      );
         try { await chatCache.write(userId, cacheRef.current); }
         catch { setError('Chat updated on the server, but device storage failed. Reconnect before relying on saved chats.'); }
       }
@@ -768,6 +786,23 @@ export default function ChatScreen() {
               <Plus color={colors.primary[400]} size={20} strokeWidth={2} />
               <Text style={styles.newChatText}>New Conversation</Text>
             </TouchableOpacity>
+            <View style={{ paddingHorizontal: 12, gap: 8 }}>
+              <TouchableOpacity accessibilityRole="button"
+                disabled={sending || voiceBusy || managementBusy || documentBusy}
+                onPress={() => setShowCollections(true)} style={{ minHeight: 48, justifyContent: 'center' }}>
+                <Text style={{ color: colors.primary[300] }}>Manage collections</Text>
+              </TouchableOpacity>
+              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+                {[{ id: null, name: 'All chats' }, { id: 'unfiled', name: 'Unfiled' }, ...collections].map(item =>
+                  <TouchableOpacity key={item.id ?? 'all'} accessibilityRole="button"
+                    accessibilityState={{ selected: collectionFilter === item.id }}
+                    onPress={() => setCollectionFilter(item.id)}
+                    style={{ minHeight: 44, justifyContent: 'center', padding: 10, borderRadius: 10,
+                      backgroundColor: collectionFilter === item.id ? colors.neutral[700] : colors.neutral[900] }}>
+                    <Text style={{ color: colors.neutral[100] }}>{item.name}</Text>
+                  </TouchableOpacity>)}
+              </View>
+            </View>
             <TextInput accessibilityLabel="Search chat names" placeholder="Search chat names"
               placeholderTextColor={colors.neutral[400]} value={chatSearch} onChangeText={setChatSearch}
               style={{ color: colors.neutral[100], minHeight: 48, padding: 12 }} />
@@ -776,7 +811,7 @@ export default function ChatScreen() {
               <Text style={{ color: colors.primary[300] }}>{showArchived ? 'Show current chats' : 'Show archived chats'}</Text>
             </TouchableOpacity>
             <FlatList
-              data={visibleChats(conversations, showArchived, chatSearch)}
+              data={visibleChats(conversations, showArchived, chatSearch, collectionFilter)}
               keyExtractor={(item) => item.id}
               renderItem={({ item }) => (
                 <TouchableOpacity
@@ -819,7 +854,19 @@ export default function ChatScreen() {
         </TouchableOpacity>
       )}
 
-      <ChatManagement key={managedChat?.id ?? 'closed'} chat={managedChat} busy={managementBusy}
+      {companion && <CollectionManager key={`${session?.user.id}:${companion.id}`}
+        visible={showCollections} companionId={companion.id} collections={collections}
+        disabled={sending || voiceBusy || managementBusy || documentBusy}
+        onClose={() => setShowCollections(false)}
+        onBusy={busy => {
+          managementBusyRef.current = busy; setManagementBusy(busy);
+          conversationVersion.current++; requestVersion.current++;
+        }}
+        onRefresh={async () => {
+          managementBusyRef.current = false;
+          await loadConversations(companion.id, session!.user.id);
+        }} />}
+      <ChatManagement collections={collections} key={managedChat?.id ?? 'closed'} chat={managedChat} busy={managementBusy}
         error={managementError} onClose={() => { if (!managementBusyRef.current) setManagedChat(null); }} onChange={changeChat} />
       <ConversationList
         ref={flatListRef}

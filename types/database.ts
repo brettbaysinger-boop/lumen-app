@@ -29,7 +29,15 @@ export interface Companion {
   updated_at: string;
 }
 
+export interface ChatCollection {
+  id: string;
+  companion_id: string;
+  name: string;
+  created_at: string;
+}
+
 export interface Conversation {
+  collection_id?: string | null;
   goal_item_id?: string | null;
   id: string;
   companion_id: string;

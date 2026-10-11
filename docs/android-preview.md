@@ -175,3 +175,46 @@ No backend changes, migration or web deployment.
 Local Supabase configuration and existing backups remain outside the commit.
 Further mobile polish, chat consolidation and iOS acceptance/push remain open.
 Memory relevance, skills and proposal work remain paused.
+
+<!-- chat-collections-accepted-2026-10-11 -->
+
+## October 11, Phoenix — Chat collections accepted
+
+Collections organize chats per companion. Users can create, rename and delete
+collections, move chats between collections or Unfiled, and filter history
+alongside name search and archive status. Collection names and assignments
+are included in the existing owner-private, bounded chat cache.
+
+Brett reports all requested Galaxy S22 acceptance checks passed on both
+accounts: creation, blank/duplicate rejection, assignment and removal,
+collection/search/archive filtering, rename/reopen persistence, deletion
+cancellation and confirmation preserving chats/messages/drafts, cached offline
+browsing and reconnection, and account isolation.
+
+Host TypeScript and all 47 existing Node tests passed. Dedicated PGlite SQL
+checks passed for ownership, companion scope, name validation, rename,
+collection deletion preserving chats, and anonymous denial.
+These are synthetic SQL checks; exhaustive live database security testing
+and multi-device reconciliation acceptance are not established.
+
+Migration 20261011230500_chat_collections applied locally.
+Live inspection confirmed RLS and the companion-scoped composite foreign key
+with ON DELETE SET NULL (collection_id). Existing chats were initially Unfiled.
+Database backup:
+/home/brett/lumen-db-backups/chat-collections.Yso4T4
+
+Android release build and ADB update installation succeeded.
+Public frontend settings verified against previous and rebuilt APK.
+Accepted APK SHA256:
+8678e74cc0eb0f918d00d1e4463eab60cb75b97bf89a719f1eba77f3eee63291
+Previous APK/source backup:
+/home/brett/lumen-android-builds/before-collections.88djfagi
+
+Collections supply organization, not cross-chat model context.
+Next: select source chats, generate an editable handoff, review it, and start
+a fresh chat with source links. Original transcripts remain available.
+Reviewed handoffs and transcript consolidation are not implemented yet.
+
+No backend code change or web deployment. Desktop and iOS acceptance pending.
+Local Supabase configuration and existing backups remain outside this commit.
+Memory relevance, skills and proposal work remain paused.

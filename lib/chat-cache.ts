@@ -1,6 +1,7 @@
-import type { Companion, Conversation, Message } from '../types/database';
+import type { Companion, Conversation, Message, ChatCollection } from '../types/database';
 
 export interface ChatSnapshot {
+  collections?: ChatCollection[];
   companion: Companion;
   conversations: Conversation[];
   messages: Record<string, Message[]>;
@@ -40,6 +41,11 @@ export class ChatCache {
         if (!data?.companion || data.companion.owner_user_id !== userId ||
             !Array.isArray(data.conversations) || !data.messages || !data.drafts) return null;
         const id = data.companion.id;
+        if (data.collections !== undefined && (
+          !Array.isArray(data.collections) ||
+          data.collections.some(c => c.companion_id !== id ||
+            typeof c.id !== 'string' || typeof c.name !== 'string')
+        )) return null;
         if (data.conversations.some(c => c.companion_id !== id)) return null;
         for (const [conversationId, rows] of Object.entries(data.messages)) {
           if (!data.conversations.some(c => c.id === conversationId) || !Array.isArray(rows) ||
