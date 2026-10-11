@@ -1,3 +1,4 @@
+import { chatCache } from './chat-cache-storage';
 import { createContext, useContext, useEffect, useState, type ReactNode } from 'react';
 import type { Session } from '@supabase/supabase-js';
 import { supabase } from './supabase';
@@ -14,7 +15,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [attempt, setAttempt] = useState(0);
   useEffect(() => {
     let active = true;
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, next) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, next) => {
+      if (next && (event === 'SIGNED_IN' || event === 'INITIAL_SESSION')) chatCache.activate(next.user.id);
+      if (event === 'SIGNED_OUT') void chatCache.clearAll().catch(() => {});
       if (active) { setSession(next); setLoading(false); }
     });
     supabase.auth.getSession().then(({ data, error: err }) => {
@@ -28,9 +31,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setReadyUserId(null);
     setError(null);
     if (!userId) return;
-    Promise.resolve(supabase.rpc('ensure_my_companion', { display_name: session?.user.user_metadata?.display_name || session?.user.user_metadata?.full_name || session?.user.user_metadata?.name || 'User' }))
-      .then(({ error: err }) => { if (active) { setError(err?.message || null); setReadyUserId(err ? null : userId); } })
-      .catch(() => { if (active) setError('Could not set up your companion. Retry when the connection is restored.'); });
+    void (async () => {
+      const cached = await chatCache.read(userId);
+      if (!active) return;
+      if (cached) setReadyUserId(userId);
+      try {
+        const { error: err } = await supabase.rpc('ensure_my_companion', { display_name: session?.user.user_metadata?.display_name || session?.user.user_metadata?.full_name || session?.user.user_metadata?.name || 'User' });
+        if (!active) return;
+        if (!err) setReadyUserId(userId);
+        else if (!cached) setError(err.message);
+      } catch {
+        if (active && !cached) setError('Could not set up your companion. Retry when the connection is restored.');
+      }
+    })();
     return () => { active = false; };
   }, [userId, attempt]);
   return <AuthContext.Provider value={{ session, loading: loading || (!!session && readyUserId !== userId && !error), error, retry: () => setAttempt(v => v + 1) }}>

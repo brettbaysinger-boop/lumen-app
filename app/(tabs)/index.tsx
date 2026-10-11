@@ -1,3 +1,6 @@
+import { chatRead } from '@/lib/chat-read';
+import { chatCache } from '@/lib/chat-cache-storage';
+import type { ChatSnapshot } from '@/lib/chat-cache';
 import { MemoryCorrectionCard } from '@/components/MemoryCorrectionCard';
 import { shouldSendOnEnter } from '@/lib/chat-input';
 import { ModelPicker } from '@/components/ModelPicker';
@@ -12,6 +15,7 @@ import {
   Platform,
   StyleSheet,
   ActivityIndicator,
+  AppState,
   Keyboard,
   useWindowDimensions,
 } from 'react-native';
@@ -59,6 +63,7 @@ import type { Companion, Conversation, Message } from '@/types/database';
 export default function ChatScreen() {
   const { colors } = useTheme();
   const routeParams = useLocalSearchParams<{ conversation?: string; draft?: string; document?: string }>();
+  const routeDraftRef = useRef(routeParams.draft ?? null);
   const turnKey = useRef<{ text: string; id: string } | null>(null);
   const { width: screenWidth } = useWindowDimensions();
   const isMobile = screenWidth < 600;
@@ -70,7 +75,7 @@ export default function ChatScreen() {
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [activeConversation, setActiveConversation] = useState<Conversation | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
-  const [inputText, setInputText] = useState('');
+  const [inputText, setInputTextState] = useState('');
   const [effort, setEffort] = useState<'quick' | 'deep' | 'default'>('quick');
   const [pendingDocument, setPendingDocument] = useState<PrivateDocument | null>(null);
   const [documentBusy, setDocumentBusy] = useState(false);
@@ -87,6 +92,33 @@ export default function ChatScreen() {
   const [creatingImage, setCreatingImage] = useState(false);
   const [pendingImages, setPendingImages] = useState<PickedImage[]>([]);
   const { session } = useAuth();
+  const cacheRef = useRef<ChatSnapshot | null>(null);
+  const accountRef = useRef(session?.user.id);
+  accountRef.current = session?.user.id;
+  const activeIdRef = useRef<string | null>(null);
+  activeIdRef.current = activeConversation?.id ?? null;
+  const requestVersion = useRef(0);
+  const [syncStatus, setSyncStatus] = useState<'refreshing' | 'current' | 'cached'>('refreshing');
+  const persistCache = useCallback(() => {
+    const userId = accountRef.current;
+    if (userId && cacheRef.current) {
+      void chatCache.write(userId, cacheRef.current).catch(() => {
+        if (accountRef.current === userId) setError('Device storage is unavailable; recent chats and drafts may not survive closing the app.');
+      });
+    }
+  }, []);
+  const inputRef = useRef(inputText);
+  inputRef.current = inputText;
+  const setInputText = useCallback((value: string | ((previous: string) => string)) => {
+    const text = typeof value === 'function' ? value(inputRef.current) : value;
+    inputRef.current = text;
+    setInputTextState(text);
+    const snapshot = cacheRef.current;
+    if (snapshot) {
+      cacheRef.current = { ...snapshot, drafts: { ...snapshot.drafts, [activeIdRef.current ?? 'new']: text } };
+      persistCache();
+    }
+  }, [persistCache]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [showSidebar, setShowSidebar] = useState(false);
@@ -207,66 +239,118 @@ export default function ChatScreen() {
     }
   }, [playingId, companion?.id]);
 
-  const loadCompanion = useCallback(async () => {
-    const { data, error: err } = await supabase
-      .from('companions')
-      .select('*')
-      .order('created_at', { ascending: true })
-      .order('id', { ascending: true })
-      .limit(1)
-      .maybeSingle();
-    if (err) {
-      setError(err.message);
-      setLoading(false);
-      return;
+  const loadConversations = useCallback(async (companionId: string, userId: string) => {
+    const { data, error: err } = await chatRead(signal => supabase.from('conversations').select('*')
+      .eq('companion_id', companionId).order('last_message_at', { ascending: false }).abortSignal(signal));
+    if (accountRef.current !== userId) return;
+    if (err) throw err;
+    const rows = (data || []) as Conversation[];
+    setConversations(rows);
+    setActiveConversation(previous => rows.find(c => c.id === previous?.id) ?? rows[0] ?? null);
+    if (cacheRef.current?.companion.id === companionId) {
+      cacheRef.current = { ...cacheRef.current, conversations: rows };
+      persistCache();
     }
-    if (data) {
-      setCompanion(data as Companion);
-      await loadConversations(data.id);
-    }
-    setLoading(false);
-  }, []);
+  }, [persistCache]);
 
-  const loadConversations = useCallback(async (companionId: string) => {
-    const { data, error: err } = await supabase
-      .from('conversations')
-      .select('*')
-      .eq('companion_id', companionId)
-      .order('last_message_at', { ascending: false });
-    if (err) {
-      setError(err.message);
-      return;
-    }
-    if (data) {
-      setConversations(data as Conversation[]);
-      if (data.length > 0 && !activeConversation) {
-        setActiveConversation(data[0] as Conversation);
+  const loadCompanion = useCallback(async () => {
+    const userId = accountRef.current;
+    if (!userId) return;
+    setSyncStatus('refreshing');
+    try {
+      const { data, error: err } = await chatRead(signal => supabase.from('companions').select('*')
+        .order('created_at', { ascending: true }).order('id', { ascending: true }).limit(1).abortSignal(signal).maybeSingle());
+      if (accountRef.current !== userId) return;
+      if (err) throw err;
+      if (!data) throw new Error('No companion found.');
+      setCompanion(data as Companion);
+      const old = cacheRef.current;
+      cacheRef.current = old && old.companion.id === data.id ? { ...old, companion: data as Companion } : {
+        companion: data as Companion, conversations: [], messages: {}, drafts: {}, savedAt: '',
+      };
+      await loadConversations(data.id, userId);
+      if (accountRef.current === userId) { setSyncStatus('current'); setError(null); }
+    } catch (err) {
+      if (accountRef.current === userId) {
+        setSyncStatus('cached');
+        setError(err instanceof Error ? err.message : 'Connection unavailable. Your saved chats are still available.');
       }
-    }
-  }, []);
+    } finally { if (accountRef.current === userId) setLoading(false); }
+  }, [loadConversations]);
 
   const loadMessages = useCallback(async (conversationId: string) => {
-    const { data, error: err } = await supabase
-      .from('messages')
-      .select('*')
-      .eq('conversation_id', conversationId)
-      .order('created_at', { ascending: true });
-    if (err) {
-      setError(err.message);
-      return;
+    const userId = accountRef.current;
+    const version = ++requestVersion.current;
+    try {
+      const { data, error: err } = await chatRead(signal => supabase.from('messages').select('*')
+        .eq('conversation_id', conversationId).order('created_at', { ascending: true }).abortSignal(signal));
+      if (accountRef.current !== userId || version !== requestVersion.current ||
+          activeIdRef.current !== conversationId) return;
+      if (err) throw err;
+      const rows = (data || []) as Message[];
+      setMessages(rows);
+      if (cacheRef.current) {
+        cacheRef.current = { ...cacheRef.current, messages: { ...cacheRef.current.messages, [conversationId]: rows } };
+        persistCache();
+      }
+      setSyncStatus('current');
+    } catch (err) {
+      if (accountRef.current === userId && version === requestVersion.current) {
+        setSyncStatus('cached');
+        setError(err instanceof Error ? err.message : 'Could not refresh messages.');
+      }
     }
-    setMessages((data as Message[]) || []);
-  }, []);
+  }, [persistCache]);
 
-  useFocusEffect(useCallback(() => { void loadCompanion(); return () => { playbackRef.current?.abort(); }; }, [loadCompanion]));
+  useFocusEffect(useCallback(() => {
+    let active = true;
+    const userId = session?.user.id;
+    if (!userId) return;
+    void (async () => {
+      if (!cacheRef.current) {
+        const cached = await chatCache.read(userId);
+        if (!active || accountRef.current !== userId) return;
+        if (cached) {
+          cacheRef.current = cached;
+          setCompanion(cached.companion);
+          setConversations(cached.conversations);
+          setActiveConversation(cached.conversations[0] ?? null);
+          setLoading(false);
+        }
+      }
+      if (active) void loadCompanion();
+    })();
+    return () => { active = false; playbackRef.current?.abort(); };
+  }, [session?.user.id, loadCompanion]));
 
   useEffect(() => {
-    if (activeConversation) {
-      loadMessages(activeConversation.id);
-    } else {
-      setMessages([]);
+    requestVersion.current++;
+    const id = activeConversation?.id;
+    setMessages(id ? cacheRef.current?.messages[id] ?? [] : []);
+    const draft = routeDraftRef.current ?? cacheRef.current?.drafts[id ?? 'new'] ?? '';
+    setInputTextState(draft);
+    if (routeDraftRef.current && cacheRef.current) {
+      cacheRef.current = { ...cacheRef.current, drafts: { ...cacheRef.current.drafts, [id ?? 'new']: draft } };
+      routeDraftRef.current = null;
+      persistCache();
     }
-  }, [activeConversation, loadMessages]);
+    if (id) void loadMessages(id);
+  }, [activeConversation?.id, loadMessages]);
+
+  useEffect(() => {
+    const refresh = () => {
+      if (sendBusyRef.current) return;
+      void loadCompanion().then(() => {
+        if (activeIdRef.current) void loadMessages(activeIdRef.current);
+      });
+    };
+    const subscription = AppState.addEventListener('change', state => { if (state === 'active') refresh(); });
+    if (Platform.OS === 'web') window.addEventListener('online', refresh);
+    return () => {
+      subscription.remove();
+      if (Platform.OS === 'web') window.removeEventListener('online', refresh);
+    };
+  }, [loadCompanion, loadMessages]);
 
   useEffect(() => {
     const target = conversations.find(item => item.id === routeParams.conversation);
@@ -274,6 +358,7 @@ export default function ChatScreen() {
   }, [routeParams.conversation, conversations, sending, voiceBusy]);
   useEffect(() => {
     if (routeParams.draft && !sending && !voiceBusy) {
+      routeDraftRef.current = cacheRef.current ? null : routeParams.draft.slice(0, 64000);
       setInputText(routeParams.draft.slice(0, 64000));
       if (!routeParams.document && /^Search my documents:/i.test(routeParams.draft)) setPendingDocument(null);
       router.setParams({ draft: '' });
@@ -313,6 +398,10 @@ export default function ChatScreen() {
     }
     const newConv = data as Conversation;
     setConversations((prev) => [newConv, ...prev]);
+    if (cacheRef.current) {
+      cacheRef.current = { ...cacheRef.current, conversations: [newConv, ...cacheRef.current.conversations] };
+      persistCache();
+    }
     setActiveConversation(newConv);
     setShowSidebar(false);
   }, [companion, sending, documentBusy]);
@@ -347,6 +436,7 @@ export default function ChatScreen() {
 
     sendBusyRef.current = true;
     memoryWindowRef.current = new Date().toISOString();
+    const draftKey = activeConversation?.id ?? 'new';
     const text = inputText.trim() || (pendingDocument ? 'Explain this document in plain language.' : '');
     setPendingQuestion(text);
     setLiveReply('');
@@ -361,7 +451,8 @@ export default function ChatScreen() {
       : null;
     const wantsImage = !document && !images.length &&
       (isImageRequest(text) || followupImagePrompt !== null);
-    setInputText('');
+    // Keep the persisted draft until the server confirms completion.
+    setInputTextState('');
     setPendingImages([]);
     setSending(true);
     setCreatingImage(wantsImage);
@@ -414,10 +505,19 @@ export default function ChatScreen() {
         setError(`Reply received, but conversation refresh failed: ${refreshError.message}`);
       } else {
         setConversations((data as Conversation[]) || []);
+        if (cacheRef.current) {
+          cacheRef.current = { ...cacheRef.current, conversations: (data as Conversation[]) || [] };
+          persistCache();
+        }
         const conversation = data?.find((item) => item.id === response.conversation_id);
         if (conversation) setActiveConversation(conversation as Conversation);
       }
       await loadMessages(response.conversation_id);
+      if (cacheRef.current) {
+        cacheRef.current = { ...cacheRef.current, drafts: { ...cacheRef.current.drafts, [draftKey]: '' } };
+        persistCache();
+      }
+      setInputTextState('');
       turnKey.current = null;
     } catch (err) {
       if (!handedToServer) await removeStoredFiles('chat-media', uploaded);
@@ -536,6 +636,7 @@ export default function ChatScreen() {
     return (
       <SafeAreaView style={styles.loadingContainer} edges={['top']}>
         <Text style={styles.errorText}>{error}</Text>
+        <TouchableOpacity accessibilityRole="button" onPress={() => void loadCompanion()}><Text style={{ color: colors.primary[300], padding: 16 }}>Retry connection</Text></TouchableOpacity>
       </SafeAreaView>
     );
   }
@@ -567,11 +668,16 @@ export default function ChatScreen() {
           </TouchableOpacity>
           <TouchableOpacity accessibilityRole="button" accessibilityLabel="Open goals and practice" disabled={sending || voiceBusy} onPress={()=>router.push({pathname:'/goals',params:{goal:activeConversation?.goal_item_id||''}})}><Text style={{color:colors.primary[300],fontSize:12}}>Practice</Text></TouchableOpacity>
           <Text style={styles.statusText}>
-            {sending ? 'Thinking…' : 'Conversation'}
+            {sending ? 'Thinking…' : syncStatus === 'current' ? 'Conversation' : syncStatus === 'refreshing' ? 'Refreshing…' : 'Saved on device'}
           </Text>
         </View>
       </View>
 
+      {syncStatus === 'cached' && <TouchableOpacity accessibilityRole="button" accessibilityLabel="Retry connection"
+        onPress={() => { void loadCompanion().then(() => { if (activeIdRef.current) void loadMessages(activeIdRef.current); }); }}
+        style={{ paddingHorizontal: 16, paddingVertical: 10 }}>
+        <Text style={{ color: colors.primary[300], fontSize: 12 }}>Connection unavailable · Showing saved chats · Tap to retry</Text>
+      </TouchableOpacity>}
       {showSidebar && (
         <TouchableOpacity
           style={styles.overlay}

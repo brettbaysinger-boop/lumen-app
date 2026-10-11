@@ -1125,3 +1125,47 @@ not authorize assuming host access or treating GitHub as local-state evidence.
 The user intends to work on another app aspect in the next conversation.
 Preserve supabase/config.toml changes and existing source/configuration backups.
 No reset, clean, broad staging or automatic deployment.
+
+<!-- mobile-chat-cache-candidate-2026-10-10 -->
+## October 10, Phoenix — Android-first mobile testing and cached-chat candidate
+
+User-supplied host output verifies aiLumen-llm-video, /home/brett/lumen-push,
+feat/lumen-take2-local at d71fce9, with local origin tracking synchronized 0/0.
+Existing supabase/config.toml edit and three source/configuration backups remain.
+Domains are reported purchased; a VPS is planned but not provisioned or specified.
+
+Agreed direction: cached chat and connection recovery, Android preview, personal
+companion onboarding/mobile navigation refresh, reliable jobs and push, then iPhone.
+This candidate adds bounded owner-private cached chats, per-conversation text
+drafts, retry/foreground refresh and stale-response guards. Cached existing users
+can pass companion setup without waiting for the backend; local session availability
+is still required. Sign-out clears private cache and blocks late writes.
+
+Local validation: 17 Node tests, TypeScript, web export and synthetic React
+component runtime checks pass. Chromium is unavailable and its download failed;
+390px browser script is included but unexecuted. Host validation, deployment,
+real browser acceptance and native builds remain pending. No automatic send queue,
+background job, push, onboarding or navigation redesign is claimed.
+No schema, backend, model/provider/voice configuration or backup changes.
+Memory relevance, skills and proposal work remain paused.
+See docs/mobile-testing.md for bounds, remaining work and acceptance checks.
+
+Additional user scope at 22:35 Phoenix: end-user chat rename, deletion and
+consolidation/organization. Record these for the next chat increment, including
+archive/search and clear deletion/cache/derived-memory behavior. Controls are
+not implemented in this cached-chat candidate; transcript merging remains undecided.
+
+<!-- mobile-cache-host-validation-2026-10-10 -->
+## October 10, Phoenix — Cached-chat host validation passed
+
+User-supplied host evidence confirms guarded patch application, clean
+whitespace checks, TypeScript and all 17 Node tests passing.
+A clean temporary export passed synthetic endpoint checks and the
+390px browser test: cached chats, separate drafts, backend-unavailable
+reload and reconnect retry. The earlier timeout used an export containing
+the real authentication URL; clearing Metro and disabling dotenv resolved
+the test setup mismatch.
+
+Live phone acceptance, deployment and native builds remain pending.
+Configuration and backups remain preserved. No services were restarted.
+Memory relevance, skills and proposal work remain paused.
