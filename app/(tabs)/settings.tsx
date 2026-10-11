@@ -1,3 +1,4 @@
+import { NotificationControls } from '@/components/NotificationControls';
 import { router } from 'expo-router';
 import { SocialSignIn } from '@/components/SocialSignIn';
 import { ProviderRoutes } from '@/components/ProviderRoutes';
@@ -110,6 +111,8 @@ export default function SettingsScreen() {
           <SettingsIcon color={c.primary[400]} size={24} strokeWidth={2} />
           <Text style={styles.headerTitle}>Settings</Text>
         </View>
+
+        <NotificationControls />
 
         <View style={styles.section}>
           <View style={styles.sectionHeaderRow}>

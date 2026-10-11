@@ -1,3 +1,4 @@
+import { PushLifecycle } from '@/components/PushLifecycle';
 import { useEffect } from 'react';
 import { Stack, router, usePathname } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
@@ -25,6 +26,7 @@ function AppContent() {
   }, [session?.user.id, loading, error, setupCompanionId, pathname]);
   return (
     <>
+      <PushLifecycle />
       <Stack screenOptions={{ headerShown: false }}>
         <Stack.Screen name="+not-found" />
       </Stack>

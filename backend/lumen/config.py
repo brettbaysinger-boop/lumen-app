@@ -25,6 +25,8 @@ class Settings(BaseSettings):
     memory_observations_enabled: bool = True
     memory_observation_model: str = ""
     embedding_model: str = "nomic-embed-text"
+    push_enabled: bool = False
+    firebase_service_account_file: str = ""
     speech_url: str = ""
     transcription_model: str = "Systran/faster-distil-whisper-small.en"
     speech_model: str = "speaches-ai/Kokoro-82M-v1.0-ONNX"

@@ -1269,3 +1269,45 @@ No new database migration was required.
 Configuration, database backups and prior preview APK preserved.
 Memory relevance, skills and proposal work remain paused.
 Push notifications, further mobile UI polish and iOS testing remain pending.
+
+<!-- android-push-accepted-2026-10-11 -->
+## October 11, Phoenix — Android push notifications accepted
+
+Host TypeScript, all 36 Node tests and all 459 backend tests passed.
+Queue tests passed. Both push migrations were applied locally:
+20261011150000_android_push.sql
+20261011160000_push_rpc_permissions.sql
+
+Host validation caught Supabase default function grants exposing worker
+claims to authenticated users. The corrective migration explicitly revoked
+API-role access and regranted only the intended functions. Actual database
+ownership and permission tests then passed with fixtures rolled back.
+Backend dependencies installed; pip check passed.
+
+API and lumen-push.service reported active; API/Ollama/database health OK.
+Worker enabled for startup. Existing environment files preserved; push
+configuration uses /home/brett/.config/raialume/push.env and an API drop-in.
+Firebase service-account key remains outside Git and the APK.
+
+Android build and ADB installation succeeded.
+APK SHA256:
+5b5429b9e7aabdc98f8d874e8aedfcb12e5bfd3b6451cd1b9a542d8b32aff2d6
+Native build/APK backup:
+/home/brett/lumen-android-builds/before-push.pmv2Zk
+Database correction backup:
+/home/brett/lumen-db-backups/push-permissions.4NDBrD
+
+Brett reports all phone acceptance checks passed on the existing Lumen
+account and a newly created account: live notifications, tap-to-My-Day,
+background reminders, cancellation/deletion before due, disable/re-enable,
+sign-out and account switching.
+
+Direct FCM delivery uses generic notification text; reminder details remain
+on the local backend. Offline sign-out revocation is best effort, and
+already queued notifications cannot be recalled. Delivery is not guaranteed
+exactly once. See docs/android-push.md for behavior and limitations.
+
+Supabase configuration and existing backups preserved.
+No web deployment or Git push performed in this checkpoint.
+Memory relevance, skills and proposal work remain paused.
+Further mobile UI polish, iOS testing and iOS push remain pending.

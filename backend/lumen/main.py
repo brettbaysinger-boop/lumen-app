@@ -31,6 +31,7 @@ from .images import (
     create_image_provider,
 )
 from .portrait_creation import router as portrait_router
+from .push import router as push_router
 from .voice import router as voice_router
 from .my_day import router as my_day_router
 from .support import router as support_router
@@ -47,6 +48,7 @@ settings = get_settings()
 runtime = CognitionRuntime(settings)
 
 app = FastAPI(title="Lumen Cognition API", version="0.1.0")
+app.include_router(push_router)
 app.include_router(voice_router)
 app.include_router(portrait_router)
 app.include_router(my_day_router)

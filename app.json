@@ -32,7 +32,8 @@
           "cameraPermission": "Allow Raialume to use your camera when you choose to take a photo.",
           "recordAudioAndroid": false
         }
-      ]
+      ],
+      "expo-notifications"
     ],
     "experiments": {
       "typedRoutes": true

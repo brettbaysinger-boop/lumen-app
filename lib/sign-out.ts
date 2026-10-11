@@ -1,7 +1,9 @@
+import { revokePushBeforeSignOut } from './push-client';
 import { chatCache } from './chat-cache-storage';
 import { supabase } from './supabase';
 
 export async function signOutThisBrowser(): Promise<void> {
+  await revokePushBeforeSignOut();
   await chatCache.clearAll();
   // A rejected refresh can prevent the SDK from reaching its normal cleanup.
   // Stop refresh first; hard navigation also discards any pending SDK request.
