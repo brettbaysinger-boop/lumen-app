@@ -1042,3 +1042,24 @@ No production service deployment or restart performed.
 Configuration and backups preserved.
 Memory relevance, skills and proposal work remain paused.
 Next: personalized companion onboarding, mobile UI polish and push.
+
+<!-- companion-creation-accepted-2026-10-11 -->
+## October 11, Phoenix — Guided companion creation accepted
+
+Host TypeScript, 24 Node tests and all 447 backend tests passed.
+Migration 20261011080000 applied locally; existing companion fields
+were verified unchanged. Ownership, validation and atomic identity
+tests passed with fixtures rolled back.
+Database backup: /home/brett/lumen-db-backups/companion-creation.8zFfGZ
+
+Android preview build and installation succeeded.
+APK SHA256: a095946d3065766d0b1e51280e2c392782e206860134614ba6342db19641430b
+Brett reports all phone tests passed, including first-time creation
+on a new account.
+
+Requested next: name suggestions, remove pronoun field from setup,
+romantic personality, appearance builder, voice samples on Android,
+and generated companion portrait preview/regenerate/use flow.
+These enhancements are pending.
+Configuration and backups preserved.
+Memory relevance, skills and proposal work remain paused.

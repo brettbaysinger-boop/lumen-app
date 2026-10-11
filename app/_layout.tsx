@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import { Stack } from 'expo-router';
+import { Stack, router, usePathname } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import * as SplashScreen from 'expo-splash-screen';
 import {
@@ -9,7 +9,7 @@ import {
   Inter_600SemiBold,
   Inter_700Bold,
 } from '@expo-google-fonts/inter';
-import { AuthProvider } from '@/lib/auth';
+import { useAuth, AuthProvider } from '@/lib/auth';
 import { ThemeProvider, useTheme } from '@/lib/theme-context';
 import { useFrameworkReady } from '@/hooks/useFrameworkReady';
 
@@ -17,6 +17,12 @@ SplashScreen.preventAutoHideAsync();
 
 function AppContent() {
   const { mode } = useTheme();
+  const { session, loading, error, setupCompanionId } = useAuth();
+  const pathname = usePathname();
+  useEffect(() => {
+    if (session && !loading && !error && setupCompanionId && pathname !== '/companion-setup')
+      router.replace('/companion-setup');
+  }, [session?.user.id, loading, error, setupCompanionId, pathname]);
   return (
     <>
       <Stack screenOptions={{ headerShown: false }}>

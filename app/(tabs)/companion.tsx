@@ -6,6 +6,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import {
   Sparkles, Target, Heart, BookOpen, AlertCircle, Zap, Eye, Pencil, X, TrendingUp, Upload,
 } from 'lucide-react-native';
+import { router } from 'expo-router';
 import { useAuth } from '@/lib/auth';
 import {
   BUILT_IN_PORTRAITS, DEFAULT_PORTRAIT, deleteUploadedPortrait, pickAndUploadPortrait,
@@ -144,6 +145,11 @@ export default function CompanionScreen() {
           <Text style={styles.companionDescription}>{companion?.description || 'Your personal AI companion'}</Text>
         </View>
 
+        <TouchableOpacity accessibilityRole="button" accessibilityLabel="Customize companion"
+          onPress={() => router.push({ pathname: '/companion-setup', params: { edit: '1' } })}
+          style={[styles.section, { minHeight: 52, alignItems: 'center' }]}>
+          <Text style={styles.sectionAction}>Customize your companion</Text>
+        </TouchableOpacity>
         <View style={styles.section}>
           <View style={styles.sectionHeader}>
             <Text style={styles.sectionTitle}>Persona</Text>

@@ -427,6 +427,7 @@ do not invent them just to agree with the user.
 Identity:
 {companion.get('description') or ''}
 Gender identity: {companion.get('gender') or 'unspecified'}
+Pronouns: {companion.get('pronouns') or 'not specified'}
 Appearance: {companion.get('visual_identity') or 'not specified'}
 
 Persona:

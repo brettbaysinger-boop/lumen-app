@@ -1,11 +1,12 @@
 import { AppState, Platform } from 'react-native';
+import { chatRead } from './chat-read';
 import { chatCache } from './chat-cache-storage';
 import { createContext, useContext, useEffect, useState, type ReactNode } from 'react';
 import type { Session } from '@supabase/supabase-js';
 import { supabase } from './supabase';
 
-const AuthContext = createContext<{ session: Session | null; loading: boolean; error: string | null; retry: () => void }>({
-  session: null, loading: true, error: null, retry: () => {},
+const AuthContext = createContext<{ session: Session | null; loading: boolean; error: string | null; retry: () => void; setupCompanionId: string | null }>({
+  session: null, loading: true, error: null, retry: () => {}, setupCompanionId: null,
 });
 
 export function AuthProvider({ children }: { children: ReactNode }) {
@@ -13,6 +14,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
   const [readyUserId, setReadyUserId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [setup, setSetup] = useState<{ userId: string; companionId: string } | null>(null);
   const [attempt, setAttempt] = useState(0);
   useEffect(() => {
     let active = true;
@@ -40,24 +42,33 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     let active = true;
     setReadyUserId(null);
+    setSetup(null);
     setError(null);
     if (!userId) return;
     void (async () => {
       const cached = await chatCache.read(userId);
       if (!active) return;
-      if (cached) setReadyUserId(userId);
+      if (cached) {
+        setReadyUserId(userId);
+        if (cached.companion.setup_completed_at === null) setSetup({ userId, companionId: cached.companion.id });
+      }
       try {
-        const { error: err } = await supabase.rpc('ensure_my_companion', { display_name: session?.user.user_metadata?.display_name || session?.user.user_metadata?.full_name || session?.user.user_metadata?.name || 'User' });
+        const { data: companionId, error: err } = await supabase.rpc('ensure_my_companion', { display_name: session?.user.user_metadata?.display_name || session?.user.user_metadata?.full_name || session?.user.user_metadata?.name || 'User' });
         if (!active) return;
-        if (!err) setReadyUserId(userId);
-        else if (!cached) setError(err.message);
+        if (err) { if (!cached) setError(err.message); return; }
+        const { data: companion, error: lookupError } = await chatRead(signal => supabase.from('companions')
+          .select('id,setup_completed_at').eq('id', companionId).eq('owner_user_id', userId).abortSignal(signal).single());
+        if (!active) return;
+        if (lookupError || !companion) { if (!cached) setError(lookupError?.message || 'Companion unavailable.'); return; }
+        setSetup(companion.setup_completed_at === null ? { userId, companionId: companion.id } : null);
+        setReadyUserId(userId);
       } catch {
         if (active && !cached) setError('Could not set up your companion. Retry when the connection is restored.');
       }
     })();
     return () => { active = false; };
   }, [userId, attempt]);
-  return <AuthContext.Provider value={{ session, loading: loading || (!!session && readyUserId !== userId && !error), error, retry: () => setAttempt(v => v + 1) }}>
+  return <AuthContext.Provider value={{ session, loading: loading || (!!session && readyUserId !== userId && !error), error, setupCompanionId: setup && setup.userId === userId ? setup.companionId : null, retry: () => setAttempt(v => v + 1) }}>
     {children}
   </AuthContext.Provider>;
 }
