@@ -33,10 +33,20 @@
           "recordAudioAndroid": false
         }
       ],
-      "expo-notifications"
+      "expo-notifications",
+      [
+        "expo-audio",
+        {
+          "microphonePermission": "Allow Raialume to record your voice when you tap the microphone.",
+          "enableBackgroundRecording": false
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true
+    },
+    "android": {
+      "softwareKeyboardLayoutMode": "resize"
     }
   }
 }

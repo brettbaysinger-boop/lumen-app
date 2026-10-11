@@ -4,15 +4,17 @@ import { RaialumeLogo } from '@/components/RaialumeLogo';
 import { signOutThisBrowser } from '@/lib/sign-out';
 import { initialSocialError } from '@/lib/social-auth';
 import { useState } from 'react';
-import { View, Text, TextInput, TouchableOpacity, ActivityIndicator, ScrollView } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, ActivityIndicator, ScrollView, KeyboardAvoidingView, Platform } from 'react-native';
 import { Redirect, router } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth';
 import { useTheme } from '@/lib/theme-context';
+import { useKeyboardVisible } from '@/hooks/useKeyboardVisible';
 import { Radius } from '@/lib/theme';
 
 export default function Login() {
+  const keyboardVisible = useKeyboardVisible();
   const { colors: c } = useTheme();
   const { session, loading, error: setupError, retry } = useAuth();
   const [signup, setSignup] = useState(false);
@@ -40,18 +42,20 @@ export default function Login() {
     finally { setBusy(false); }
   };
   return <SafeAreaView style={{ flex: 1, backgroundColor: brand.background }}>
+    <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : Platform.OS === 'android' ? 'height' : undefined}>
     <ScrollView
       keyboardShouldPersistTaps="handled"
+      keyboardDismissMode="on-drag"
       contentContainerStyle={{
         flexGrow: 1,
-        justifyContent: 'center',
+        justifyContent: keyboardVisible ? 'flex-start' : 'center',
         alignItems: 'center',
         paddingHorizontal: 22,
-        paddingVertical: 44,
+        paddingVertical: keyboardVisible ? 12 : 44,
       }}
     >
       <View style={{ width: '100%', maxWidth: 440, alignItems: 'center' }}>
-        <View style={{ alignItems: 'center', gap: 8, marginBottom: 34 }}>
+        <View style={{ display: keyboardVisible ? 'none' : 'flex', alignItems: 'center', gap: 8, marginBottom: 34 }}>
           <RaialumeLogo width={174} height={109} />
           <Text style={{
             color: brand.ivory,
@@ -116,5 +120,6 @@ export default function Login() {
         </View>
       </View>
     </ScrollView>
+    </KeyboardAvoidingView>
   </SafeAreaView>;
 }

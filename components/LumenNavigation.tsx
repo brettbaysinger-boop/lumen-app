@@ -1,3 +1,4 @@
+import { useKeyboardVisible } from '@/hooks/useKeyboardVisible';
 import { View, Text, Pressable, StyleSheet, useWindowDimensions } from 'react-native';
 import type { BottomTabBarProps } from '@react-navigation/bottom-tabs';
 import { MessageCircle, Brain, User, Settings, Images, CalendarCheck } from 'lucide-react-native';
@@ -19,6 +20,8 @@ export function LumenNavigation({ state, navigation }: BottomTabBarProps) {
   const { width } = useWindowDimensions();
   const insets = useSafeAreaInsets();
   const desktop = width >= 1000;
+  const keyboardVisible = useKeyboardVisible();
+  if (!desktop && keyboardVisible) return null;
   return <View style={[styles.shell, { backgroundColor: c.neutral[950], borderColor: c.neutral[700] }, desktop ? styles.desktop : [styles.mobile, { paddingBottom: Math.max(insets.bottom, 10) }]]}>
     {desktop && <View style={styles.brand}>
       <RaialumeLogo width={105} height={66} />

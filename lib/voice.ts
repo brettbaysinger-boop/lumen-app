@@ -48,12 +48,15 @@ export async function transcribeRecording(blob: Blob, signal?: AbortSignal): Pro
 export async function recordMicrophone(
   onRecording: (blob: Blob) => void,
   onError: (error: Error) => void,
+  signal?: AbortSignal,
 ): Promise<RecordingHandle> {
   browserAudio();
+  if (signal?.aborted) throw new Error('Recording cancelled.');
   if (!navigator.mediaDevices?.getUserMedia) {
     throw new Error('Open Lumen at http://localhost:8081 or HTTPS to use the microphone.');
   }
   const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+  if (signal?.aborted) { stream.getTracks().forEach(track => track.stop()); throw new Error('Recording cancelled.'); }
   let recorder: MediaRecorder;
   try {
     const mimeType = ['audio/webm;codecs=opus', 'audio/ogg;codecs=opus', 'audio/mp4']

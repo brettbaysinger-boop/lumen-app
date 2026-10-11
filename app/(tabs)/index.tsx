@@ -1,3 +1,5 @@
+import { useKeyboardVisible } from '@/hooks/useKeyboardVisible';
+import { playReply } from '@/lib/reply-audio';
 import { ChatManagement, type ChatChange } from '@/components/ChatManagement';
 import { chatTitle, reconcileChats, visibleChats } from '@/lib/chat-management';
 import { chatRead } from '@/lib/chat-read';
@@ -21,7 +23,7 @@ import {
   Keyboard,
   useWindowDimensions,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   Send,
   Mic,
@@ -54,7 +56,7 @@ import { EffortControl } from '@/components/EffortControl';
 import { imagePromptFromConfirmation } from '@/lib/image-followup';
 import { pickImages, uploadImage, removeStoredFiles, MediaError, type PickedImage } from '@/lib/media';
 import { MessageImages, PendingAttachments, readAttachments } from '@/components/ChatAttachments';
-import { recordMicrophone, transcribeRecording, playReply, type RecordingHandle } from '@/lib/voice';
+import { recordMicrophone, transcribeRecording, type RecordingHandle } from '@/lib/recording';
 import { ConversationList, type ConversationListHandle } from '@/components/ConversationList';
 import { useTheme } from '@/lib/theme-context';
 import { Spacing, Radius, Typography, type ExtendedThemeColors } from '@/lib/theme';
@@ -132,6 +134,7 @@ export default function ChatScreen() {
   const [error, setError] = useState<string | null>(null);
   const [showSidebar, setShowSidebar] = useState(false);
   const flatListRef = useRef<ConversationListHandle>(null);
+  const [voiceError, setVoiceError] = useState<string | null>(null);
   const [voicePhase, setVoicePhase] = useState<'idle' | 'starting' | 'recording' | 'transcribing'>('idle');
   const [playingId, setPlayingId] = useState<string | null>(null);
   const voicePhaseRef = useRef(voicePhase);
@@ -148,6 +151,8 @@ export default function ChatScreen() {
   }, []);
 
   const styles = useMemoStyles(colors, isMobile);
+  const keyboardVisible = useKeyboardVisible();
+  const insets = useSafeAreaInsets();
 
   useEffect(() => {
     mountedRef.current = true;
@@ -160,6 +165,17 @@ export default function ChatScreen() {
   }, []);
 
   useEffect(() => { playbackRef.current?.abort(); }, [activeConversation?.id]);
+  const cancelVoice = useCallback(() => {
+    recordingRef.current?.cancel(); recordingRef.current = null;
+    voiceRequestRef.current?.abort(); voiceRequestRef.current = null;
+    changeVoicePhase('idle');
+  }, [changeVoicePhase]);
+  useFocusEffect(useCallback(() => () => { playbackRef.current?.abort(); cancelVoice(); }, [cancelVoice]));
+  useEffect(() => { cancelVoice(); }, [activeConversation?.id, cancelVoice]);
+  useEffect(() => {
+    const listener = AppState.addEventListener('change', state => { if (state === 'background' || (state !== 'active' && voicePhaseRef.current !== 'starting')) cancelVoice(); });
+    return () => listener.remove();
+  }, [cancelVoice]);
 
   useEffect(() => {
     if (!companion || !activeConversation || sending) return;
@@ -188,11 +204,13 @@ export default function ChatScreen() {
     }
     if (voicePhaseRef.current !== 'idle' || sending) return;
     playbackRef.current?.abort();
-    setError(null);
+    setVoiceError(null);
     changeVoicePhase('starting');
+    const recordingController = new AbortController();
+    voiceRequestRef.current = recordingController;
     try {
       const handle = await recordMicrophone(async (blob) => {
-        if (!mountedRef.current) return;
+        if (!mountedRef.current || recordingController.signal.aborted) return;
         recordingRef.current = null;
         changeVoicePhase('transcribing');
         const controller = new AbortController();
@@ -206,21 +224,23 @@ export default function ChatScreen() {
           }
         } catch (err) {
           if (mountedRef.current && !controller.signal.aborted) {
-            setError(err instanceof Error ? err.message : 'Transcription failed.');
+            setVoiceError(err instanceof Error ? err.message : 'Transcription failed.');
           }
         } finally {
-          if (mountedRef.current) changeVoicePhase('idle');
-          voiceRequestRef.current = null;
+          if (voiceRequestRef.current === controller) {
+            if (mountedRef.current) changeVoicePhase('idle');
+            voiceRequestRef.current = null;
+          }
         }
       }, (err) => {
-        if (mountedRef.current) { setError(err.message); changeVoicePhase('idle'); }
-      });
-      if (!mountedRef.current) { handle.cancel(); return; }
+        if (mountedRef.current && !recordingController.signal.aborted) { setVoiceError(err.message); changeVoicePhase('idle'); }
+      }, recordingController.signal);
+      if (!mountedRef.current || recordingController.signal.aborted) { handle.cancel(); return; }
       recordingRef.current = handle;
       changeVoicePhase('recording');
     } catch (err) {
-      if (mountedRef.current) {
-        setError(err instanceof Error ? err.message : 'Could not access the microphone.');
+      if (mountedRef.current && !recordingController.signal.aborted) {
+        setVoiceError(err instanceof Error ? err.message : 'Could not access the microphone.');
         changeVoicePhase('idle');
       }
     }
@@ -647,9 +667,9 @@ export default function ChatScreen() {
                       item.metadata.memory_subject === 'unknown' ? ' · Subject unassigned' : ''}
                   </Text>
                 )}
-              {item.role === 'assistant' && Platform.OS === 'web' && (
+              {item.role === 'assistant' && (
                 <TouchableOpacity
-                  style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 10 }}
+                  style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 6, minHeight: 44 }}
                   onPress={() => togglePlayback(item)}
                   disabled={voiceBusy}
                   accessibilityLabel={playingId === item.id ? 'Stop reply audio' : 'Play reply audio'}
@@ -698,7 +718,7 @@ export default function ChatScreen() {
 
   return (
     <SafeAreaView style={[styles.container, { flexDirection: 'row' }]} edges={['top']}>
-      <View style={{ flex: 1, minWidth: 0 }}>
+      <KeyboardAvoidingView style={{ flex: 1, minWidth: 0 }} behavior={Platform.OS === 'ios' ? 'padding' : Platform.OS === 'android' ? 'height' : undefined} keyboardVerticalOffset={Platform.OS === 'web' ? 0 : insets.top}>
       <View style={styles.header}>
         <TouchableOpacity
           style={styles.menuButton}
@@ -865,20 +885,18 @@ export default function ChatScreen() {
           </Text>
         </View>
       )}
+      {!!voiceError && <View style={styles.errorBanner}><Text accessibilityRole="alert" selectable style={styles.errorBannerText}>{voiceError}</Text><TouchableOpacity onPress={() => setVoiceError(null)} accessibilityLabel="Dismiss voice error"><Text style={styles.errorBannerText}>Dismiss</Text></TouchableOpacity></View>}
       {voiceBusy && (
         <View style={styles.errorBanner}>
           <Text style={styles.errorBannerText}>
-            {voicePhase === 'recording' ? 'Recording — tap Stop when finished (60 seconds maximum).'
+            {voicePhase === 'recording' ? 'Recording — tap Stop when finished (5 minutes maximum).'
               : voicePhase === 'transcribing' ? 'Transcribing on Helios…'
-              : 'Waiting for microphone permission…'}
+              : 'Starting microphone…'}
           </Text>
         </View>
       )}
 
-      <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        keyboardVerticalOffset={0}
-      >
+      <View style={{ flexShrink: 0, paddingBottom: keyboardVisible ? 8 : 0 }}>
         <PendingAttachments
           images={pendingImages}
           onRemove={(index) => setPendingImages((prev) => prev.filter((_, i) => i !== index))}
@@ -930,7 +948,26 @@ export default function ChatScreen() {
         </View>
         {companion && <EffortControl companionId={companion.id} model={companion.conversation_model} value={effort} onChange={setEffort} disabled={sending} />}
         {!!pendingDocument && <TouchableOpacity disabled={sending} accessibilityRole="button" onPress={() => setInputText('Work harder: improve this bid into a clear professional proposal. Preserve the original scope, prices, exclusions and warranty terms. Flag missing details.')}><Text style={{ color: colors.primary[300], padding: 8 }}>Work harder · improve this document</Text></TouchableOpacity>}
+        {Platform.OS !== 'web' && <View style={{ flexDirection: 'row', gap: 8, paddingHorizontal: 12 }}>
+          <TouchableOpacity style={{ width: 44, height: 44, alignItems: 'center', justifyContent: 'center' }} accessibilityLabel="Search the web" disabled={sending || voiceBusy || documentBusy || !!pendingDocument} onPress={() => setInputText(text => /^search (?:the )?web:/i.test(text) ? text : `Search the web: ${text}`)}>
+            <Globe color={colors.primary[400]} size={21} strokeWidth={1.6} />
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={{ width: 44, height: 44, alignItems: 'center', justifyContent: 'center' }}
+            onPress={() => setShowAttachments(open => !open)}
+            disabled={sending || voiceBusy || documentBusy}
+            accessibilityRole="button"
+            accessibilityState={{ expanded: showAttachments }}
+            accessibilityLabel="Attach files"
+          >
+            <Paperclip color={sending || voiceBusy ? colors.neutral[500] : colors.primary[400]} size={22} strokeWidth={2} />
+          </TouchableOpacity>
+          <TouchableOpacity style={{ width: 44, height: 44, alignItems: 'center', justifyContent: 'center' }} accessibilityLabel="Take a photo" disabled={sending || voiceBusy || documentBusy || !!pendingDocument || pendingImages.length >= 4} onPress={() => setShowCamera(true)}>
+            <Camera color={sending || voiceBusy || pendingImages.length >= 4 ? colors.neutral[500] : colors.primary[400]} size={21} strokeWidth={1.6} />
+          </TouchableOpacity>
+        </View>}
         <View style={styles.inputContainer}>
+          {Platform.OS === 'web' && <>
           <TouchableOpacity style={styles.inputButton} accessibilityLabel="Search the web" disabled={sending || voiceBusy || documentBusy || !!pendingDocument} onPress={() => setInputText(text => /^search (?:the )?web:/i.test(text) ? text : `Search the web: ${text}`)}>
             <Globe color={colors.primary[400]} size={21} strokeWidth={1.6} />
           </TouchableOpacity>
@@ -947,6 +984,7 @@ export default function ChatScreen() {
           <TouchableOpacity style={styles.inputButton} accessibilityLabel="Take a photo" disabled={sending || voiceBusy || documentBusy || !!pendingDocument || pendingImages.length >= 4} onPress={() => setShowCamera(true)}>
             <Camera color={sending || voiceBusy || pendingImages.length >= 4 ? colors.neutral[500] : colors.primary[400]} size={21} strokeWidth={1.6} />
           </TouchableOpacity>
+          </>}
           <TextInput
             style={styles.textInput}
             value={inputText}
@@ -960,18 +998,20 @@ export default function ChatScreen() {
                 void sendMessage();
               }
             } } : {})}
+            accessibilityLabel="Message your companion"
             maxLength={64000}
             editable={!sending && !voiceBusy && !documentBusy}
           />
           <TouchableOpacity
             style={styles.inputButton}
             onPress={toggleRecording}
-            disabled={Platform.OS !== 'web' || sending || voicePhase === 'starting' || voicePhase === 'transcribing'}
-            accessibilityLabel={voicePhase === 'recording' ? 'Stop recording' : 'Record voice message'}
+            disabled={sending || documentBusy || voicePhase === 'starting' || voicePhase === 'transcribing'}
+            accessibilityLabel={voicePhase === 'recording' ? 'Stop recording' : 'Tap to talk'}
           >
             {voicePhase === 'recording'
               ? <Square color={colors.primary[400]} size={22} />
-              : <Mic color={Platform.OS === 'web' && !sending ? colors.primary[400] : colors.neutral[500]} size={22} strokeWidth={2} />}
+              : <Mic color={!sending ? colors.primary[400] : colors.neutral[500]} size={22} strokeWidth={2} />}
+            {Platform.OS !== 'web' && <Text style={{ color: colors.primary[400], fontSize: 10 }}>{voicePhase === 'recording' ? 'Stop' : 'Talk'}</Text>}
           </TouchableOpacity>
           <TouchableOpacity
             style={[
@@ -989,9 +1029,9 @@ export default function ChatScreen() {
             )}
           </TouchableOpacity>
         </View>
-        <Text style={styles.composerHint}>A conversation that stays with you.</Text>
-      </KeyboardAvoidingView>
+        {!keyboardVisible && <Text style={styles.composerHint}>A conversation that stays with you.</Text>}
       </View>
+      </KeyboardAvoidingView>
       {showCamera && <CameraCapture onClose={() => setShowCamera(false)} onCapture={image => setPendingImages(previous => [...previous, image].slice(0, 4))} />}
     </SafeAreaView>
   );
@@ -1292,7 +1332,7 @@ function useMemoStyles(c: ExtendedThemeColors, isMobile: boolean) {
       borderRadius: Radius.lg,
       paddingHorizontal: Spacing.md,
       paddingVertical: Spacing.sm + 2,
-      maxHeight: 260,
+      maxHeight: Platform.OS === 'web' ? 260 : 140,
       minHeight: 44,
     },
     starters: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', gap: 8, marginTop: 20 },

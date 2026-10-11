@@ -40,7 +40,7 @@ export const ConversationList = forwardRef<ConversationListHandle, Props>((props
       else native.current?.scrollToEnd(options);
     },
   }), []);
-  if (Platform.OS !== 'web') return <FlatList {...props} ref={native} style={{ flex: 1, minHeight: 0 }} />;
+  if (Platform.OS !== 'web') return <FlatList {...props} keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag" ref={native} style={{ flex: 1, minHeight: 0 }} />;
   return <ScrollView ref={web} style={{ flex: 1, minHeight: 0 }} contentContainerStyle={props.contentContainerStyle}>
     {props.data.length ? props.data.map(item => <MemoizedWebMessage key={props.keyExtractor(item)} item={item} renderItem={props.renderItem} />) : props.ListEmptyComponent}
     {props.ListFooterComponent}
