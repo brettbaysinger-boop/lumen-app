@@ -115,3 +115,34 @@ personalized companion onboarding, mobile UI polish and push notifications.
 Chat consolidation semantics remain to be defined before implementation.
 Memory relevance, skills and proposal work remain paused.
 Configuration and backups remain preserved.
+
+<!-- firefox-native-auth-accepted-2026-10-11 -->
+
+## October 11, Phoenix — Firefox native Google login accepted
+
+Android OAuth now opens its browser with createTask: false.
+User-reported Galaxy S22 acceptance passed: Firefox Google login with
+two-factor verification, session persistence after reopening, second-account
+companion/history isolation, Chrome sign-in/sign-out, and deliberate
+cancellation followed by a successful retry.
+
+Host TypeScript, social-auth checks and all 47 Node tests passed.
+Android release build and ADB update installation succeeded.
+
+The first rebuild crashed at startup because public Supabase build settings
+were absent. Restoring the backed-up APK restored operation. The corrected
+build explicitly supplied the three frontend settings from the checkout's
+.env and NODE_ENV=production, forced JavaScript rebundling, and verified all
+three values against both the working backup and rebuilt APK before install.
+No environment values are recorded here.
+
+Accepted APK SHA256:
+da843214581c8ea52d6e33480708e25c1fa9e73d2aaeb46efeec103f0d09b3ee
+
+Previous working APK and login source preserved at:
+/home/brett/lumen-android-builds/before-firefox-auth.mymlatl_
+
+Supabase configuration and existing backups remain outside this commit.
+No backend changes, migration or web deployment.
+iOS acceptance/push, broader mobile polish and chat consolidation remain open.
+Memory relevance, skills and proposal work remain paused.

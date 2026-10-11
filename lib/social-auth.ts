@@ -40,7 +40,12 @@ export async function continueWithProvider(provider: SocialProvider, link = fals
   if (error) throw new Error(link ? 'Could not connect this account. Please try again.' : 'Could not start sign-in. Please try again.');
   if (!data.url) throw new Error('The sign-in service did not provide a redirect.');
   if (Platform.OS !== 'web') {
-    const result = await WebBrowser.openAuthSessionAsync(data.url, redirectTo);
+    // Keep Android authentication in the app task during external verification.
+    const result = await WebBrowser.openAuthSessionAsync(
+      data.url,
+      redirectTo,
+      Platform.OS === 'android' ? { createTask: false } : {}
+    );
     if (result.type !== 'success') throw new Error('Sign-in canceled.');
     const tokens = nativeSessionTokens(result.url, redirectTo);
     const { error: sessionError } = await supabase.auth.setSession(tokens);
