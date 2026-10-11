@@ -1019,3 +1019,26 @@ personalized companion onboarding, mobile UI polish and push notifications.
 Chat consolidation semantics remain to be defined before implementation.
 Memory relevance, skills and proposal work remain paused.
 Configuration and backups remain preserved.
+
+<!-- chat-management-phone-acceptance-2026-10-11 -->
+## October 11, Phoenix — Chat management passed phone acceptance
+
+User-supplied host evidence confirms patch checksum, whitespace checks,
+TypeScript and all 21 Node tests passed against 9fd757d.
+Brett reports the updated Android preview passed live Galaxy S22 checks:
+rename, archive/restore, deletion cancellation, confirmed deletion,
+offline reopening without the deleted chat/draft, and unrelated chat use.
+
+During testing, cached chats remained available while live requests failed.
+Host API/database/Ollama health reported OK; Tailscale ping reached the S22.
+Android hostname lookup returned unknown host for the configured server.
+Phone reboot restored connectivity; Brett then reported all checks passed.
+
+Chat deletion preserves saved companion memories, Gallery items,
+documents and My Day items. Other devices reconcile their cache when
+they reconnect. Transcript consolidation remains pending.
+
+No production service deployment or restart performed.
+Configuration and backups preserved.
+Memory relevance, skills and proposal work remain paused.
+Next: personalized companion onboarding, mobile UI polish and push.

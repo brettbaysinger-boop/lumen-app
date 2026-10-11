@@ -1,3 +1,5 @@
+import { ChatManagement, type ChatChange } from '@/components/ChatManagement';
+import { chatTitle, reconcileChats, visibleChats } from '@/lib/chat-management';
 import { chatRead } from '@/lib/chat-read';
 import { chatCache } from '@/lib/chat-cache-storage';
 import type { ChatSnapshot } from '@/lib/chat-cache';
@@ -98,6 +100,13 @@ export default function ChatScreen() {
   const activeIdRef = useRef<string | null>(null);
   activeIdRef.current = activeConversation?.id ?? null;
   const requestVersion = useRef(0);
+  const conversationVersion = useRef(0);
+  const managementBusyRef = useRef(false);
+  const [managementBusy, setManagementBusy] = useState(false);
+  const [managedChat, setManagedChat] = useState<Conversation | null>(null);
+  const [managementError, setManagementError] = useState<string | null>(null);
+  const [showArchived, setShowArchived] = useState(false);
+  const [chatSearch, setChatSearch] = useState('');
   const [syncStatus, setSyncStatus] = useState<'refreshing' | 'current' | 'cached'>('refreshing');
   const persistCache = useCallback(() => {
     const userId = accountRef.current;
@@ -240,15 +249,17 @@ export default function ChatScreen() {
   }, [playingId, companion?.id]);
 
   const loadConversations = useCallback(async (companionId: string, userId: string) => {
+    if (managementBusyRef.current) return;
+    const version = ++conversationVersion.current;
     const { data, error: err } = await chatRead(signal => supabase.from('conversations').select('*')
       .eq('companion_id', companionId).order('last_message_at', { ascending: false }).abortSignal(signal));
-    if (accountRef.current !== userId) return;
+    if (accountRef.current !== userId || version !== conversationVersion.current || managementBusyRef.current) return;
     if (err) throw err;
     const rows = (data || []) as Conversation[];
     setConversations(rows);
-    setActiveConversation(previous => rows.find(c => c.id === previous?.id) ?? rows[0] ?? null);
+    setActiveConversation(previous => rows.find(c => c.id === previous?.id && c.is_active !== false) ?? rows.find(c => c.is_active !== false) ?? null);
     if (cacheRef.current?.companion.id === companionId) {
-      cacheRef.current = { ...cacheRef.current, conversations: rows };
+      cacheRef.current = reconcileChats(cacheRef.current, rows);
       persistCache();
     }
   }, [persistCache]);
@@ -256,6 +267,7 @@ export default function ChatScreen() {
   const loadCompanion = useCallback(async () => {
     const userId = accountRef.current;
     if (!userId) return;
+    if (managementBusyRef.current) return;
     setSyncStatus('refreshing');
     try {
       const { data, error: err } = await chatRead(signal => supabase.from('companions').select('*')
@@ -279,6 +291,7 @@ export default function ChatScreen() {
   }, [loadConversations]);
 
   const loadMessages = useCallback(async (conversationId: string) => {
+    if (managementBusyRef.current) return;
     const userId = accountRef.current;
     const version = ++requestVersion.current;
     try {
@@ -314,7 +327,7 @@ export default function ChatScreen() {
           cacheRef.current = cached;
           setCompanion(cached.companion);
           setConversations(cached.conversations);
-          setActiveConversation(cached.conversations[0] ?? null);
+          setActiveConversation(cached.conversations.find(c => c.is_active !== false) ?? null);
           setLoading(false);
         }
       }
@@ -339,7 +352,7 @@ export default function ChatScreen() {
 
   useEffect(() => {
     const refresh = () => {
-      if (sendBusyRef.current) return;
+      if (sendBusyRef.current || managementBusyRef.current) return;
       void loadCompanion().then(() => {
         if (activeIdRef.current) void loadMessages(activeIdRef.current);
       });
@@ -381,7 +394,7 @@ export default function ChatScreen() {
   }, [routeParams.document, companion?.id]);
 
   const createConversation = useCallback(async () => {
-    if (!companion || sending || documentBusy || voicePhaseRef.current !== 'idle') return;
+    if (!companion || sending || documentBusy || managementBusyRef.current || voicePhaseRef.current !== 'idle') return;
     setPendingDocument(null);
     const { data, error: err } = await supabase
       .from('conversations')
@@ -406,6 +419,46 @@ export default function ChatScreen() {
     setShowSidebar(false);
   }, [companion, sending, documentBusy]);
 
+  const changeChat = async (chat: Conversation, change: ChatChange) => {
+    const userId = accountRef.current;
+    if (!userId || !companion || managementBusyRef.current || sendBusyRef.current ||
+        documentBusy || voicePhaseRef.current !== 'idle') return;
+    let update: Exclude<ChatChange, 'delete'> | null = null;
+    try { if (change !== 'delete') update = 'title' in change ? { title: chatTitle(change.title) } : change; }
+    catch (err) { setManagementError((err as Error).message); return; }
+    managementBusyRef.current = true;
+    setManagementBusy(true);
+    setManagementError(null);
+    conversationVersion.current++;
+    requestVersion.current++;
+    try {
+      const query = supabase.from('conversations');
+      const result = await (change === 'delete' ? query.delete() : query.update(update!))
+        .eq('id', chat.id).eq('companion_id', companion.id).select('*').single();
+      if (accountRef.current !== userId || !mountedRef.current) return;
+      if (result.error) throw result.error;
+      const rows = change === 'delete' ? conversations.filter(c => c.id !== chat.id)
+        : conversations.map(c => c.id === chat.id ? result.data as Conversation : c);
+      setConversations(rows);
+      setActiveConversation(previous => {
+        if (previous?.id !== chat.id) return previous;
+        return rows.find(c => c.id === chat.id && c.is_active !== false) ?? rows.find(c => c.is_active !== false) ?? null;
+      });
+      if (cacheRef.current) {
+        cacheRef.current = reconcileChats(cacheRef.current, rows);
+        try { await chatCache.write(userId, cacheRef.current); }
+        catch { setError('Chat updated on the server, but device storage failed. Reconnect before relying on saved chats.'); }
+      }
+      setManagedChat(null);
+    } catch (err) {
+      if (accountRef.current === userId && mountedRef.current)
+        setManagementError(err instanceof Error ? err.message : (err as { message?: string }).message ?? 'Could not update chat. Check your connection and retry.');
+    } finally {
+      managementBusyRef.current = false;
+      if (mountedRef.current && accountRef.current === userId) setManagementBusy(false);
+    }
+  };
+
   const attachPhotos = useCallback(async () => {
     setError(null);
     try {
@@ -428,7 +481,7 @@ export default function ChatScreen() {
       documentBusy ||
       !companion ||
       !userId ||
-      sendBusyRef.current ||
+      sendBusyRef.current || managementBusyRef.current ||
       sending ||
       voicePhaseRef.current !== 'idle'
     ) return;
@@ -506,7 +559,7 @@ export default function ChatScreen() {
       } else {
         setConversations((data as Conversation[]) || []);
         if (cacheRef.current) {
-          cacheRef.current = { ...cacheRef.current, conversations: (data as Conversation[]) || [] };
+          cacheRef.current = reconcileChats(cacheRef.current, (data as Conversation[]) || []);
           persistCache();
         }
         const conversation = data?.find((item) => item.id === response.conversation_id);
@@ -659,14 +712,14 @@ export default function ChatScreen() {
           <StateGlow colors={colors} state={companionState} size={10} />
           <View style={{ flexShrink: 1 }}>
             <Text style={styles.headerName} numberOfLines={1}>{companion?.name || 'Companion'}</Text>
-            {companion && <ModelPicker companionId={companion.id} compact disabled={sending || voiceBusy} />}
+            {companion && <ModelPicker companionId={companion.id} compact disabled={sending || voiceBusy || managementBusy} />}
           </View>
         </View>
         <View style={styles.headerStatus}>
           <TouchableOpacity accessibilityRole="button" accessibilityLabel="Open your documents" disabled={sending || voiceBusy || documentBusy} onPress={() => router.push('/documents')}>
             <Text style={{color:colors.primary[300],fontSize:12}}>Documents</Text>
           </TouchableOpacity>
-          <TouchableOpacity accessibilityRole="button" accessibilityLabel="Open goals and practice" disabled={sending || voiceBusy} onPress={()=>router.push({pathname:'/goals',params:{goal:activeConversation?.goal_item_id||''}})}><Text style={{color:colors.primary[300],fontSize:12}}>Practice</Text></TouchableOpacity>
+          <TouchableOpacity accessibilityRole="button" accessibilityLabel="Open goals and practice" disabled={sending || voiceBusy || managementBusy} onPress={()=>router.push({pathname:'/goals',params:{goal:activeConversation?.goal_item_id||''}})}><Text style={{color:colors.primary[300],fontSize:12}}>Practice</Text></TouchableOpacity>
           <Text style={styles.statusText}>
             {sending ? 'Thinking…' : syncStatus === 'current' ? 'Conversation' : syncStatus === 'refreshing' ? 'Refreshing…' : 'Saved on device'}
           </Text>
@@ -691,12 +744,19 @@ export default function ChatScreen() {
               </TouchableOpacity>
               <Text style={styles.sidebarTitle}>Conversations</Text>
             </View>
-            <TouchableOpacity style={styles.newChatButton} onPress={createConversation} disabled={sending || voiceBusy}>
+            <TouchableOpacity style={styles.newChatButton} onPress={createConversation} disabled={sending || voiceBusy || managementBusy}>
               <Plus color={colors.primary[400]} size={20} strokeWidth={2} />
               <Text style={styles.newChatText}>New Conversation</Text>
             </TouchableOpacity>
+            <TextInput accessibilityLabel="Search chat names" placeholder="Search chat names"
+              placeholderTextColor={colors.neutral[400]} value={chatSearch} onChangeText={setChatSearch}
+              style={{ color: colors.neutral[100], minHeight: 48, padding: 12 }} />
+            <TouchableOpacity accessibilityRole="button" onPress={() => setShowArchived(value => !value)}
+              style={{ padding: 12, minHeight: 48 }}>
+              <Text style={{ color: colors.primary[300] }}>{showArchived ? 'Show current chats' : 'Show archived chats'}</Text>
+            </TouchableOpacity>
             <FlatList
-              data={conversations}
+              data={visibleChats(conversations, showArchived, chatSearch)}
               keyExtractor={(item) => item.id}
               renderItem={({ item }) => (
                 <TouchableOpacity
@@ -704,7 +764,9 @@ export default function ChatScreen() {
                     styles.conversationItem,
                     activeConversation?.id === item.id && styles.conversationItemActive,
                   ]}
-                  disabled={sending || voiceBusy}
+                  disabled={sending || voiceBusy || managementBusy}
+                  accessibilityLabel={`Open chat ${item.title}`}
+                  onLongPress={() => { setManagedChat(item); setManagementError(null); }}
                   onPress={() => {
                     setActiveConversation(item);
                     setShowSidebar(false);
@@ -722,16 +784,23 @@ export default function ChatScreen() {
                   <Text style={styles.conversationDate}>
                     {new Date(item.last_message_at).toLocaleDateString()}
                   </Text>
+                  <TouchableOpacity accessibilityRole="button" accessibilityLabel={`Manage chat ${item.title}`}
+                    disabled={sending || voiceBusy || managementBusy} style={{ paddingVertical: 12, minHeight: 44 }}
+                    onPress={(event) => { event.stopPropagation(); setManagedChat(item); setManagementError(null); }}>
+                    <Text style={{ color: colors.primary[300] }}>Manage</Text>
+                  </TouchableOpacity>
                 </TouchableOpacity>
               )}
               ListEmptyComponent={
-                <Text style={styles.emptySidebarText}>No conversations yet</Text>
+                <Text style={styles.emptySidebarText}>{chatSearch ? 'No matching chats' : showArchived ? 'No archived chats' : 'No conversations yet'}</Text>
               }
             />
           </View>
         </TouchableOpacity>
       )}
 
+      <ChatManagement key={managedChat?.id ?? 'closed'} chat={managedChat} busy={managementBusy}
+        error={managementError} onClose={() => { if (!managementBusyRef.current) setManagedChat(null); }} onChange={changeChat} />
       <ConversationList
         ref={flatListRef}
         data={messages}
