@@ -22,7 +22,9 @@ export function ChatManagement({ chat, busy, error, onClose, onChange, collectio
   );
   return <Modal visible transparent animationType="fade" onRequestClose={() => { if (!busy) onClose(); }}>
     <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1, backgroundColor: '#0009', justifyContent: 'center', padding: 24 }}>
-      <ScrollView keyboardShouldPersistTaps="handled" style={{ maxHeight: '90%', backgroundColor: colors.neutral[900], padding: 20, borderRadius: 16, gap: 8 }}>
+      <ScrollView keyboardShouldPersistTaps="handled" style={{ flexGrow: 0, width: '100%', maxWidth: 480, maxHeight: '80%',
+          alignSelf: 'center', backgroundColor: colors.neutral[900], borderRadius: 16 }}
+        contentContainerStyle={{ padding: 20, gap: 8 }}>
         <Text accessibilityRole="header" style={{ color: colors.neutral[100], fontSize: 20 }}>
           {confirmDelete ? 'Delete this chat?' : 'Manage chat'}
         </Text>

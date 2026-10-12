@@ -1,3 +1,4 @@
+import { ChatText } from '@/components/ChatText';
 import { useKeyboardVisible } from '@/hooks/useKeyboardVisible';
 import { playReply } from '@/lib/reply-audio';
 import { ChatHandoff, HandoffCard } from '@/components/ChatHandoff';
@@ -37,6 +38,7 @@ import {
   PanelLeft,
   Camera,
   Globe,
+  MoreHorizontal,
 } from 'lucide-react-native';
 import { CameraCapture } from '@/components/CameraCapture';
 import { CompanionPortrait } from '@/components/CompanionPortrait';
@@ -646,16 +648,13 @@ export default function ChatScreen() {
             >
               {!!item.metadata?.document_title && <Text style={{ color: colors.primary[300], marginBottom: 8 }}>Document: {String(item.metadata.document_title)}</Text>}
               <MessageImages attachments={readAttachments(item.metadata)} colors={colors} />
-              <Text
-                style={[
-                  styles.messageText,
-                  item.role === 'user' ? styles.messageTextUser : styles.messageTextAI,
-                ]}
-              >
-                {item.role === 'assistant' && item.metadata?.web_search
-                  ? <CitationText content={item.content} value={item.metadata.web_search} />
-                  : item.content}
-              </Text>
+              <ChatText
+                content={item.content}
+                citations={item.role === 'assistant' ? item.metadata?.web_search : undefined}
+                format={item.role === 'assistant'}
+                style={[styles.messageText,
+                  item.role === 'user' ? styles.messageTextUser : styles.messageTextAI]}
+              />
               {item.role === 'assistant' && item.metadata?.goal_session != null && <PracticeSavedCard value={item.metadata.goal_session}/> }
               {item.role === 'assistant' && item.metadata?.my_day_item != null && <DayActionCard item={item.metadata.my_day_item as DayItem} />}
               {item.role === 'assistant' && item.metadata?.web_search != null && <WebSources value={item.metadata.web_search} />}
@@ -663,18 +662,28 @@ export default function ChatScreen() {
               {item.role === 'assistant' && item.metadata?.document_action_draft != null && <DocumentActionDraft sources={item.metadata.document_sources} value={item.metadata.document_action_draft} companionId={item.companion_id} messageId={item.id} />}
               {item.role === 'assistant' && item.metadata?.document_sources != null && <DocumentSources value={item.metadata.document_sources} companionId={item.companion_id} />}
               {item.role === 'assistant' && item.metadata?.memory_revision != null && <MemoryCorrectionCard value={item.metadata.memory_revision} />}
-              {item.role === 'assistant' && <ProviderRequests value={item.metadata?.provider_requests} />}
-              {item.role === 'assistant' && item.metadata?.timings_ms != null && (
+              {item.role === 'assistant' &&
+                (item.metadata?.provider_requests != null || item.metadata?.timings_ms != null) && (
                 <View>
-                  <TouchableOpacity onPress={() => setExpandedActivity(expandedActivity === item.id ? null : item.id)}>
-                    <Text style={{ color: colors.primary[300], fontSize: 12, marginTop: 8 }}>Activity details {expandedActivity === item.id ? '▾' : '▸'}</Text>
+                  <TouchableOpacity accessibilityRole="button"
+                    accessibilityLabel="Reply details"
+                    accessibilityState={{ expanded: expandedActivity === item.id }}
+                    style={{ minHeight: 44, justifyContent: 'center' }}
+                    onPress={() => setExpandedActivity(expandedActivity === item.id ? null : item.id)}>
+                    <Text style={{ color: colors.neutral[300], fontSize: 12 }}>
+                      Details {expandedActivity === item.id ? '▾' : '▸'}
+                    </Text>
                   </TouchableOpacity>
-                  {expandedActivity === item.id && <Text style={{ color: colors.neutral[400], fontSize: 12, marginTop: 8 }}>
-                    Model: {item.model_used || 'local'}{'\n'}
-                    {Object.entries(item.metadata.timings_ms as Record<string, number>).map(([key, value]) =>
-                      `${key.replace(/_/g, ' ')}: ${(value / 1000).toFixed(2)}s`).join('\n')}
-                    {'\n'}Request: {((item.latency_ms || 0) / 1000).toFixed(2)}s{'\n'}Activity timings, not a private thought transcript.
-                  </Text>}
+                  {expandedActivity === item.id && <>
+                    <ProviderRequests value={item.metadata?.provider_requests} />
+                    <Text style={{ color: colors.neutral[300], fontSize: 12, marginTop: 8 }}>
+                      Model: {item.model_used || 'local'}{'\n'}
+                      {Object.entries((item.metadata?.timings_ms ?? {}) as Record<string, number>)
+                        .map(([key, value]) => `${key.replace(/_/g, ' ')}: ${(value / 1000).toFixed(2)}s`)
+                        .join('\n')}
+                      {'\n'}Request: {((item.latency_ms || 0) / 1000).toFixed(2)}s
+                    </Text>
+                  </>}
                 </View>
               )}
               {item.role === 'assistant' &&
@@ -738,7 +747,7 @@ export default function ChatScreen() {
 
   return (
     <SafeAreaView style={[styles.container, { flexDirection: 'row' }]} edges={['top']}>
-      <KeyboardAvoidingView style={{ flex: 1, minWidth: 0 }} behavior={Platform.OS === 'ios' ? 'padding' : Platform.OS === 'android' ? 'height' : undefined} keyboardVerticalOffset={Platform.OS === 'web' ? 0 : insets.top}>
+      <KeyboardAvoidingView style={{ flex: 1, minWidth: 0, marginLeft: showSidebar && !isMobile ? sidebarWidth : 0 }} behavior={Platform.OS === 'ios' ? 'padding' : Platform.OS === 'android' ? 'height' : undefined} keyboardVerticalOffset={Platform.OS === 'web' ? 0 : insets.top}>
       <View style={styles.header}>
         <TouchableOpacity
           style={styles.menuButton}
@@ -773,7 +782,7 @@ export default function ChatScreen() {
       </TouchableOpacity>}
       {showSidebar && (
         <TouchableOpacity
-          style={styles.overlay}
+          style={[styles.overlay, !isMobile && { backgroundColor: 'transparent' }]}
           activeOpacity={1}
           onPress={() => setShowSidebar(false)}
         >
@@ -786,7 +795,7 @@ export default function ChatScreen() {
             </View>
             <TouchableOpacity style={styles.newChatButton} onPress={createConversation} disabled={sending || voiceBusy || managementBusy}>
               <Plus color={colors.primary[400]} size={20} strokeWidth={2} />
-              <Text style={styles.newChatText}>New Conversation</Text>
+              <Text style={styles.newChatText}>New chat</Text>
             </TouchableOpacity>
             <View style={{ paddingHorizontal: 12, gap: 8 }}>
               <TouchableOpacity accessibilityRole="button"
@@ -821,37 +830,33 @@ export default function ChatScreen() {
               data={visibleChats(conversations, showArchived, chatSearch, collectionFilter)}
               keyExtractor={(item) => item.id}
               renderItem={({ item }) => (
-                <TouchableOpacity
-                  style={[
-                    styles.conversationItem,
-                    activeConversation?.id === item.id && styles.conversationItemActive,
-                  ]}
-                  disabled={sending || voiceBusy || managementBusy}
-                  accessibilityLabel={`Open chat ${item.title}`}
-                  onLongPress={() => { setManagedChat(item); setManagementError(null); }}
-                  onPress={() => {
-                    setActiveConversation(item);
-                    setShowSidebar(false);
-                  }}
-                >
-                  <Text
-                    style={[
-                      styles.conversationTitle,
-                      activeConversation?.id === item.id && styles.conversationTitleActive,
-                    ]}
-                    numberOfLines={1}
-                  >
-                    {item.title}
-                  </Text>
-                  <Text style={styles.conversationDate}>
-                    {new Date(item.last_message_at).toLocaleDateString()}
-                  </Text>
-                  <TouchableOpacity accessibilityRole="button" accessibilityLabel={`Manage chat ${item.title}`}
-                    disabled={sending || voiceBusy || managementBusy} style={{ paddingVertical: 12, minHeight: 44 }}
-                    onPress={(event) => { event.stopPropagation(); setManagedChat(item); setManagementError(null); }}>
-                    <Text style={{ color: colors.primary[300] }}>Manage</Text>
+                <View style={[styles.conversationItem,
+                  { flexDirection: 'row', alignItems: 'center', gap: 6 },
+                  activeConversation?.id === item.id && styles.conversationItemActive]}>
+                  <TouchableOpacity style={{ flex: 1, minHeight: 48, justifyContent: 'center' }}
+                    disabled={sending || voiceBusy || managementBusy}
+                    accessibilityRole="button"
+                    accessibilityLabel={`Open chat ${item.title}`}
+                    onLongPress={() => { setManagedChat(item); setManagementError(null); }}
+                    onPress={() => {
+                      setActiveConversation(item);
+                      setShowSidebar(false);
+                    }}>
+                    <Text style={[styles.conversationTitle,
+                      activeConversation?.id === item.id && styles.conversationTitleActive]}
+                      numberOfLines={1}>{item.title}</Text>
+                    <Text style={styles.conversationDate}>
+                      {new Date(item.last_message_at).toLocaleDateString()}
+                    </Text>
                   </TouchableOpacity>
-                </TouchableOpacity>
+                  <TouchableOpacity accessibilityRole="button"
+                    accessibilityLabel={`Chat options for ${item.title}`}
+                    disabled={sending || voiceBusy || managementBusy}
+                    style={{ width: 44, height: 44, alignItems: 'center', justifyContent: 'center' }}
+                    onPress={() => { setManagedChat(item); setManagementError(null); }}>
+                    <MoreHorizontal size={20} color={colors.neutral[200]} />
+                  </TouchableOpacity>
+                </View>
               )}
               ListEmptyComponent={
                 <Text style={styles.emptySidebarText}>{chatSearch ? 'No matching chats' : showArchived ? 'No archived chats' : 'No conversations yet'}</Text>

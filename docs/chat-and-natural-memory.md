@@ -147,3 +147,15 @@ not authorize assuming host access or treating GitHub as local-state evidence.
 The user intends to work on another app aspect in the next conversation.
 Preserve supabase/config.toml changes and existing source/configuration backups.
 No reset, clean, broad staging or automatic deployment.
+
+<!-- chat-usability-checkpoint-2026-10-11 -->
+## Chat usability checkpoint — October 11, Phoenix
+
+The first conversation usability pass is implemented but not accepted.
+Previously supplied automated results: TypeScript, 47 Node tests and
+488 backend tests passed. Browser/device acceptance remains pending.
+Deployment completion for this pass is unverified.
+
+See [chat usability](chat-usability.md) and
+[latest session handoff](SESSION-HANDOFF-2026-10-11.md) for implementation,
+limits and remaining work.

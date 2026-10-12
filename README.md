@@ -430,3 +430,15 @@ Approved direction and next acceptance criteria are recorded in
 at 73e6751 failed and remains unverified; the next patch corrects reproducible
 price-notation rejection and adds private-data-free stage logging. Seven focused
 tests passed. Reusable templates and print-ready PDFs are planned, not implemented.
+
+<!-- chat-usability-checkpoint-2026-10-11 -->
+## Chat usability checkpoint — October 11, Phoenix
+
+The first conversation usability pass is implemented but not accepted.
+Previously supplied automated results: TypeScript, 47 Node tests and
+488 backend tests passed. Browser/device acceptance remains pending.
+Deployment completion for this pass is unverified.
+
+See [chat usability](docs/chat-usability.md) and
+[latest session handoff](docs/SESSION-HANDOFF-2026-10-11.md) for implementation,
+limits and remaining work.

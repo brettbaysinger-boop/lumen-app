@@ -304,3 +304,15 @@ Memory relevance, skills and proposal feature work remain paused.
 
 Local Supabase configuration, environment values, build artifacts and existing
 backups are excluded from this checkpoint.
+
+<!-- chat-usability-checkpoint-2026-10-11 -->
+## Chat usability checkpoint — October 11, Phoenix
+
+The first conversation usability pass is implemented but not accepted.
+Previously supplied automated results: TypeScript, 47 Node tests and
+488 backend tests passed. Browser/device acceptance remains pending.
+Deployment completion for this pass is unverified.
+
+See [chat usability](chat-usability.md) and
+[latest session handoff](SESSION-HANDOFF-2026-10-11.md) for implementation,
+limits and remaining work.

@@ -509,3 +509,15 @@ the preceding pending-acceptance note. A follow-up fixes companion-name greeting
 being mistaken for portrait subjects. The subject fix passed 25 targeted backend
 tests; its deployment and live acceptance remain pending. Full evidence and
 limits: `docs/provider-acceptance-checkpoint.md` (repository-relative path).
+
+<!-- chat-usability-checkpoint-2026-10-11 -->
+## Chat usability checkpoint — October 11, Phoenix
+
+The first conversation usability pass is implemented but not accepted.
+Previously supplied automated results: TypeScript, 47 Node tests and
+488 backend tests passed. Browser/device acceptance remains pending.
+Deployment completion for this pass is unverified.
+
+See [chat usability](chat-usability.md) and
+[latest session handoff](SESSION-HANDOFF-2026-10-11.md) for implementation,
+limits and remaining work.

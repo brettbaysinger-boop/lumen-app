@@ -66,6 +66,9 @@ class CognitionRuntime:
             query="" if is_memory_recall(user_message, companion["name"]) else user_message,
         )
         recent = await self.db.get_recent_messages(conversation_id, limit=20)
+        from .conversation_titles import name_first_turn
+        conversation = await name_first_turn(
+            self.db, companion_id, conversation, user_message, recent)
 
         profile = await self.db.get_profile(self.user_id) if getattr(self, "user_id", None) else None
         system = self._build_system_prompt(companion, state, memories, profile)
