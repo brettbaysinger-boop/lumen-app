@@ -1496,3 +1496,89 @@ Reviewed handoffs and transcript consolidation are not implemented yet.
 No backend code change or web deployment. Desktop and iOS acceptance pending.
 Local Supabase configuration and existing backups remain outside this commit.
 Memory relevance, skills and proposal work remain paused.
+
+<!-- project-actions-handoffs-checkpoint-2026-10-11 -->
+
+## October 11, Phoenix — Project actions accepted; reviewed handoffs pending acceptance
+
+This checkpoint supersedes earlier statements that reviewed handoffs are
+not implemented. The implementation is now present; live handoff acceptance
+remains pending.
+
+### My Day project actions
+
+Named project creation accepts “create project called Copper Garden”.
+Project-step capture accepts natural wording without required punctuation:
+“Add tasks to project Copper Garden identify weed types and gather supplies”.
+
+The backend resolves one matching open project within the companion scope.
+The selected conversation model chooses only exact text spans from the
+requested step wording. Validation checks coverage and order before a
+conditional checklist update. Existing completed steps are preserved,
+identical step text is deduplicated, and concurrent checklist changes cause
+a refusal rather than an overwrite. Invalid extraction receives one bounded
+retry; failures do not produce a successful save receipt.
+
+Brett verified in the browser: Copper Garden creation, both requested steps
+visible in My Day, repeated capture without duplicates, reopening persistence,
+and the corrected Archive project label and explanation.
+
+The previous Undo label archived the entire project. The card now accurately
+labels that operation Archive plus the item kind. Restore retains its steps.
+Undo of only the latest added steps is NOT implemented.
+Chat cards display saved snapshots; My Day supplies the current editable item.
+
+A narrow follow-up handler for “add those two tasks” is implemented and
+synthetically tested. It requires an immediately preceding numbered proposal,
+the project name, and a recent backend project receipt. Broader conversational
+follow-up acceptance and general natural My Day action routing remain open.
+
+The ordinary-reply save-claim guard now covers additional project/task claims.
+It remains a wording heuristic, not proof that every unsupported claim is caught.
+
+### Continue together
+
+Users can select up to five source chats, generate a bounded draft, edit and
+review it, then create a fresh conversation with original-chat links.
+The reviewed summary is stored on the new conversation and supplied as
+historical reference context in subsequent model turns. Original transcripts
+are preserved; generating a draft performs no database write.
+
+Source reads use the caller's account scope. The creation RPC runs with
+invoker security, verifies companion/source scope, and uses a request UUID
+for atomic creation and idempotent retries.
+Summaries use bounded recent text; earlier history and attachment contents
+may be omitted. Live summary quality, source-link behavior, model use of
+reviewed context, and cross-account acceptance remain pending.
+
+Migration 20261011234500_reviewed_chat_handoffs.sql applied locally.
+Live inspection confirmed authenticated execution allowed and anonymous
+execution denied. Dedicated PGlite checks passed for source scope, ownership,
+validation, retry behavior, atomic failure and source preservation.
+Database backup:
+/home/brett/lumen-db-backups/reviewed-handoffs.nLBTVu
+
+### Validation and deployment
+
+Latest complete backend suite: 484 tests passed.
+Latest TypeScript check passed. Existing 47 Node tests passed earlier in
+the handoff implementation; they do not establish live handoff acceptance.
+
+The API was restarted during project-action verification.
+The web export was rebuilt with explicit public frontend settings, checked
+for those settings and the card wording, and deployed with its prior dist
+preserved outside Git. Brett confirmed browser acceptance after refresh.
+The export includes the handoff UI; exporting it is not handoff acceptance.
+
+Android installation/acceptance of the current handoff UI and Archive label
+is not established. Last verified accepted APK remains the collections build:
+8678e74cc0eb0f918d00d1e4463eab60cb75b97bf89a719f1eba77f3eee63291
+
+Next: finish reviewed-handoff browser acceptance; rebuild the Android preview
+with verified public settings; verify both accounts, source links and reopen
+behavior. Step-level Undo and broader conversational My Day actions remain open.
+iOS acceptance/push, further mobile polish and transcript consolidation remain open.
+Memory relevance, skills and proposal feature work remain paused.
+
+Local Supabase configuration, environment values, build artifacts and existing
+backups are excluded from this checkpoint.

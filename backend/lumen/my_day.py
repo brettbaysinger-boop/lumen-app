@@ -211,6 +211,18 @@ def parse_action(text: str, zone: str, now: datetime | None = None, companion_na
         else: return {'clarify':'When should I remind you? Try “remind me tomorrow at 9 am to call the mechanic” or “remind me in 30 minutes to stretch”.'}
         if due<=local: return {'clarify':'That time has already passed. Choose a future time.'}
         return {'kind':'reminder','title':title,'due_at':due.isoformat(),'timezone':zone}
+
+    # Named project requests are explicit actions, without requiring punctuation.
+    project = re.fullmatch(
+        r"(?:start|create|make)\s+(?:a\s+|the\s+)?project\s+(?:called|named)\s+(.+)",
+        text, re.I | re.S,
+    )
+    if project:
+        title = project[1].strip().rstrip(".!").strip()
+        if not title or len(title) > 300:
+            return {"clarify": "Give the project a name between 1 and 300 characters. Nothing has been saved yet."}
+        return {"kind": "project", "title": title, "body": ""}
+
     # Explicit capture commands preserve the user's words; no model inference.
     match = re.fullmatch(r'(?:add|put) (.+?) (?:to|on) my (.{1,80}?) list[.!]?', text, re.I | re.S)
     if match:
@@ -262,9 +274,17 @@ def reminder_followup(text, recent, now=None):
     return text
 
 
-async def handle_action(db, companion_id, conversation_id, text, zone, request_key, recent=None, companion_name="Lumen"):
+async def handle_action(db, companion_id, conversation_id, text, zone, request_key, recent=None, companion_name="Lumen", provider=None, model=None):
     text=reminder_followup(capture_text(text,companion_name),recent)
     if text=='cancel pending reminder': return {'content':'Okay, I haven’t saved that reminder.','item':None}
+    from .project_tasks import capture_project_tasks
+    project_action = await capture_project_tasks(db, companion_id, text, recent)
+    if project_action is None:
+        from .natural_project_tasks import natural_project_tasks
+        project_action = await natural_project_tasks(
+            db, companion_id, text, recent, provider, model)
+    if project_action is not None:
+        return project_action
     command=parse_action(text,zone,companion_name=companion_name)
     if not command: return None
     if 'clarify' in command:

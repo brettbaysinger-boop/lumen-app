@@ -38,6 +38,12 @@ export interface ChatCollection {
 
 export interface Conversation {
   collection_id?: string | null;
+  handoff?: {
+    summary: string;
+    source_ids: string[];
+    sources: { id: string; title: string }[];
+    reviewed_at: string;
+  } | null;
   goal_item_id?: string | null;
   id: string;
   companion_id: string;

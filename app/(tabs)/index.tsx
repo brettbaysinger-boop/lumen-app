@@ -1,5 +1,6 @@
 import { useKeyboardVisible } from '@/hooks/useKeyboardVisible';
 import { playReply } from '@/lib/reply-audio';
+import { ChatHandoff, HandoffCard } from '@/components/ChatHandoff';
 import { CollectionManager } from '@/components/CollectionManager';
 import { ChatManagement, type ChatChange } from '@/components/ChatManagement';
 import { chatTitle, reconcileChats, visibleChats } from '@/lib/chat-management';
@@ -113,6 +114,7 @@ export default function ChatScreen() {
   const [collections, setCollections] = useState<ChatCollection[]>([]);
   const [collectionFilter, setCollectionFilter] = useState<string | null>(null);
   const [showCollections, setShowCollections] = useState(false);
+  const [showHandoff, setShowHandoff] = useState(false);
   const [syncStatus, setSyncStatus] = useState<'refreshing' | 'current' | 'cached'>('refreshing');
   const persistCache = useCallback(() => {
     const userId = accountRef.current;
@@ -803,7 +805,12 @@ export default function ChatScreen() {
                   </TouchableOpacity>)}
               </View>
             </View>
-            <TextInput accessibilityLabel="Search chat names" placeholder="Search chat names"
+            <TouchableOpacity accessibilityRole="button"
+              disabled={sending || voiceBusy || managementBusy || documentBusy}
+              onPress={() => setShowHandoff(true)} style={{ minHeight: 48, padding: 12 }}>
+              <Text style={{ color: colors.primary[300] }}>Continue together</Text>
+            </TouchableOpacity>
+            <TextInput accessibilityLabel="Search chat names"  placeholder="Search chat names"
               placeholderTextColor={colors.neutral[400]} value={chatSearch} onChangeText={setChatSearch}
               style={{ color: colors.neutral[100], minHeight: 48, padding: 12 }} />
             <TouchableOpacity accessibilityRole="button" onPress={() => setShowArchived(value => !value)}
@@ -866,8 +873,34 @@ export default function ChatScreen() {
           managementBusyRef.current = false;
           await loadConversations(companion.id, session!.user.id);
         }} />}
+      {companion && <ChatHandoff key={`${session?.user.id}:${companion.id}:handoff`}
+        visible={showHandoff} companionId={companion.id}
+        chats={visibleChats(conversations, showArchived, chatSearch, collectionFilter)}
+        collectionId={collections.some(item => item.id === collectionFilter) ? collectionFilter : null}
+        disabled={sending || voiceBusy || managementBusy || documentBusy}
+        onBusy={busy => {
+          managementBusyRef.current = busy; setManagementBusy(busy);
+          conversationVersion.current++; requestVersion.current++;
+        }}
+        onClose={() => {
+          setShowHandoff(false);
+          void loadCompanion();
+        }}
+        onCreated={chat => {
+          const rows = [chat, ...conversations.filter(item => item.id !== chat.id)];
+          setConversations(rows);
+          if (cacheRef.current) {
+            cacheRef.current = { ...cacheRef.current, conversations: rows };
+            persistCache();
+          }
+          setActiveConversation(chat); setShowHandoff(false); setShowSidebar(false);
+        }} />}
       <ChatManagement collections={collections} key={managedChat?.id ?? 'closed'} chat={managedChat} busy={managementBusy}
         error={managementError} onClose={() => { if (!managementBusyRef.current) setManagedChat(null); }} onChange={changeChat} />
+      {activeConversation?.handoff && <HandoffCard key={activeConversation.id}
+        chat={activeConversation} chats={conversations}
+        disabled={sending || voiceBusy || managementBusy || documentBusy}
+        onOpen={chat => setActiveConversation(chat)} />}
       <ConversationList
         ref={flatListRef}
         data={messages}

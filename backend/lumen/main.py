@@ -43,6 +43,7 @@ from .document_style import router as document_style_router
 from .providers import router as providers_router, request_record
 from .goals import router as goals_router
 from .unstuck import router as unstuck_router
+from .chat_handoffs import router as handoff_router
 
 settings = get_settings()
 runtime = CognitionRuntime(settings)
@@ -61,6 +62,7 @@ app.include_router(document_style_router)
 app.include_router(goals_router)
 app.include_router(providers_router)
 app.include_router(unstuck_router)
+app.include_router(handoff_router)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origins,

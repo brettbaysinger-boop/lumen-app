@@ -70,6 +70,10 @@ class CognitionRuntime:
         profile = await self.db.get_profile(self.user_id) if getattr(self, "user_id", None) else None
         system = self._build_system_prompt(companion, state, memories, profile)
         messages = [{"role": "system", "content": system}]
+        from .chat_handoffs import reviewed_handoff_context
+        handoff_context = reviewed_handoff_context(conversation)
+        if handoff_context:
+            messages.append(handoff_context)
         practice = bool(conversation and conversation.get("goal_item_id"))
         if practice:
             messages.append(await practice_context(self.db,companion_id,conversation))
@@ -130,7 +134,8 @@ class CognitionRuntime:
                     companion.get("conversation_model") or self.settings.conversation_model)
             if not action:
                 action = None if document_id else await handle_action(self.db, companion_id, conversation_id, user_message,
-                getattr(self, 'timezone', 'UTC'), getattr(self, 'request_key', str(uuid4())), recent=recent, companion_name=companion["name"])
+                getattr(self, 'timezone', 'UTC'), getattr(self, 'request_key', str(uuid4())), recent=recent, companion_name=companion["name"], provider=provider,
+                 model=companion.get("conversation_model") or getattr(self.settings, "conversation_model", None))
             if not action and (document_id or document_command(user_message) is not None):
                 action = await document_action(self.db, companion_id, user_message, provider,
                     companion.get('conversation_model') or self.settings.conversation_model, emit, document_id=document_id, recent=recent)
@@ -209,7 +214,11 @@ class CognitionRuntime:
                     "Answer the user's last question directly. Use only relevant supplied context. "
                     "Use each memory subject label: user means the user; companion means you; "
                     "shared means both; unknown means ask for clarification. "
-                    "Do not claim a save or promise to remember. Use wording such as "
+                    "No My Day database action was performed by this model reply. "
+                    "Do not claim you created, added, updated, completed or deleted "
+                    "a project, task, reminder or checklist. State that a requested "
+                    "action has not been saved when it was not executed. "
+                    "Do not claim a memory save or promise to remember. Use wording such as "
                     "'Your favorite color is turquoise' when answering a recall question. "
                     "Do not discuss saving unless the question asks about saving."}]
                 original = result
@@ -219,7 +228,7 @@ class CognitionRuntime:
                     if result[key] is not None and original[key] is not None:
                         result[key] += original[key]
                 if has_save_claim(result["content"]):
-                    result["content"] = "I couldn’t produce a reliable reply. I haven’t saved or changed anything. Please try again; for a note, use ‘take a note:’ followed by the text."
+                    result["content"] = "I couldn’t confirm the requested action. I haven’t saved or changed anything in My Day or Memories. Check the saved items before retrying."
 
         # Only the current model-generated reply may request an image.
         # Action commands and explicit-memory branches never enter this path.

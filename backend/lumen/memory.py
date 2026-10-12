@@ -52,8 +52,21 @@ _SAVE_CLAIM = re.compile(
 )
 
 
+
+# Ordinary model generation cannot perform these database actions.
+_DAY_WRITE_CLAIM = re.compile(
+    r"\bi(?:['’]ve| have)?\s+"
+    r"(?:(?:have|also|already|just|successfully|now)\s+)*"
+    r"(?:created|started|saved|added|updated|changed|deleted|removed|completed|archived)\b"
+    r"(?!\s+(?:(?:a|an|the|your)\s+)?(?:draft|outline|example|suggestion|proposal)\b)"
+    r"[^.!?\n]{0,160}\b(?:projects?|tasks?|reminders?|checklists?|my day)\b"
+    r"|\b(?:project|task|reminder|checklist)\s+(?:has been|was)\s+"
+    r"(?:created|saved|added|updated|deleted|completed|archived)\b",
+    re.IGNORECASE,
+)
+
 def has_save_claim(content: str) -> bool:
-    return bool(_SAVE_CLAIM.search(content))
+    return bool(_SAVE_CLAIM.search(content) or _DAY_WRITE_CLAIM.search(content))
 
 
 def is_memory_recall(message: str, companion_name: str = "Lumen") -> bool:
