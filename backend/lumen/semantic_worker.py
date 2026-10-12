@@ -2,10 +2,14 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import logging
 from .db import SupabaseRepository
 from .semantic_embedder import SemanticEmbedder, EmbeddingProviderError
 from .semantic_index import PROFILE, SemanticIndex
 from .config import Settings
+
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -49,3 +53,47 @@ async def index_memory_batch(settings: Settings, access_token: str, companion_id
 
     return IndexBatchResult(len(snapshots), counts["indexed"], counts["already_indexed"],
                             counts["stale"], counts["inactive"], counts["failed"])
+
+async def index_memory_batch_background(
+    settings: Settings,
+    access_token: str,
+    companion_id: str,
+    *,
+    limit: int | None = None,
+) -> None:
+    """Run one bounded batch without allowing background failure to affect chat."""
+    try:
+        result = await index_memory_batch(
+            settings,
+            access_token,
+            companion_id,
+            limit=limit,
+        )
+        logger.info(
+            "Semantic index batch requested=%s indexed=%s already=%s stale=%s inactive=%s failed=%s",
+            result.requested,
+            result.indexed,
+            result.already_indexed,
+            result.stale,
+            result.inactive,
+            result.failed,
+        )
+    except Exception:
+        logger.warning("Semantic memory indexing batch failed")
+
+
+def queue_semantic_index(background_tasks, settings: Settings, access_token: str, companion_id: str) -> bool:
+    """Queue indexing only when both explicit semantic flags are enabled."""
+    if not (
+        getattr(settings, "semantic_memory_enabled", False) is True
+        and getattr(settings, "semantic_index_after_chat", False) is True
+    ):
+        return False
+    background_tasks.add_task(
+        index_memory_batch_background,
+        settings,
+        access_token,
+        companion_id,
+        limit=settings.semantic_embedding_batch,
+    )
+    return True

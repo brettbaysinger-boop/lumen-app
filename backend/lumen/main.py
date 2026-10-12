@@ -6,6 +6,7 @@ import uuid
 import httpx
 from fastapi.responses import StreamingResponse
 from .ollama import model_lock, prioritize_chat
+from .semantic_worker import queue_semantic_index
 
 from fastapi import FastAPI, HTTPException, Depends, BackgroundTasks
 from .observations import observe
@@ -106,6 +107,7 @@ async def respond(request: RespondRequest, background_tasks: BackgroundTasks, us
             )
         if response.observation_message_id:
             background_tasks.add_task(observe, settings, user.token, response.observation_message_id)
+        queue_semantic_index(background_tasks, settings, user.token, request.companion_id)
         return response
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
@@ -330,6 +332,7 @@ async def respond_stream(request: RespondRequest, background_tasks: BackgroundTa
                     )
                 if result.observation_message_id:
                     background_tasks.add_task(observe, settings, user.token, result.observation_message_id)
+                queue_semantic_index(background_tasks, settings, user.token, request.companion_id)
                 await queue.put({"type": "done", "response": result.model_dump()})
             except Exception:
                 await queue.put({"type": "error", "text": "Lumen could not finish this reply. Reload before retrying."})
