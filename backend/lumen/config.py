@@ -25,6 +25,11 @@ class Settings(BaseSettings):
     memory_observations_enabled: bool = True
     memory_observation_model: str = ""
     embedding_model: str = "nomic-embed-text"
+    # Semantic memory remains disabled until a dedicated local embedding endpoint is configured.
+    semantic_memory_enabled: bool = False
+    semantic_embedding_url: str = ""
+    semantic_embedding_batch: int = Field(default=16, ge=1, le=64)
+    semantic_embedding_timeout: int = Field(default=30, ge=1, le=120)
     push_enabled: bool = False
     firebase_service_account_file: str = ""
     speech_url: str = ""
