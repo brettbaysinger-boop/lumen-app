@@ -21,6 +21,7 @@ import { MemoryCorrectionCard } from '@/components/MemoryCorrectionCard';
 import { authHeaders } from '@/lib/auth';
 import { supabase } from '@/lib/supabase';
 import { useTheme } from '@/lib/theme-context';
+import { memorySubjectIssue } from '@/lib/memory-subject';
 import { Spacing, Radius, Typography, type ExtendedThemeColors } from '@/lib/theme';
 import type { Companion, Memory, MemoryType, MemorySubject } from '@/types/database';
 
@@ -40,7 +41,7 @@ function subjectLabel(subject: MemorySubject, name?: string) {
 }
 
 type Suggestion = {
-  id: string; content: string; evidence: string; subject: MemorySubject;
+  id: string; content: string; evidence: string; subject: MemorySubject; type: MemoryType;
 };
 
 export default function MemoriesScreen() {
@@ -114,12 +115,18 @@ export default function MemoriesScreen() {
 
   const reviewSuggestion = async (item: Suggestion, action: 'approve' | 'dismiss') => {
     if (reviewBusy) return;
+    const content = reviewing === item.id ? reviewContent.trim() : item.content;
+    const subject = reviewing === item.id ? reviewSubject : item.subject;
+    if (action === 'approve') {
+      const issue = memorySubjectIssue(content, subject, companion?.name || 'Companion', item.type);
+      if (issue) { setError(issue); return; }
+    }
     setReviewBusy(true);
     try {
       const { data, error: err } = await supabase.rpc('review_memory_suggestion', {
         p_id: item.id, p_action: action,
-        p_content: reviewing === item.id ? reviewContent.trim() : item.content,
-        p_subject: reviewing === item.id ? reviewSubject : item.subject,
+        p_content: content,
+        p_subject: subject,
       });
       if (err) throw err;
       setSuggestions(previous => previous.filter(s => s.id !== item.id));
@@ -159,6 +166,8 @@ export default function MemoriesScreen() {
 
   const addMemory = useCallback(async () => {
     if (!companion || !newContent.trim()) return;
+    const issue = memorySubjectIssue(newContent.trim(), newSubject, companion.name, newType);
+    if (issue) { setError(issue); return; }
     const importance = parseFloat(newImportance) || 0.5;
     const { data, error: err } = await supabase
       .from('memories').insert({
@@ -308,6 +317,10 @@ export default function MemoriesScreen() {
                     <TouchableOpacity
                       disabled={savingMemory || !memoryDraft.trim()}
                       onPress={async () => {
+                        const issue = memorySubjectIssue(
+                          memoryDraft.trim(), item.subject, companion?.name || 'Companion', item.type
+                        );
+                        if (issue) { setError(issue); return; }
                         setSavingMemory(true);
                         const { data, error: err } = await supabase
                           .from('memories')
@@ -366,6 +379,10 @@ export default function MemoriesScreen() {
                       key={subject}
                       style={styles.typeChip}
                       onPress={async () => {
+                        const issue = memorySubjectIssue(
+                          item.content, subject, companion?.name || 'Companion', item.type
+                        );
+                        if (issue) { setError(issue); return; }
                         const { data, error: err } = await supabase
                           .from('memories')
                           .update({ subject })
