@@ -1,5 +1,68 @@
 # Lumen — Authoritative Project Status
 
+<!-- phase1-live-user-accepted-2026-10-13 -->
+## October 13, 2026 (America/Phoenix) — Phase 1 memory quality LIVE, user-accepted
+
+**Current authoritative memory-quality status:** Phase 1a and 1b implemented,
+committed, deployed to the local Lumen installation, and accepted in the
+authenticated Firefox browser workflow. Application Git commit `1a39432`
+(`feat/lumen-take2-local`) follows `2367b0a` (Phase 1a) and `f86e2d8`
+(initial attribution hardening). The acceptance and rollout evidence below are
+**user-reported local evidence**, not a fresh remote database inspection.
+
+Production rollout evidence from the user's terminal:
+- Completed isolated SQL review-RPC/RLS tests, client contract tests,
+  552 backend tests, TypeScript typecheck and separate Expo web export.
+- Fresh database backup verified at
+  `/home/brett/lumen-backups/phase1b-rollout-20261012-224152`.
+  Previous production web export preserved at that backup's `dist-before/`.
+- Applied/verified migration
+  `20261012233000_memory_durability_review_guard.sql` and migration ledger
+  **atomically**; the separate web export was activated only after the DB.
+- API, Ollama, PostgreSQL and served web index reported healthy.
+- Immediate post-rollout baseline **before browser acceptance**:
+  pilot companion 97 active memories / 97 current embeddings, no other
+  companion embeddings, 122 active memories globally, no stale bindings.
+  The browser tests may have saved a new memory in a test account; do not
+  assume these exact counts are still current without re-querying.
+- `semantic_memory_enabled=False` and
+  `semantic_index_after_chat=False` after rollout; semantic retrieval
+  remains shadow-only, and existing lexical reply behavior remains in use.
+- Four unrelated protected worktree items remained untouched:
+  `supabase/config.toml`,
+  `lib/image-followup.ts.before-subject-fix`,
+  `supabase/config.toml.before-tail-redirects`,
+  `supabase/config.toml.before-tail-site-url`.
+
+**October 13 user-reported Firefox acceptance — all four checks PASSED:**
+1. A clearly durable fact was remembered automatically.
+2. A one-off request for a silly joke received an ordinary reply and was
+   not retained as junk memory; the user found the joke funny.
+3. A form-of-address request became a reviewable suggestion. Approval
+   required an additional deliberate confirmation and succeeded.
+   A separate direct inspection of the audit row was not supplied in this
+   acceptance report (the SQL contract was tested independently).
+4. Switching to another test account showed correct account isolation.
+   The user's result was PASS.
+
+**Phase 1 is closed for the reviewed-observation durability workflow.**
+Do not generalize this acceptance to every memory-write path or Android/iOS.
+Direct manual inserts and explicit `remember` saves remain separate,
+user-controlled paths; further audit/revision safeguards are future scope.
+
+**Next priority — Phase 2: independent 97-memory retrieval benchmark.**
+Build a labeled, frozen, owner+companion-scoped benchmark with multiple
+acceptable gold memories per question, indirect/paraphrase and temporal
+questions, hard negatives, absent-answer controls, and privacy isolation.
+Keep private memory text, prompts, and annotations outside Git; publish only
+aggregate metrics and protocol. Evaluate semantic-only shadow retrieval
+before hybrid lexical/entity/subject/time reranking or live activation.
+See `docs/memory-retrieval-benchmark-phase2.md`.
+
+This section supersedes older sections calling memory quality "paused",
+Phase 1 "pending" or the migration "not deployed". Historical sections
+remain for chronology.
+
 <!-- memory-97-97-gold-standard-checkpoint-2026-10-12 -->
 ## October 12, 2026 (America/Phoenix) — Semantic memory 97/97, Phase 1 queued
 
