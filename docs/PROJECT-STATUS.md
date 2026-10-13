@@ -1,5 +1,77 @@
 # Lumen — Authoritative Project Status
 
+<!-- memory-97-97-gold-standard-checkpoint-2026-10-12 -->
+## October 12, 2026 (America/Phoenix) — Semantic memory 97/97, Phase 1 queued
+
+**Source:** User-supplied production terminal results, confirmed after the
+October 12 durability repair; not a repository snapshot of private DB data.
+**Repository application code:** `f86e2d8` on `feat/lumen-take2-local`
+before this documentation checkpoint. Host `aiLumen-llm-video`, checkout
+`/home/brett/lumen-push`.
+
+Product contract: memory ownership is always the authenticated end user and
+their specific companion, never hard-coded personal/companion names. The
+local database has 11 companions owned by 10 distinct users; one user owns
+two companions. Scope every memory query and embedding to the actual owner
+AND companion.
+
+- Memory quality implementation `f86e2d8` was pushed; 542 backend tests,
+  TypeScript check and Expo web export passed. SQL guardrails migration
+  `20261012090000_memory_quality_guardrails.sql` was applied/ledgered
+  atomically in the local Supabase database. API and web deployed, API,
+  Ollama and database health OK.
+- Seven earlier attribution/durability mistakes were cleaned using
+  exact source-message evidence, strict row/revision/fingerprint checks and
+  independent transactions. One verified attribution repair set changed
+  8 rows; a subsequent verified durability repair corrected 2 useful
+  statements and deactivated 5 one-off/temporary statements. Original
+  suggestions and evidence were preserved; revisions advanced.
+- The pilot companion's latest verified state: **97 active saved memories,
+  97 current embeddings, 0 stale/invalid bindings, 0 embeddings for other
+  companions**, and 122 active saved memories total database-wide.
+  This is a single companion's complete shadow index, not a globally
+  shared memory index. Other accounts' data was not indexed.
+- Pinned model: `nomic-embed-text:v1.5`, digest
+  `0a109f422b47e3a30ba2b10eca18548e944e8a23073ee3f3e947efcf3c45e59f`,
+  768 L2-normalized dimensions, `search_document:` and `search_query:`
+  preprocessing, CPU-only Ollama at `127.0.0.1:11435`, `size_vram=0`.
+- Both `semantic_memory_enabled=False` and
+  `semantic_index_after_chat=False`; **semantic candidates do not yet
+  influence chat replies**. Existing lexical recall remains in use.
+- Foreign owner denied by real authenticated SQL match RPC; same-owner
+  sibling companion isolated. The original 4-row retrieval smoke trial
+  scored 4/4 direct top-1 with an unrelated control; that is not a full
+  performance estimate.
+- Historical benchmark of **8 targets / 16 model-generated questions**
+  on the old 102-memory index: direct top-1 7/8 (87.5%), indirect top-1
+  4/8 (50%); many prompts were ambiguous and several gold targets had
+  valid near-equivalents. The 102-memory report is retained as historical
+  evidence only, NOT a validated current 97-memory benchmark. The
+  `think=False` structured question-generation fix was verified.
+- Pre-durability-repair backup, created and verified:
+  `/home/brett/lumen-backups/durability-repair-20261012-210932`.
+  Local read-only source audit report:
+  `/home/brett/.local/state/lumen-audits/durability-context-20261012-063448.json`.
+  Backups and private benchmarks remain outside Git.
+
+**Current priority — Phase 1, prevent future bad memories.** Cover natural
+observation extraction, automatic saving, user review approval, and explicit
+manual/remember requests with a generic, conservative durability decision.
+Skip unmistakable throwaway messages; flag uncertain one-off requests for
+review and preserve explicit user override with a clear confirmation.
+Add backend/TypeScript/SQL regression tests before any deployment.
+Then Phase 2: independently labeled 97-memory retrieval benchmark; Phase 3:
+hybrid lexical/entity/subject/temporal candidate selection and abstention.
+No semantic runtime activation until measured and accepted.
+
+The historical cleanup is **local database state**, not code committed to Git.
+Preserve four unrelated local files:
+`supabase/config.toml`,
+`lib/image-followup.ts.before-subject-fix`,
+`supabase/config.toml.before-tail-redirects`,
+`supabase/config.toml.before-tail-site-url`.
+Never reset/clean/broad-stage the checkout. No deployment of Phase 1 yet.
+
 <!-- chat-usability-checkpoint-2026-10-11 -->
 
 ## October 11, Phoenix — Chat usability first pass; acceptance pending
