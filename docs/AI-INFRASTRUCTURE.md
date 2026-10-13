@@ -1,5 +1,8 @@
 # AI infrastructure
 
+> **Latest five-node runtime checkpoint — October 13, 2026:** [Current LLM Stack Map](LLM-STACK-MAP-2026-10-13.md). This supersedes the *node count* and infrastructure verification status below, without rewriting the earlier October 11 hardware evidence. Five hosts include dedicated Forge and Raspberry Pi 5. The Pi's monitoring software is **not installed**; Video remains the running companion/database node, Heavy remains a general GPU capability node and Helios remains speech. PostgreSQL and storage backups were copied as an encrypted archive to Forge, but restore is untested. Video UFW remains inactive; planned Docker/port hardening is not complete. No services changed in this docs-only checkpoint.
+
+
 ## Verified application node — October 11, 2026 (America/Phoenix)
 
 User-supplied terminal evidence from `aiLumen-llm-video`:

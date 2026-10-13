@@ -1,5 +1,22 @@
 # Lumen — Authoritative Project Status
 
+<!-- five-node-infrastructure-handoff-2026-10-13 -->
+## October 13, 2026 — Five-node infrastructure/recovery checkpoint (docs only)
+
+The owner reviewed the complete five-node local AI stack and elected to **pause new deployments** before reassessing the Pi and backend isolation. See [current LLM stack map](LLM-STACK-MAP-2026-10-13.md).
+
+- Five nodes identified: Video (application/data/LLM), Helios (speech), Heavy (multi-capability GPU), Forge (separate coding agent), Raspberry Pi 5 (proposed independent read-only monitoring).
+- Raspberry Pi SSH/Tailscale/UFW were verified, but **no monitoring script/service/timer/dashboard/alerts were installed**.
+- After user-reported verified PostgreSQL/Storage/Edge exports and an encrypted transfer to Forge, Lumen API/Ollama/database health stayed OK; archive hashes matched. An isolated restore is **still pending**, along with current secrets/media coverage and an offsite copy.
+- Video UFW remains inactive; Docker-published database/admin ports were accessible from another trusted LAN machine. **No Video firewall, Supabase port-binding, service or application change was performed**.
+- Helios UFW active; Docker speech API isolation requires independent review. SSH keys/aliases are partly configured; this is not a fully tested five-host mesh or inference scheduler.
+- The owner was **offsite** via Helios SSH into Video. Keep Video network/security changes frozen until recovery console is available.
+- The independent Pest Control Platform is currently a prototype/design + repository-scaffold effort, **not** a production workload on any node.
+- Preserve existing Lumen memory work (Oct 12, pilot shadow 97/97, semantic replies disabled), other application milestones, and local uncommitted `supabase/config.toml`. No new tests, PR merge or host deployments are claimed here.
+
+Historical application checkpoints below retain their original scope and acceptance evidence.
+
+
 <!-- memory-97-97-gold-standard-checkpoint-2026-10-12 -->
 ## October 12, 2026 (America/Phoenix) — Semantic memory 97/97, Phase 1 queued
 
