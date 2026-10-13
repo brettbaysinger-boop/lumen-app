@@ -1,5 +1,39 @@
 # Raialume — Development Session Handoff
 
+<!-- 2026-10-12-memory-phase1-handoff -->
+## October 12, 2026 — Fresh session handoff (memory phase)
+
+Base application `f86e2d8` was pushed and verified before this docs checkpoint.
+User-confirmed runtime on `aiLumen-llm-video`: memory-quality guardrail
+migration `20261012090000` live; pilot companion **97/97** active/current
+semantic memories, other companions **0** embeddings, stale bindings **0**;
+global active memories **122**. Semantic reply retrieval and after-chat
+indexing BOTH **disabled**; API/Ollama/DB healthy.
+
+Seven-case user-approved-observation source audit located exact original
+messages. Local atomic durability repair deactivated five transient
+requests/greetings/reactive statements, rewrote two useful user-provided
+facts, invalidated seven old derived embeddings, then reindexed the two
+retained rows through authenticated owner-scoped RPCs. Verified backup at
+`/home/brett/lumen-backups/durability-repair-20261012-210932`. No
+private per-user repair IDs should enter generic production migrations.
+
+Earlier 102-memory shadow benchmark had 8 targets / 16 synthetic queries;
+direct top-1 87.5%, indirect top-1 50.0%. It was NOT independently
+labeled, and contained broad/ambiguous questions plus equivalent memories.
+Do not present its metrics as a valid 97-memory baseline.
+Next: Phase 1 generic durability filters + explicit human warning/override
+with independent tests, then manually validated benchmark and hybrid
+retrieval. Preserve authorized saved preferences and explicit "remember"
+instructions; never automatically discard a lasting fact based on surface
+question punctuation alone. Never activate semantic replies prematurely.
+
+Current checkout branch `feat/lumen-take2-local`; protect the unrelated
+`supabase/config.toml` edit and three *.before-* files in the latest user
+terminal status. Verify fresh branch, commit, local status before applying
+further patches. Treat this as user-supplied runtime evidence, not as a
+Git-derived database state.
+
 <!-- consolidated-mobile-checkpoint-2026-10-11 -->
 
 ## Current checkpoint — October 11, 2026 (America/Phoenix)
