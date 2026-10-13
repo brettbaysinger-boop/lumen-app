@@ -1,5 +1,30 @@
 # Phase 1b — Database-enforced reviewed-memory durability
 
+<!-- acceptance-2026-10-13 -->
+## Deployment and acceptance update — October 13, 2026
+
+This document originally described a pending migration. **It is now live**
+in the local installation at code commit `1a39432`. The user verified a
+backup, transactional application and ledger entry, healthy API/DB/Ollama,
+and a successful web rollout. Backup root:
+`/home/brett/lumen-backups/phase1b-rollout-20261012-224152`.
+
+The user subsequently reported four successful authenticated Firefox checks:
+automatic save of a lasting fact; correct non-retention of a one-time joke
+request; form-of-address proposal approved after a second deliberate click;
+and account isolation after switching accounts. This establishes acceptance
+of those specific workflows, not every possible manual/legacy write path.
+
+The prior 97/97 indexed pilot baseline was checked immediately after rollout,
+**before** this browser testing; fresh test memories may change live totals.
+Both semantic feature flags remained disabled. Separate direct verification
+of a production audit receipt has not been supplied, although isolated SQL
+tests covered authenticated override receipt creation and RLS.
+
+Historical "future work"/"not yet deployed" wording below is retained to
+show what was planned before this rollout. Continue to Phase 2 using the
+private, independently labeled retrieval benchmark protocol.
+
 This is an additive database contract for **natural observation review approvals**.
 It is generic to authenticated account owner and the particular companion.
 There are no user-, companion-, or record-specific IDs in production code.
