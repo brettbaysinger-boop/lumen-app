@@ -1,5 +1,49 @@
 # Raialume — Development Session Handoff
 
+<!-- phase1-acceptance-handoff-2026-10-13 -->
+## October 13, 2026 — Memory Phase 1 accepted, Phase 2 next
+
+Authoritative checkpoint: feature branch `feat/lumen-take2-local`,
+application commit `1a39432` is deployed and user-accepted in Firefox.
+This record reflects user-provided production terminal output and the user's
+explicit four-of-four browser-acceptance report, not a new independent runtime
+probe in this documentation update.
+
+- Phase 1a: discard obvious temporary natural observations; mark uncertain
+  factual questions or form-of-address requests for review; preserve direct
+  deliberate user saves.
+- Phase 1b: legacy/automatic review cannot silently approve questionable
+  observations; `review_memory_suggestion_v2` enables authenticated
+  deliberate approval; owner-scoped override receipts and RLS tested.
+- Database migration `20261012233000_memory_durability_review_guard.sql`
+  applied and ledgered atomically. Backup:
+  `/home/brett/lumen-backups/phase1b-rollout-20261012-224152`.
+  Previous served web export preserved at `dist-before/`.
+- Isolated SQL + browser-client contracts passed; 552 backend tests and
+  TypeScript passed; Expo export succeeded. API/Ollama/PostgreSQL and served
+  web were healthy at rollout.
+- Immediately after rollout (before subsequent browser test data): pilot
+  97/97 active/indexed; other companions 0 indexed; 122 active globally;
+  0 binding errors. Both semantic retrieval and background semantic indexing
+  remain disabled; these counts must be refreshed after new test memories.
+- User reports Firefox tests 4/4 passing: automatic durable memory, no
+  saved one-time joke, form-of-address suggestion + second approval,
+  and isolation after switching to another account.
+  Audit receipt was covered by isolated SQL test; no separate live audit
+  query is reported.
+
+**Next:** Phase 2 independent labeled shadow-retrieval evaluation.
+See `docs/memory-retrieval-benchmark-phase2.md`. Freeze fresh read-only
+owner/companion scope, preserve all private memory contents locally, annotate
+multi-positive relevance and valid abstentions, then measure semantic-only
+baseline before any feature flag change. Avoid treating the old
+102-memory/16-question synthetic benchmark as validated 97-memory evidence.
+Do not modify the protected four local config/backup files or deploy RAG.
+
+This checkpoint supersedes historical notes that memory work is paused or
+the Phase 1 migration is pending. No new runtime changes are made by this
+documentation-only commit.
+
 <!-- 2026-10-12-memory-phase1-handoff -->
 ## October 12, 2026 — Fresh session handoff (memory phase)
 
