@@ -22,6 +22,7 @@ import { authHeaders } from '@/lib/auth';
 import { supabase } from '@/lib/supabase';
 import { useTheme } from '@/lib/theme-context';
 import { memorySubjectIssue } from '@/lib/memory-subject';
+import { memoryDurabilityWarning } from '@/lib/memory-durability';
 import { Spacing, Radius, Typography, type ExtendedThemeColors } from '@/lib/theme';
 import type { Companion, Memory, MemoryType, MemorySubject } from '@/types/database';
 
@@ -44,6 +45,10 @@ type Suggestion = {
   id: string; content: string; evidence: string; subject: MemorySubject; type: MemoryType;
 };
 
+function approvalSignature(item: Suggestion, content: string, subject: MemorySubject): string {
+  return JSON.stringify([item.id, content, subject, item.type, item.evidence]);
+}
+
 export default function MemoriesScreen() {
   const { colors: c } = useTheme();
   const MEMORY_TYPE_CONFIG = useMemo(() => buildTypeConfig(c), [c]);
@@ -58,6 +63,7 @@ export default function MemoriesScreen() {
   const [reviewContent, setReviewContent] = useState('');
   const [reviewSubject, setReviewSubject] = useState<MemorySubject>('user');
   const [reviewBusy, setReviewBusy] = useState(false);
+  const [reviewWarning, setReviewWarning] = useState<{ id: string; signature: string } | null>(null);
   const [retryNotice, setRetryNotice] = useState('');
   const [memories, setMemories] = useState<Memory[]>([]);
   const [loading, setLoading] = useState(true);
@@ -70,6 +76,7 @@ export default function MemoriesScreen() {
   const [newSubject, setNewSubject] = useState<MemorySubject>('user');
   const [newType, setNewType] = useState<MemoryType>('semantic');
   const [newImportance, setNewImportance] = useState('0.5');
+  const [manualWarningSignature, setManualWarningSignature] = useState<string | null>(null);
 
   const loadCompanion = useCallback(async () => {
     const { data, error: err } = await supabase
@@ -120,6 +127,13 @@ export default function MemoriesScreen() {
     if (action === 'approve') {
       const issue = memorySubjectIssue(content, subject, companion?.name || 'Companion', item.type);
       if (issue) { setError(issue); return; }
+      const warning = memoryDurabilityWarning(content, item.evidence);
+      const signature = approvalSignature(item, content, subject);
+      if (warning && (reviewWarning?.id !== item.id || reviewWarning.signature !== signature)) {
+        setReviewWarning({ id: item.id, signature });
+        setError(`${warning} Tap Approve anyway to deliberately keep this memory.`);
+        return;
+      }
     }
     setReviewBusy(true);
     try {
@@ -131,6 +145,7 @@ export default function MemoriesScreen() {
       if (err) throw err;
       setSuggestions(previous => previous.filter(s => s.id !== item.id));
       setReviewing(null);
+      setReviewWarning(null);
       if (data === 'deleted') setError('This matches a removed memory. It was not restored.');
       else setError(null);
       await loadMemories();
@@ -168,6 +183,13 @@ export default function MemoriesScreen() {
     if (!companion || !newContent.trim()) return;
     const issue = memorySubjectIssue(newContent.trim(), newSubject, companion.name, newType);
     if (issue) { setError(issue); return; }
+    const signature = JSON.stringify([companion.id, newContent.trim(), newSubject, newType]);
+    const warning = memoryDurabilityWarning(newContent.trim());
+    if (warning && manualWarningSignature !== signature) {
+      setManualWarningSignature(signature);
+      setError(`${warning} Tap Confirm save anyway to deliberately keep it.`);
+      return;
+    }
     const importance = parseFloat(newImportance) || 0.5;
     const { data, error: err } = await supabase
       .from('memories').insert({
@@ -179,7 +201,8 @@ export default function MemoriesScreen() {
     if (err) { setError(err.message); return; }
     setMemories((prev) => [data as Memory, ...prev]);
     setNewContent(''); setNewImportance('0.5'); setShowAddModal(false);
-  }, [companion, newContent, newType, newImportance, newSubject]);
+    setManualWarningSignature(null); setError(null);
+  }, [companion, newContent, newType, newImportance, newSubject, manualWarningSignature]);
 
   if (loading) {
     return (
@@ -254,8 +277,20 @@ export default function MemoriesScreen() {
                   </View>
                 </> : <Text style={styles.memoryContent}>{item.content}</Text>}
                 <Text style={styles.memoryDate}>You said: “{item.evidence}”</Text>
+                {!!memoryDurabilityWarning(reviewing === item.id ? reviewContent : item.content, item.evidence) && (
+                  <Text style={styles.memoryDate}>
+                    Review durability: {memoryDurabilityWarning(reviewing === item.id ? reviewContent : item.content, item.evidence)}
+                  </Text>
+                )}
                 <View style={styles.typeSelector}>
-                  <TouchableOpacity style={styles.typeChip} disabled={reviewBusy || (reviewing === item.id && !reviewContent.trim())} onPress={() => reviewSuggestion(item, 'approve')}><Text style={{ color: c.primary[300] }}>Approve</Text></TouchableOpacity>
+                  <TouchableOpacity style={styles.typeChip} disabled={reviewBusy || (reviewing === item.id && !reviewContent.trim())} onPress={() => reviewSuggestion(item, 'approve')}>
+                    <Text style={{ color: c.primary[300] }}>
+                      {reviewWarning?.id === item.id && reviewWarning.signature === approvalSignature(
+                        item, reviewing === item.id ? reviewContent.trim() : item.content,
+                        reviewing === item.id ? reviewSubject : item.subject
+                      ) ? 'Approve anyway' : 'Approve'}
+                    </Text>
+                  </TouchableOpacity>
                   <TouchableOpacity style={styles.typeChip} disabled={reviewBusy} onPress={() => { setReviewing(item.id); setReviewContent(item.content); setReviewSubject(item.subject); }}><Text style={styles.typeChipText}>Edit</Text></TouchableOpacity>
                   <TouchableOpacity style={styles.typeChip} disabled={reviewBusy} onPress={() => reviewSuggestion(item, 'dismiss')}><Text style={styles.typeChipText}>Dismiss</Text></TouchableOpacity>
                 </View>
@@ -516,8 +551,17 @@ export default function MemoriesScreen() {
                 </TouchableOpacity>
               ))}
             </View>
+            {!!memoryDurabilityWarning(newContent) && (
+              <Text style={styles.memoryDate}>
+                Durability check: {memoryDurabilityWarning(newContent)} Saving is your choice.
+              </Text>
+            )}
             <TouchableOpacity style={[styles.modalSaveButton, !newContent.trim() && styles.modalSaveButtonDisabled]} onPress={addMemory} disabled={!newContent.trim()}>
-              <Text style={styles.modalSaveText}>Save Memory</Text>
+              <Text style={styles.modalSaveText}>
+                {memoryDurabilityWarning(newContent) && manualWarningSignature === JSON.stringify([
+                  companion?.id, newContent.trim(), newSubject, newType
+                ]) ? 'Confirm save anyway' : 'Save Memory'}
+              </Text>
             </TouchableOpacity>
           </View>
         </TouchableOpacity>

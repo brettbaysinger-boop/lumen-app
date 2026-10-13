@@ -1,0 +1,70 @@
+import unittest
+
+from lumen.memory_durability import classify_natural_evidence
+
+
+class NaturalDurabilityTests(unittest.TestCase):
+    def decision(self, text, durable=True):
+        return classify_natural_evidence(text, text, durable=durable).action
+
+    def test_obvious_one_off_messages_are_not_stored(self):
+        for statement in (
+            "Tell me a silly joke.",
+            "Dammit. Tell me a silly joke.",
+            "Good morning, beautiful. How are you?",
+            "Hi!",
+            "Can you show me a picture of yourself?",
+            "Orion, can you hear me clearly?",
+            "I'm hungry.",
+            "Im exhausted.",
+            "Still wrong, try again.",
+            "What are you doing?",
+        ):
+            with self.subTest(statement=statement):
+                self.assertEqual(self.decision(statement), "skip")
+
+    def test_question_may_contain_durable_information_and_must_be_reviewed(self):
+        for statement in (
+            "Did you know I'm your creator?",
+            "Will you call me captain?",
+            "Can you call me Star?",
+            "Good morning, I am building a new model. How are you?",
+            "I prefer jasmine tea. Can you make me some?",
+            "Remember that my favorite color is turquoise.",
+            "From now on, call me Captain.",
+        ):
+            with self.subTest(statement=statement):
+                self.assertEqual(self.decision(statement), "review")
+
+    def test_durable_assertions_are_allowed(self):
+        for statement in (
+            "My favorite color is turquoise.",
+            "I'm building an all-digital farmers almanac.",
+            "I prefer that you call me captain.",
+            "The companion's learning queue includes Python.",
+            "We want to work together on the project.",
+            "Our next milestone is planning the launch.",
+        ):
+            with self.subTest(statement=statement):
+                self.assertEqual(self.decision(statement), "allow")
+
+    def test_model_non_durable_is_not_silently_approved(self):
+        self.assertEqual(self.decision("My favorite color is turquoise.", durable=False), "skip")
+
+    def test_explicit_memory_commands_remain_user_controlled(self):
+        from lumen.memory import memory_request
+        recognized, content = memory_request(
+            "Nova, remember that I want silly jokes.", "Nova"
+        )
+        self.assertTrue(recognized)
+        self.assertEqual(content, "I want silly jokes.")
+
+    def test_does_not_assume_names_or_specific_users(self):
+        for name in ("Nova", "Atlas", "Aria"):
+            self.assertEqual(self.decision(
+                f"{name}, can you hear me clearly?"
+            ), "skip")
+
+
+if __name__ == "__main__":
+    unittest.main()

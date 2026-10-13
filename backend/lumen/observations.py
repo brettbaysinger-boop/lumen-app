@@ -9,6 +9,7 @@ from .memory_quality import (
     subject_content_issue,
     transient_memory_candidate,
 )
+from .memory_durability import classify_natural_evidence
 from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field
 from .db import SupabaseRepository
@@ -68,6 +69,11 @@ will plausibly matter in a later conversation. Set durable=false for immediate r
 feedback, throwaway reactions, temporary UI/image-generation complaints, greetings,
 questions, roleplay, hypothetical examples, or one-off wording like "still wrong" or
 "try again". Return an empty candidates list when there is no durable memory.
+A one-time greeting, request, reaction, image or microphone check is not a durable
+memory even when the user asks warmly or emphatically. A question may contain a
+durable claim (for example, "Did you know I'm the creator?"); propose only the
+claim with its verbatim user-message evidence and require review rather than
+assuming every question must become a preference.
 
 Each evidence must copy an exact substring of the supplied user statement, with no
 explanation, prefix, quote marks added by you, or changed punctuation.
@@ -134,6 +140,13 @@ as direct. Return JSON matching the supplied schema."""
             if not c.content.strip() or not evidence.strip():
                 rejected += 1
                 continue
+            durability = classify_natural_evidence(
+                source["content"], evidence, durable=c.durable
+            )
+            if durability.action == "skip":
+                continue
+            if durability.action == "review":
+                c = c.model_copy(update={"conflicting": True})
             if transient_memory_candidate(
                 c.content, evidence, c.subject, c.type, durable=c.durable
             ):
