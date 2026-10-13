@@ -124,25 +124,38 @@ export default function MemoriesScreen() {
     if (reviewBusy) return;
     const content = reviewing === item.id ? reviewContent.trim() : item.content;
     const subject = reviewing === item.id ? reviewSubject : item.subject;
+    const approvalKey = approvalSignature(item, content, subject);
+    const confirmDurability = action === 'approve' &&
+      reviewWarning?.id === item.id && reviewWarning.signature === approvalKey;
     if (action === 'approve') {
       const issue = memorySubjectIssue(content, subject, companion?.name || 'Companion', item.type);
       if (issue) { setError(issue); return; }
       const warning = memoryDurabilityWarning(content, item.evidence);
-      const signature = approvalSignature(item, content, subject);
-      if (warning && (reviewWarning?.id !== item.id || reviewWarning.signature !== signature)) {
-        setReviewWarning({ id: item.id, signature });
+      if (warning && !confirmDurability) {
+        setReviewWarning({ id: item.id, signature: approvalKey });
         setError(`${warning} Tap Approve anyway to deliberately keep this memory.`);
         return;
       }
     }
     setReviewBusy(true);
     try {
-      const { data, error: err } = await supabase.rpc('review_memory_suggestion', {
+      const { data, error: err } = await supabase.rpc('review_memory_suggestion_v2', {
         p_id: item.id, p_action: action,
         p_content: content,
         p_subject: subject,
+        p_confirm_durability: confirmDurability,
       });
       if (err) throw err;
+      if (data === 'durability_confirmation_required') {
+        // The server has seen a questionable original message that a client
+        // heuristic may have missed. Keep the suggestion pending and ask again.
+        setReviewWarning({ id: item.id, signature: approvalKey });
+        setError('The original message may be a one-time request or reaction. Tap Approve anyway to deliberately keep this memory.');
+        return;
+      }
+      if (data !== 'approved' && data !== 'dismissed' && data !== 'deleted') {
+        throw new Error('Unexpected memory review result. The suggestion was not removed.');
+      }
       setSuggestions(previous => previous.filter(s => s.id !== item.id));
       setReviewing(null);
       setReviewWarning(null);
