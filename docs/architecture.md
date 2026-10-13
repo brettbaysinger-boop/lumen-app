@@ -1,5 +1,8 @@
 # Lumen Architecture
 
+> **Topology correction, October 13, 2026 — docs only.** The local stack contains **five** physical machines, including a separate Forge coding host and Raspberry Pi 5. The Pi is recommended as a noncritical read-only observer, but its monitor script, timer and dashboard are **not deployed**. Lumen's conversation, ownership and provider flows are unchanged. Heavy is multi-capability GPU compute, **not solely an image appliance**. The independent Pest Control Platform remains prototypes only and must not share Lumen's tenant/database security boundary. See [the current LLM stack map](LLM-STACK-MAP-2026-10-13.md) for verified versus planned edges. The historical three-node description below is not the full physical inventory.
+
+
 <!-- consolidated-mobile-checkpoint-2026-10-11 -->
 
 ## Current checkpoint — October 11, 2026 (America/Phoenix)
