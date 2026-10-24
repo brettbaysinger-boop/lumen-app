@@ -10,6 +10,7 @@ from .memory_quality import (
     transient_memory_candidate,
 )
 from .memory_durability import classify_natural_evidence
+from .memory_retrieval import rank_memories, terms
 from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field
 from .db import SupabaseRepository
@@ -32,6 +33,29 @@ class Candidate(BaseModel):
 class Candidates(BaseModel):
     model_config = ConfigDict(extra="forbid")
     candidates: list[Candidate] = Field(max_length=3)
+
+
+def relevant_existing_for_extraction(memories: list[dict], statement: str, *, limit: int = 6) -> list[dict]:
+    """Bound memory context to active, lexically related facts, never the full profile.
+
+    The SQL review RPC remains authoritative for exact duplicate and topic
+    conflict checks. Even this small context is reference data, not evidence
+    of a fact asserted in the current user message.
+    """
+    query = terms(statement)
+    if not query:
+        return []
+    ranked = rank_memories(memories, statement, limit=limit)
+    selected = []
+    for memory in ranked:
+        tags = memory.get("tags") or []
+        text = str(memory.get("content") or "") + " " + " ".join(
+            value for value in tags if isinstance(value, str)
+        ) if isinstance(tags, list) else str(memory.get("content") or "")
+        if query & terms(text):
+            selected.append(memory)
+    return selected
+
 
 async def observe(settings, token: str, message_id: str):
     task = asyncio.create_task(_observe(settings, token, message_id))
@@ -67,6 +91,11 @@ async def _observe(settings, token: str, message_id: str):
             return
         existing = await db._request("GET", "memories", params={
             "companion_id": f"eq.{source['companion_id']}", "select": "content,subject,is_active,tags", "limit": "500"})
+        # Retrieval is restricted to a small, relevant subset. Supplying the
+        # entire memory inventory can overflow the inference context and
+        # silently truncate the source-only evidence instructions.
+        extraction_memories = relevant_existing_for_extraction(
+            existing, source["content"])
         prompt = """Extract up to three useful long-term memory proposals from the current user's statement.
 Conversation context may be supplied only to resolve references such as "you", "her",
 "that", or an omitted subject. Never extract a memory from context alone. The current
@@ -105,7 +134,7 @@ interpretation, or when ownership depends on conversational context rather than 
 wording in the current user statement. topic is a stable lowercase snake_case attribute
 (e.g. favorite_color, preferred_season, current_project); use an empty topic if no clear
 attribute exists. Never mark questions, hypotheticals, instructions or inferred facts
-as direct. Return JSON matching the supplied schema."""
+as direct. Return JSON matching the required structured-output schema."""
         prior = []
         if source.get("conversation_id") and source.get("created_at"):
             prior = await db._request("GET", "messages", params={
@@ -115,7 +144,7 @@ as direct. Return JSON matching the supplied schema."""
                 "limit": "6",
             })
             prior = [
-                {"role": row.get("role"), "content": row.get("content", "")}
+                {"role": row.get("role"), "content": (row.get("content") or "")[-1200:]}
                 for row in reversed(prior)
                 if row.get("role") in ("user", "assistant")
             ]
@@ -123,8 +152,11 @@ as direct. Return JSON matching the supplied schema."""
             "companion_name": companion["name"],
             "conversation_context": prior,
             "user_statement": source["content"],
-            "existing_memories": existing,
-            "schema": Candidates.model_json_schema(),
+            # A bounded selection helps with contradictions without drowning
+            # the actual source statement in past memories.
+            "existing_memories": extraction_memories,
+            # The schema is already enforced by Ollama's "format" parameter.
+            # Do not waste prompt budget serializing it a second time.
         }
         async with model_lock:
             # Follow the selected chat model by default to avoid a second large model load.
