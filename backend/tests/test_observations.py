@@ -71,6 +71,45 @@ class ObservationTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(any(c[1] == "rpc/propose_memory" for c in self.calls))
         self.assertEqual(self.calls[-1][2]["json"]["status"], "done")
 
+    async def test_extraction_payload_is_bounded_and_schema_not_repeated(self):
+        import json
+        from lumen.observations import relevant_existing_for_extraction
+        memories = [
+            {"content": f"The user likes summer activity {i}.",
+             "subject":"user","is_active":True,"tags":[]}
+            for i in range(20)
+        ] + [
+            {"content":"A private unrelated financial record.",
+             "subject":"user","is_active":True,"tags":[]}
+        ]
+        selected = relevant_existing_for_extraction(
+            memories, "Summer is my favorite season.")
+        self.assertLessEqual(len(selected), 6)
+        self.assertGreater(len(selected), 0)
+        self.assertTrue(all("summer" in m["content"].lower() for m in selected))
+        self.assertEqual(
+            relevant_existing_for_extraction(
+                memories, "This turn does not match any previous record."),
+            [],
+        )
+        self.setup_worker('{"candidates":[]}')
+        original = self.db._request.side_effect
+        async def request(method, table, **kwargs):
+            if table == "memories":
+                self.calls.append((method, table, kwargs))
+                return memories
+            return await original(method, table, **kwargs)
+        self.db._request.side_effect = request
+        await self.run_worker()
+        payload = json.loads(self.provider.structured.call_args.args[1][1]["content"])
+        self.assertNotIn("schema", payload)
+        self.assertLessEqual(len(payload["existing_memories"]), 6)
+        self.assertTrue(all(
+            "summer" in m["content"].lower()
+            for m in payload["existing_memories"]
+        ))
+        self.assertEqual(self.calls[-1][2]["json"]["status"], "done")
+
     async def test_one_invalid_candidate_aborts_batch_before_any_proposal(self):
         import json
         self.setup_worker(json.dumps({"candidates": [
