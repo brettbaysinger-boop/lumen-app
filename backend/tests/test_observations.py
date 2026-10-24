@@ -53,6 +53,39 @@ class ObservationTests(unittest.IsolatedAsyncioTestCase):
         await self.run_worker()
         self.assertFalse(any(c[1] == "rpc/propose_memory" for c in self.calls))
 
+    async def test_ephemeral_request_skips_model_and_memory_fetch(self):
+        # Even a bad extractor must not turn a single-turn request into
+        # remembered user preferences.
+        self.setup_worker('{"candidates":[{"content":"The user likes jokes.",'
+                          '"evidence":"likes jokes","subject":"user","type":"preference"}]}')
+        original = self.db._request.side_effect
+        async def request(method, table, **kwargs):
+            if table == "messages":
+                self.calls.append((method, table, kwargs))
+                return [{"role":"user", "content":"Tell me a silly joke.", "companion_id":"c"}]
+            return await original(method, table, **kwargs)
+        self.db._request.side_effect = request
+        await self.run_worker()
+        self.provider.structured.assert_not_awaited()
+        self.assertFalse(any(c[1] == "memories" for c in self.calls))
+        self.assertFalse(any(c[1] == "rpc/propose_memory" for c in self.calls))
+        self.assertEqual(self.calls[-1][2]["json"]["status"], "done")
+
+    async def test_one_invalid_candidate_aborts_batch_before_any_proposal(self):
+        import json
+        self.setup_worker(json.dumps({"candidates": [
+            {"content":"The user prefers summer.",
+             "evidence":"Summer is my favorite season.",
+             "subject":"user","type":"preference"},
+            {"content":"The user prefers winter.",
+             "evidence":"A totally invented source quotation.",
+             "subject":"user","type":"preference"},
+        ]}))
+        await self.run_worker()
+        self.assertFalse(any(c[1] == "rpc/propose_memory" for c in self.calls))
+        self.assertFalse(any(c[1] == "rpc/auto_save_memory_suggestion" for c in self.calls))
+        self.assertEqual(self.calls[-1][2]["json"]["status"], "failed")
+
     async def test_wrapped_evidence_recovers_only_verbatim_source_fact(self):
         import json
         self.setup_worker(json.dumps({"candidates":[{
