@@ -56,6 +56,15 @@ async def _observe(settings, token: str, message_id: str):
             raise ValueError("Source unavailable")
         source = rows[0]
         companion = await db.get_companion(source["companion_id"])
+        # This is a conservative, model-independent check. Obvious single-turn
+        # requests and greetings cannot become durable user memories merely
+        # because a model invents candidate facts from other context.
+        decision = classify_natural_evidence(source["content"], source["content"])
+        if decision.action == "skip":
+            await db._request("PATCH", "memory_observations",
+                              params={"source_message_id": f"eq.{message_id}"},
+                              json={"status": "done", "updated_at": "now()"})
+            return
         existing = await db._request("GET", "memories", params={
             "companion_id": f"eq.{source['companion_id']}", "select": "content,subject,is_active,tags", "limit": "500"})
         prompt = """Extract up to three useful long-term memory proposals from the current user's statement.
@@ -124,21 +133,25 @@ as direct. Return JSON matching the supplied schema."""
                 [{"role": "system", "content": prompt}, {"role": "user", "content": json.dumps(payload)}],
                 Candidates.model_json_schema(), think=False), timeout=60)
         proposals = Candidates.model_validate_json(raw)
-        rejected = 0
+        # Validate the entire model batch BEFORE creating proposals. A later
+        # invalid candidate must not leave earlier partial writes behind
+        # while marking this observation failed and retryable.
+        verified = []
+        rejected_evidence = 0
+        rejected_subject = 0
         for c in proposals.candidates:
             evidence = c.evidence
             if evidence not in source["content"]:
-                # Some models wrap an exact fact in commentary. Recover only if
-                # that same fact occurs verbatim in BOTH source and evidence.
-                # Do not accept paraphrases, inferred facts, or fuzzy matches.
+                # Only salvage a literal fact present in both the user message
+                # and the model's quotation. Never paraphrase user evidence.
                 fact = c.content.strip()
                 if fact and fact in source["content"] and fact in evidence:
                     evidence = fact
                 else:
-                    rejected += 1
+                    rejected_evidence += 1
                     continue
             if not c.content.strip() or not evidence.strip():
-                rejected += 1
+                rejected_evidence += 1
                 continue
             durability = classify_natural_evidence(
                 source["content"], evidence, durable=c.durable
@@ -154,19 +167,27 @@ as direct. Return JSON matching the supplied schema."""
             if subject_content_issue(
                 c.content, c.subject, c.type, companion["name"]
             ):
-                rejected += 1
+                rejected_subject += 1
                 continue
             if c.subject == "user" and not evidence_has_explicit_user_owner(evidence):
                 c = c.model_copy(update={"conflicting": True})
+            verified.append((c, evidence))
+
+        if rejected_evidence or rejected_subject:
+            logger.warning(
+                "Memory observation rejected candidates invalid_evidence=%d "
+                "invalid_subject=%d",
+                rejected_evidence, rejected_subject,
+            )
+            raise ValueError("Unverified memory evidence")
+
+        for c, evidence in verified:
             proposal = await db._request("POST", "rpc/propose_memory", json={
                 "p_message": message_id, "p_content": c.content, "p_evidence": evidence,
                 "p_subject": c.subject, "p_type": c.type})
             if proposal and automatic_candidate(c, evidence) and len(existing) < 500:
                 await db._request("POST", "rpc/auto_save_memory_suggestion", json={
                     "p_id": proposal, "p_topic": c.topic})
-        if rejected:
-            logger.warning("Memory observation rejected %d candidate(s): evidence did not match source", rejected)
-            raise ValueError("Unverified memory evidence")
         await db._request("PATCH", "memory_observations", params={"source_message_id": f"eq.{message_id}"},
                           json={"status": "done", "updated_at": "now()"})
     except (Exception, asyncio.CancelledError) as exc:
