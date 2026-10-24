@@ -68,6 +68,16 @@ _TRANSIENT_FEEDBACK = re.compile(
     r"wtf\b|that's wrong\b|that is wrong\b)",
     re.IGNORECASE,
 )
+# Only a standalone clarification about information requested is skippable.
+# Mixed turns with personal assertions remain reviewable.
+_SOURCE_CLARIFICATION = re.compile(
+    r"^(?:no[,!\s]+)?i\s+(?:(?:was|am)\s+(?:wanting|trying)\s+to\s+(?:know|ask|find\s+out)|"
+    r"was\s+asking)\s+(?:what|which|where|when|why|how|who)\b[^.!?\n]*[.!?]?$",
+    re.IGNORECASE,
+)
+_SOURCE_ADDITIONAL_ASSERTION = re.compile(
+    r"\b(?:and|but|because|although|my|our|we)\b", re.IGNORECASE
+)
 
 
 def _clean(value: str) -> str:
@@ -117,6 +127,13 @@ def classify_natural_evidence(
 
     if _TRANSIENT_FEEDBACK.match(source) and not assertive:
         return DurabilityDecision("skip", "immediate_feedback")
+
+    if _SOURCE_CLARIFICATION.fullmatch(source):
+        # The first-person "I was wanting to know" is a request, not a
+        # long-term preference. Avoid blanket suppression of mixed statements.
+        if _SOURCE_ADDITIONAL_ASSERTION.search(source):
+            return DurabilityDecision("review", "clarification_with_possible_assertion")
+        return DurabilityDecision("skip", "one_time_clarification")
 
     # An isolated imperative is not a fact. The quote must not launder it
     # into a purported durable preference.
