@@ -36,6 +36,18 @@ class NaturalDurabilityTests(unittest.TestCase):
             with self.subTest(statement=statement):
                 self.assertEqual(self.decision(statement), "review")
 
+    def test_one_off_source_clarification_skipped_without_discarding_mixed_claims(self):
+        self.assertEqual(
+            self.decision("no, i was wanting to know what websites you got them from"),
+            "skip",
+        )
+        self.assertNotEqual(
+            self.decision(
+                "No, I was wanting to know what website to use because my bakery opens soon."
+            ),
+            "skip",
+        )
+
     def test_durable_assertions_are_allowed(self):
         for statement in (
             "My favorite color is turquoise.",
