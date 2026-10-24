@@ -89,7 +89,7 @@ class ObservationTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(all("summer" in m["content"].lower() for m in selected))
         self.assertEqual(
             relevant_existing_for_extraction(
-                memories, "This turn does not match any previous record."),
+                memories, "Quantum spectrometer calibrations."),
             [],
         )
         self.setup_worker('{"candidates":[]}')
