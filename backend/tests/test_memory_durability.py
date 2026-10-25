@@ -48,6 +48,19 @@ class NaturalDurabilityTests(unittest.TestCase):
             "skip",
         )
 
+    def test_transient_opening_with_lasting_fact_is_review_not_discard(self):
+        for statement in (
+            "I'm tired. My nursing degree is complete.",
+            "I'm hungry, but my daughter prefers gluten-free cookies.",
+            "I'm exhausted; my long-running project is finally launched.",
+            "I'm hungry because I have an important dietary restriction.",
+        ):
+            with self.subTest(statement=statement):
+                self.assertEqual(self.decision(statement), "review")
+        for statement in ("I'm hungry.", "I'm tired right now.", "Im exhausted"):
+            with self.subTest(statement=statement):
+                self.assertEqual(self.decision(statement), "skip")
+
     def test_durable_assertions_are_allowed(self):
         for statement in (
             "My favorite color is turquoise.",
