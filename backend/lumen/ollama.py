@@ -68,7 +68,7 @@ class OllamaProvider:
         except (httpx.HTTPError, ValueError, AttributeError):
             return None
 
-    async def structured(self, model: str, messages: list[dict], schema: dict, *, max_tokens: int = 1000, timeout: float = 60, think: bool | None = None) -> str:
+    async def structured(self, model: str, messages: list[dict], schema: dict, *, max_tokens: int = 1000, timeout: float = 60, think: bool | None = None, stats: dict | None = None) -> str:
         async with httpx.AsyncClient(timeout=timeout) as client:
             response = await client.post(f"{self.base_url}/api/chat", json={
                 "model": model, "messages": messages, "stream": False, "format": schema,
@@ -79,6 +79,9 @@ class OllamaProvider:
             response.raise_for_status()
             data=response.json()
             content=data.get('message',{}).get('content','')
+            if stats is not None:
+                # Callers that budget their prompt can verify Ollama's own count.
+                stats['prompt_eval_count']=data.get('prompt_eval_count') if isinstance(data.get('prompt_eval_count'),int) else None
             if think is not None:
                 reason=data.get('done_reason')
                 logging.getLogger(__name__).warning('Structured draft response model=%s content_chars=%s eval_count=%s done_reason=%s',

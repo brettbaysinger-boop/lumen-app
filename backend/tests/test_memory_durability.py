@@ -66,6 +66,38 @@ class NaturalDurabilityTests(unittest.TestCase):
             with self.subTest(statement=statement):
                 self.assertEqual(self.decision(statement), "skip")
 
+    def test_greeting_with_lasting_assertion_is_reviewed(self):
+        for statement in (
+            "Hi! I'm a nurse.",
+            "Good morning, my favorite color is teal.",
+            "Hey, I moved to the coast last year.",
+        ):
+            with self.subTest(statement=statement):
+                self.assertEqual(self.decision(statement), "review")
+
+    def test_comma_mood_with_lasting_attribute_is_reviewed(self):
+        for statement in (
+            "I'm tired, vegan btw",
+            "I'm hungry, teacher since 2015",
+            "Im exhausted, night nurse",
+        ):
+            with self.subTest(statement=statement):
+                self.assertEqual(self.decision(statement), "review")
+
+    def test_plain_greetings_and_moods_stay_skippable(self):
+        for statement in (
+            "Hi",
+            "Hello there!",
+            "Good morning, Nova.",
+            "Hey, how are you?",
+            "I'm tired.",
+            "I'm tired, lol",
+            "I'm sleepy, goodnight",
+            "Im exhausted from work",
+        ):
+            with self.subTest(statement=statement):
+                self.assertEqual(self.decision(statement), "skip")
+
     def test_durable_assertions_are_allowed(self):
         for statement in (
             "My favorite color is turquoise.",
