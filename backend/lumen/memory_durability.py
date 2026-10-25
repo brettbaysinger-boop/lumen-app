@@ -126,7 +126,9 @@ def classify_natural_evidence(
         tail = source[mood.end():].strip()
         if ("from now on" in source.casefold()
                 or re.search(r"\b(?:i|my|our|we|but|because|although)\b", tail, re.I)
-                or re.search(r"[.;:]", tail)
+                # A separator must introduce another clause. Sentence-final
+                # punctuation alone is not evidence of a durable statement.
+                or re.search(r"[.;:!?]\s+\S", tail)
                 or len(tail.split()) > 3):
             return DurabilityDecision("review", "mixed_temporary_state")
         return DurabilityDecision("skip", "temporary_state")
