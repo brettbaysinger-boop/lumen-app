@@ -110,6 +110,30 @@ class ObservationTests(unittest.IsolatedAsyncioTestCase):
         ))
         self.assertEqual(self.calls[-1][2]["json"]["status"], "done")
 
+    async def test_transient_opening_does_not_hide_following_durable_fact(self):
+        import json
+        self.setup_worker(json.dumps({"candidates":[{
+            "content":"The user completed a nursing degree.",
+            "evidence":"My nursing degree is complete.",
+            "subject":"user","type":"semantic",
+            "direct_assertion":True,"sensitive":False,
+            "conflicting":False,"durable":True,"topic":"education"
+        }]}))
+        original = self.db._request.side_effect
+        async def request(method, table, **kwargs):
+            if table == "messages":
+                self.calls.append((method, table, kwargs))
+                return [{"role":"user",
+                         "content":"I'm tired. My nursing degree is complete.",
+                         "companion_id":"c"}]
+            return await original(method, table, **kwargs)
+        self.db._request.side_effect = request
+        await self.run_worker()
+        self.provider.structured.assert_awaited_once()
+        self.assertTrue(any(c[1] == "rpc/propose_memory" for c in self.calls))
+        self.assertFalse(any(c[1] == "rpc/auto_save_memory_suggestion" for c in self.calls))
+        self.assertEqual(self.calls[-1][2]["json"]["status"], "done")
+
     async def test_one_invalid_candidate_aborts_batch_before_any_proposal(self):
         import json
         self.setup_worker(json.dumps({"candidates": [
