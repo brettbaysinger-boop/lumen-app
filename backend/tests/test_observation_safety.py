@@ -258,6 +258,45 @@ class SafeAutoSaveTests(unittest.TestCase):
             with self.subTest(source=source):
                 self.assertFalse(self.check(source, content=content, evidence=source, topic="fact"))
 
+    def test_named_brands_and_proper_nouns_are_review_only(self):
+        for source, content in (
+            ("I love Ozempic.", "The user loves Ozempic."),
+            ("I really like Zorvex.", "The user likes Zorvex."),          # invented brand
+            ("Zorvex is my favorite brand.", "The user's favorite brand is Zorvex."),
+            ("I love working at Acme.", "The user loves working at Acme."),
+            ("I adore Kestrel Harbor.", "The user adores Kestrel Harbor."),
+        ):
+            with self.subTest(source=source):
+                self.assertFalse(self.check(source, content=content, evidence=source, topic="brand"))
+
+    def test_financial_variations_are_review_only(self):
+        for source, content in (
+            ("I make six figures.", "The user makes six figures."),
+            ("I have savings of three thousand dollars.", "The user has savings."),
+            ("I owe a lot on my credit card.", "The user owes money on a credit card."),
+            ("I love getting my bonus.", "The user loves getting a bonus."),
+            ("My favorite investment is crypto.", "The user's favorite investment is crypto."),
+        ):
+            with self.subTest(source=source):
+                self.assertFalse(self.check(source, content=content, evidence=source,
+                                            topic="finance_detail"))
+
+    def test_later_corrections_in_the_message_are_review_only(self):
+        for source, evidence in (
+            ("I love horror movies. Actually, I hate them.", "I love horror movies."),
+            ("I like tea. Just kidding.", "I like tea."),
+            ("I love cats. Never mind.", "I love cats."),
+            ("I enjoy running. Well, I used to.", "I enjoy running."),
+            ("I love jazz! Or maybe not.", "I love jazz!"),
+            ("I prefer winter, or at least I did last year", "I prefer winter"),
+        ):
+            with self.subTest(source=source):
+                content = "The user " + evidence.split(" ", 1)[1].rstrip("!.").replace(
+                    "love ", "loves ").replace("like ", "likes ").replace(
+                    "enjoy ", "enjoys ").replace("prefer ", "prefers ")
+                self.assertFalse(self.check(source, content=content, evidence=evidence,
+                                            topic="taste"))
+
     def test_multi_sentence_and_relationship_sources_are_review_only(self):
         for source, evidence, content in (
             ("Summer is my favorite season. I play the cello.", "Summer is my favorite season.",

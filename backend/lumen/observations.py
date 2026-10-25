@@ -339,6 +339,7 @@ _REVIEW_SIGNALS = re.compile(
     # health, sexuality, religion, politics, money, identity, legal
     r"health|diagnos\w*|medic\w*|prescri\w*|pill\w*|meds|drug\w*|dose\w*|dosage|mg|"
     r"therap\w*|doctor|clinic|hospital|disorder|disease|illness|symptom\w*|"
+    r"insulin|vaccin\w*|blood|injection\w*|inject\w*|"
     r"cancer|diabet\w*|hiv|adhd|autis\w*|anxiety|depress\w*|bipolar|ptsd|suicid\w*|surgery|"
     r"pregnan\w*|disab\w*|sobriety|sober|rehab|addict\w*|weed|cannabis|marijuana|"
     r"sex\w*|gay|lesbian|bisexual|queer|transgender|trans|nonbinary|"
@@ -346,6 +347,8 @@ _REVIEW_SIGNALS = re.compile(
     r"church|mosque|synagogue|temple|pray\w*|"
     r"politic\w*|republican|democrat|liberal|conservative|vot\w*|trump|biden|"
     r"salary|income|earn\w*|paid|pay|wage\w*|debt|bank|loan|mortgage|credit|bankrupt\w*|"
+    r"financ\w*|invest\w*|crypto\w*|stocks?|shares|savings|retire\w*|bonus\w*|money|cash|"
+    r"dollars?|tax\w*|budget\w*|rent|owe\w*|wealth\w*|rich|broke|afford\w*|pay\w*|"
     r"password|passcode|pin|secret|address|street|zip|postcode|phone|email|"
     r"ssn|social security|passport|license|licence|"
     r"lawsuit|arrest\w*|convict\w*|probation|immigra\w*|visa)\b"
@@ -370,6 +373,9 @@ _PERSON_OBJECT = re.compile(
     r"doctor|therapist|pastor|priest))\b",
     re.IGNORECASE,
 )
+
+
+_PROPER_NOUN = re.compile(r"\W*[A-Z]")
 
 
 def _sentence(text: str) -> str:
@@ -411,6 +417,12 @@ def automatic_candidate(candidate, evidence, source=None):
         return False
     obj, kind = said
     if len(obj.split()) > _AUTO_OBJECT_MAX_WORDS or _PERSON_OBJECT.search(obj):
+        return False
+    # Proper nouns (brands, named medications, people, employers, places)
+    # are an open-ended class, so any capitalized object word means review.
+    # Only a sentence-initial word may be capitalized in the source.
+    said_words = obj.split()[1:] if statement.startswith(obj) else obj.split()
+    if any(_PROPER_NOUN.match(word) for word in said_words + saved[0].split()):
         return False
     # Same object, nothing added or dropped. The favorite's kind ("season")
     # may be restated in the content but is not required.
