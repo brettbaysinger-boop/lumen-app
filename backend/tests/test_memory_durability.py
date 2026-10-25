@@ -36,6 +36,36 @@ class NaturalDurabilityTests(unittest.TestCase):
             with self.subTest(statement=statement):
                 self.assertEqual(self.decision(statement), "review")
 
+    def test_one_off_source_clarification_skipped_without_discarding_mixed_claims(self):
+        self.assertEqual(
+            self.decision("no, i was wanting to know what websites you got them from"),
+            "skip",
+        )
+        self.assertNotEqual(
+            self.decision(
+                "No, I was wanting to know what website to use because my bakery opens soon."
+            ),
+            "skip",
+        )
+
+    def test_transient_opening_with_lasting_fact_is_review_not_discard(self):
+        for statement in (
+            "I'm tired. My nursing degree is complete.",
+            "I'm hungry, but my daughter prefers gluten-free cookies.",
+            "I'm exhausted; my long-running project is finally launched.",
+            "I'm hungry because I have an important dietary restriction.",
+            "I'm tired. The project deadline is Friday.",
+            "I'm hungry! This recipe contains peanuts.",
+        ):
+            with self.subTest(statement=statement):
+                self.assertEqual(self.decision(statement), "review")
+        for statement in (
+            "I'm hungry.", "I'm hungry!", "I'm tired right now.",
+            "I'm tired...", "Im exhausted", "Im exhausted.",
+        ):
+            with self.subTest(statement=statement):
+                self.assertEqual(self.decision(statement), "skip")
+
     def test_durable_assertions_are_allowed(self):
         for statement in (
             "My favorite color is turquoise.",

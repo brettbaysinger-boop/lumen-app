@@ -10,6 +10,7 @@ from .memory_quality import (
     transient_memory_candidate,
 )
 from .memory_durability import classify_natural_evidence
+from .memory_retrieval import rank_memories, terms
 from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field
 from .db import SupabaseRepository
@@ -32,6 +33,29 @@ class Candidate(BaseModel):
 class Candidates(BaseModel):
     model_config = ConfigDict(extra="forbid")
     candidates: list[Candidate] = Field(max_length=3)
+
+
+def relevant_existing_for_extraction(memories: list[dict], statement: str, *, limit: int = 6) -> list[dict]:
+    """Bound memory context to active, lexically related facts, never the full profile.
+
+    The SQL review RPC remains authoritative for exact duplicate and topic
+    conflict checks. Even this small context is reference data, not evidence
+    of a fact asserted in the current user message.
+    """
+    query = terms(statement)
+    if not query:
+        return []
+    ranked = rank_memories(memories, statement, limit=limit)
+    selected = []
+    for memory in ranked:
+        tags = memory.get("tags") or []
+        text = str(memory.get("content") or "") + " " + " ".join(
+            value for value in tags if isinstance(value, str)
+        ) if isinstance(tags, list) else str(memory.get("content") or "")
+        if query & terms(text):
+            selected.append(memory)
+    return selected
+
 
 async def observe(settings, token: str, message_id: str):
     task = asyncio.create_task(_observe(settings, token, message_id))
@@ -56,8 +80,22 @@ async def _observe(settings, token: str, message_id: str):
             raise ValueError("Source unavailable")
         source = rows[0]
         companion = await db.get_companion(source["companion_id"])
+        # This is a conservative, model-independent check. Obvious single-turn
+        # requests and greetings cannot become durable user memories merely
+        # because a model invents candidate facts from other context.
+        decision = classify_natural_evidence(source["content"], source["content"])
+        if decision.action == "skip":
+            await db._request("PATCH", "memory_observations",
+                              params={"source_message_id": f"eq.{message_id}"},
+                              json={"status": "done", "updated_at": "now()"})
+            return
         existing = await db._request("GET", "memories", params={
             "companion_id": f"eq.{source['companion_id']}", "select": "content,subject,is_active,tags", "limit": "500"})
+        # Retrieval is restricted to a small, relevant subset. Supplying the
+        # entire memory inventory can overflow the inference context and
+        # silently truncate the source-only evidence instructions.
+        extraction_memories = relevant_existing_for_extraction(
+            existing, source["content"])
         prompt = """Extract up to three useful long-term memory proposals from the current user's statement.
 Conversation context may be supplied only to resolve references such as "you", "her",
 "that", or an omitted subject. Never extract a memory from context alone. The current
@@ -96,7 +134,7 @@ interpretation, or when ownership depends on conversational context rather than 
 wording in the current user statement. topic is a stable lowercase snake_case attribute
 (e.g. favorite_color, preferred_season, current_project); use an empty topic if no clear
 attribute exists. Never mark questions, hypotheticals, instructions or inferred facts
-as direct. Return JSON matching the supplied schema."""
+as direct. Return JSON matching the required structured-output schema."""
         prior = []
         if source.get("conversation_id") and source.get("created_at"):
             prior = await db._request("GET", "messages", params={
@@ -106,7 +144,7 @@ as direct. Return JSON matching the supplied schema."""
                 "limit": "6",
             })
             prior = [
-                {"role": row.get("role"), "content": row.get("content", "")}
+                {"role": row.get("role"), "content": (row.get("content") or "")[-1200:]}
                 for row in reversed(prior)
                 if row.get("role") in ("user", "assistant")
             ]
@@ -114,8 +152,11 @@ as direct. Return JSON matching the supplied schema."""
             "companion_name": companion["name"],
             "conversation_context": prior,
             "user_statement": source["content"],
-            "existing_memories": existing,
-            "schema": Candidates.model_json_schema(),
+            # A bounded selection helps with contradictions without drowning
+            # the actual source statement in past memories.
+            "existing_memories": extraction_memories,
+            # The schema is already enforced by Ollama's "format" parameter.
+            # Do not waste prompt budget serializing it a second time.
         }
         async with model_lock:
             # Follow the selected chat model by default to avoid a second large model load.
@@ -124,21 +165,25 @@ as direct. Return JSON matching the supplied schema."""
                 [{"role": "system", "content": prompt}, {"role": "user", "content": json.dumps(payload)}],
                 Candidates.model_json_schema(), think=False), timeout=60)
         proposals = Candidates.model_validate_json(raw)
-        rejected = 0
+        # Validate the entire model batch BEFORE creating proposals. A later
+        # invalid candidate must not leave earlier partial writes behind
+        # while marking this observation failed and retryable.
+        verified = []
+        rejected_evidence = 0
+        rejected_subject = 0
         for c in proposals.candidates:
             evidence = c.evidence
             if evidence not in source["content"]:
-                # Some models wrap an exact fact in commentary. Recover only if
-                # that same fact occurs verbatim in BOTH source and evidence.
-                # Do not accept paraphrases, inferred facts, or fuzzy matches.
+                # Only salvage a literal fact present in both the user message
+                # and the model's quotation. Never paraphrase user evidence.
                 fact = c.content.strip()
                 if fact and fact in source["content"] and fact in evidence:
                     evidence = fact
                 else:
-                    rejected += 1
+                    rejected_evidence += 1
                     continue
             if not c.content.strip() or not evidence.strip():
-                rejected += 1
+                rejected_evidence += 1
                 continue
             durability = classify_natural_evidence(
                 source["content"], evidence, durable=c.durable
@@ -154,19 +199,27 @@ as direct. Return JSON matching the supplied schema."""
             if subject_content_issue(
                 c.content, c.subject, c.type, companion["name"]
             ):
-                rejected += 1
+                rejected_subject += 1
                 continue
             if c.subject == "user" and not evidence_has_explicit_user_owner(evidence):
                 c = c.model_copy(update={"conflicting": True})
+            verified.append((c, evidence))
+
+        if rejected_evidence or rejected_subject:
+            logger.warning(
+                "Memory observation rejected candidates invalid_evidence=%d "
+                "invalid_subject=%d",
+                rejected_evidence, rejected_subject,
+            )
+            raise ValueError("Unverified memory evidence")
+
+        for c, evidence in verified:
             proposal = await db._request("POST", "rpc/propose_memory", json={
                 "p_message": message_id, "p_content": c.content, "p_evidence": evidence,
                 "p_subject": c.subject, "p_type": c.type})
             if proposal and automatic_candidate(c, evidence) and len(existing) < 500:
                 await db._request("POST", "rpc/auto_save_memory_suggestion", json={
                     "p_id": proposal, "p_topic": c.topic})
-        if rejected:
-            logger.warning("Memory observation rejected %d candidate(s): evidence did not match source", rejected)
-            raise ValueError("Unverified memory evidence")
         await db._request("PATCH", "memory_observations", params={"source_message_id": f"eq.{message_id}"},
                           json={"status": "done", "updated_at": "now()"})
     except (Exception, asyncio.CancelledError) as exc:

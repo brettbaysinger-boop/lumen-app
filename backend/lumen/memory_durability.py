@@ -68,6 +68,16 @@ _TRANSIENT_FEEDBACK = re.compile(
     r"wtf\b|that's wrong\b|that is wrong\b)",
     re.IGNORECASE,
 )
+# Only a standalone clarification about information requested is skippable.
+# Mixed turns with personal assertions remain reviewable.
+_SOURCE_CLARIFICATION = re.compile(
+    r"^(?:no[,!\s]+)?i\s+(?:(?:was|am)\s+(?:wanting|trying)\s+to\s+(?:know|ask|find\s+out)|"
+    r"was\s+asking)\s+(?:what|which|where|when|why|how|who)\b[^.!?\n]*[.!?]?$",
+    re.IGNORECASE,
+)
+_SOURCE_ADDITIONAL_ASSERTION = re.compile(
+    r"\b(?:and|but|because|although|my|our|we)\b", re.IGNORECASE
+)
 
 
 def _clean(value: str) -> str:
@@ -108,15 +118,33 @@ def classify_natural_evidence(
     if _ADDRESS_REQUEST.search(source):
         return DurabilityDecision("review", "form_of_address_request")
 
-    if _EPHEMERAL_MOOD.match(source):
-        return DurabilityDecision("review" if "from now on" in source.casefold()
-                                  else "skip", "temporary_state")
+    mood = _EPHEMERAL_MOOD.match(source)
+    if mood:
+        # A temporary opening does not make everything after it temporary.
+        # Keep mixed turns reviewable, rather than silently dropping a
+        # potentially lasting fact from "I'm tired. My project ..." etc.
+        tail = source[mood.end():].strip()
+        if ("from now on" in source.casefold()
+                or re.search(r"\b(?:i|my|our|we|but|because|although)\b", tail, re.I)
+                # A separator must introduce another clause. Sentence-final
+                # punctuation alone is not evidence of a durable statement.
+                or re.search(r"[.;:!?]\s+\S", tail)
+                or len(tail.split()) > 3):
+            return DurabilityDecision("review", "mixed_temporary_state")
+        return DurabilityDecision("skip", "temporary_state")
 
     if _GREETING.match(source) and not assertive:
         return DurabilityDecision("skip", "greeting")
 
     if _TRANSIENT_FEEDBACK.match(source) and not assertive:
         return DurabilityDecision("skip", "immediate_feedback")
+
+    if _SOURCE_CLARIFICATION.fullmatch(source):
+        # The first-person "I was wanting to know" is a request, not a
+        # long-term preference. Avoid blanket suppression of mixed statements.
+        if _SOURCE_ADDITIONAL_ASSERTION.search(source):
+            return DurabilityDecision("review", "clarification_with_possible_assertion")
+        return DurabilityDecision("skip", "one_time_clarification")
 
     # An isolated imperative is not a fact. The quote must not launder it
     # into a purported durable preference.
