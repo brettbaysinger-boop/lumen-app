@@ -200,24 +200,79 @@ class SafeAutoSaveTests(unittest.TestCase):
         c = Candidate(**candidate(**kw))
         return automatic_candidate(c, c.evidence, source)
 
-    def test_explicit_first_person_facts_still_auto_save(self):
+    def test_simple_positive_preferences_still_auto_save(self):
         cases = [
             ("Summer is my favorite season.", {}),
             ("My favorite color is turquoise.", {"content": "The user likes turquoise.",
                                                  "evidence": "My favorite color is turquoise.",
                                                  "topic": "favorite_color"}),
-            ("I live near the coast.", {"content": "The user lives near the coast.",
-                                        "evidence": "I live near the coast.",
-                                        "topic": "home_region"}),
-            ("Summer is my favorite season. I play the cello.",
-             {"content": "The user plays the cello.", "evidence": "I play the cello.",
-              "topic": "instrument"}),
-            ("My name is Sam.", {"content": "The user's name is Sam.",
-                                 "evidence": "My name is Sam.", "topic": "name"}),
+            ("I prefer cinnamon in my sugar cookies.",
+             {"content": "The user prefers cinnamon in sugar cookies.",
+              "evidence": "I prefer cinnamon in my sugar cookies.", "topic": "baking_preference"}),
+            ("I really enjoy hiking.", {"content": "The user enjoys hiking.",
+                                        "evidence": "I really enjoy hiking.", "topic": "hobby"}),
+            ("Jazz is my favorite music genre.",
+             {"content": "The user's favorite music genre is jazz.",
+              "evidence": "Jazz is my favorite music genre.", "topic": "music_genre"}),
         ]
         for source, kw in cases:
             with self.subTest(source=source):
                 self.assertTrue(self.check(source, **kw))
+
+    def test_owner_reported_vectors_are_review_only(self):
+        # Exact fictional vectors from the PR #5 blocker report on Video.
+        self.assertFalse(self.check(
+            "I take metformin every morning.", content="The user takes metformin every morning.",
+            evidence="I take metformin every morning.", topic="routine"))
+        self.assertFalse(self.check(
+            "I earn $120k at Acme.", content="The user earns $120k at Acme.",
+            evidence="I earn $120k at Acme.", topic="compensation"))
+        self.assertFalse(self.check(
+            "I love horror movies. Actually, I hate them.", content="The user loves horror movies.",
+            evidence="I love horror movies.", topic="movie_preference"))
+        self.assertTrue(self.check(
+            "I prefer cinnamon in my sugar cookies.",
+            content="The user prefers cinnamon in sugar cookies.",
+            evidence="I prefer cinnamon in my sugar cookies.", topic="baking_preference"))
+
+    def test_non_preference_facts_are_review_only(self):
+        for source, content in (
+            ("I live near the coast.", "The user lives near the coast."),
+            ("My name is Sam.", "The user's name is Sam."),
+            ("I work as a nurse.", "The user works as a nurse."),
+            ("I play the cello.", "The user plays the cello."),
+        ):
+            with self.subTest(source=source):
+                self.assertFalse(self.check(source, content=content, evidence=source, topic="fact"))
+
+    def test_medications_and_numbers_are_review_only(self):
+        for source, content in (
+            ("I take Ozempic every week.", "The user takes Ozempic every week."),
+            ("I love semaglutide.", "The user loves semaglutide."),
+            ("I take my pills every morning.", "The user takes pills every morning."),
+            ("I like my meds in the morning.", "The user likes meds in the morning."),
+            ("I make 85k a year.", "The user makes 85k a year."),
+            ("I love 5k runs.", "The user loves 5k runs."),
+            ("I like getting paid on Fridays.", "The user likes getting paid on Fridays."),
+        ):
+            with self.subTest(source=source):
+                self.assertFalse(self.check(source, content=content, evidence=source, topic="fact"))
+
+    def test_multi_sentence_and_relationship_sources_are_review_only(self):
+        for source, evidence, content in (
+            ("Summer is my favorite season. I play the cello.", "Summer is my favorite season.",
+             "The user prefers summer."),
+            ('My sister said "I love horror movies."', "I love horror movies.",
+             "The user loves horror movies."),
+            ("I love my wife.", "I love my wife.", "The user loves the user's wife."),
+            ("I like her cooking.", "I like her cooking.", "The user likes her cooking."),
+            ("My brother loves jazz.", "My brother loves jazz.", "The user loves jazz."),
+            ("I love jazz.", "I love jazz.", "The user loves jazz and blues."),
+            ("I love jazz and blues.", "I love jazz and blues.", "The user loves jazz."),
+        ):
+            with self.subTest(source=source, content=content):
+                self.assertFalse(self.check(source, content=content, evidence=evidence,
+                                            topic="music_genre"))
 
     def test_negated_fragment_is_review_only(self):
         source = "My brother keeps saying I love horror movies, but honestly I hate them."
@@ -289,6 +344,23 @@ class AutoSaveWorkerTests(Worker):
         self.assertFalse(self.tables("rpc/auto_save_memory_suggestion"))
         self.assertEqual(self.status(), "done")
 
+    async def test_owner_reported_vectors_still_create_reviewable_proposals(self):
+        for statement, content, evidence, topic in (
+            ("I take metformin every morning.", "The user takes metformin every morning.",
+             "I take metformin every morning.", "routine"),
+            ("I earn $120k at Acme.", "The user earns $120k at Acme.",
+             "I earn $120k at Acme.", "compensation"),
+            ("I love horror movies. Actually, I hate them.", "The user loves horror movies.",
+             "I love horror movies.", "movie_preference"),
+        ):
+            with self.subTest(statement=statement):
+                self.setup_worker([candidate(content=content, evidence=evidence, topic=topic)],
+                                  statement=statement)
+                await self.run_worker()
+                self.assertEqual(len(self.tables("rpc/propose_memory")), 1)
+                self.assertFalse(self.tables("rpc/auto_save_memory_suggestion"))
+                self.assertEqual(self.status(), "done")
+
     async def test_safe_fact_is_still_auto_saved_end_to_end(self):
         self.setup_worker([candidate()])
         await self.run_worker()
@@ -306,13 +378,12 @@ class WorkerFailureTests(Worker):
                 self.provider.structured.assert_not_awaited()
 
     async def test_partial_write_then_retry_creates_no_duplicate(self):
-        statement = "Summer is my favorite season. I live near the coast."
-        batch = [candidate(), candidate(content="The user lives near the coast.",
-                                        evidence="I live near the coast.", topic="home_region")]
+        statement = "Summer is my favorite season."
+        batch = [candidate(), candidate(content="The user's favorite season is summer.")]
         failures = {"left": 1}
 
         async def fail_second(json_body):
-            if "coast" in json_body["p_content"] and failures["left"]:
+            if "favorite season" in json_body["p_content"] and failures["left"]:
                 failures["left"] -= 1
                 raise RuntimeError("fictional 503")
 
@@ -334,14 +405,11 @@ class WorkerFailureTests(Worker):
         started = asyncio.Event()
 
         async def block_second(json_body):
-            if "coast" in json_body["p_content"]:
+            if "favorite season" in json_body["p_content"]:
                 started.set()
                 await asyncio.Event().wait()
 
-        self.setup_worker([candidate(), candidate(content="The user lives near the coast.",
-                                                  evidence="I live near the coast.",
-                                                  topic="home_region")],
-                          statement="Summer is my favorite season. I live near the coast.",
+        self.setup_worker([candidate(), candidate(content="The user's favorite season is summer.")],
                           propose_hook=block_second)
         worker = asyncio.create_task(self.run_worker())
         await asyncio.wait_for(started.wait(), 5)

@@ -304,111 +304,115 @@ async def _observe(settings, token: str, message_id: str):
             raise
 
 
-_SENSITIVE = re.compile(
-    r"\b(health|diagnos\w*|medicat\w*|medicine|prescri\w*|therap\w*|disorder|disease|illness|"
+# Unreviewed auto-save is an allowlist, not a blocklist. Only one class of
+# fact qualifies: a single-sentence message that is itself a simple positive
+# first-person preference ("I like X", "My favorite Y is X", "X is my favorite
+# Y"), restated as the same preference about the same object. Every other
+# verb, category or shape stays a reviewable proposal.
+_PREFERENCE_VERBS = r"(?:like|love|enjoy|prefer|adore)"
+_PREFERENCE_SHAPES = (
+    re.compile(r"^i\s+(?:really\s+|absolutely\s+|just\s+)?" + _PREFERENCE_VERBS + r"\s+(?P<obj>.+)$", re.I),
+    re.compile(r"^my\s+favou?rite\s+(?P<kind>[a-z]+(?:\s+[a-z]+)?)\s+(?:is|are)\s+(?P<obj>.+)$", re.I),
+    re.compile(r"^(?P<obj>.+?)\s+(?:is|are)\s+my\s+favou?rite\s+(?P<kind>[a-z]+(?:\s+[a-z]+)?)$", re.I),
+)
+_CONTENT_SHAPES = (
+    re.compile(r"^the user\s+(?:really\s+)?(?:likes|loves|enjoys|prefers|adores)\s+(?P<obj>.+)$", re.I),
+    re.compile(r"^the user['’]s\s+favou?rite\s+(?P<kind>[a-z]+(?:\s+[a-z]+)?)\s+(?:is|are)\s+(?P<obj>.+)$", re.I),
+)
+_AUTO_SOURCE_MAX_CHARS = 200
+_AUTO_OBJECT_MAX_WORDS = 8
+# The whole message is checked, not just the quoted span: any of these
+# anywhere means a person must review the proposal.
+_REVIEW_SIGNALS = re.compile(
+    # corrections, uncertainty, hypotheticals and play
+    r"\b(actually|i mean|jk|just kidding|kidding|joking|scratch that|correction|wait|sarcas\w*|"
+    r"if|maybe|perhaps|probably|possibly|hypothetic\w*|pretend\w*|roleplay|role-play|imagine|"
+    r"story|character|fiction\w*|scenario|might|could|would|should|wish|guess|suppose|"
+    r"think|thinks|thought|believe|kinda|sort of|"
+    # negation and contrast
+    r"not|no|never|none|nothing|neither|nor|anymore|used to|without|"
+    r"but|although|though|however|except|unless|whereas|yet|instead|until|"
+    r"hate\w*|dislike\w*|detest\w*|loath\w*|despise\w*|avoid\w*|allergic|"
+    # reported or quoted speech
+    r"said|says|saying|wrote|writes|told|tells|asked|texted|emailed|messaged|posted|"
+    r"replied|quot\w*|according|claim\w*|heard|insist\w*|swear\w*|swore|"
+    # health, sexuality, religion, politics, money, identity, legal
+    r"health|diagnos\w*|medic\w*|prescri\w*|pill\w*|meds|drug\w*|dose\w*|dosage|mg|"
+    r"therap\w*|doctor|clinic|hospital|disorder|disease|illness|symptom\w*|"
     r"cancer|diabet\w*|hiv|adhd|autis\w*|anxiety|depress\w*|bipolar|ptsd|suicid\w*|surgery|"
-    r"pregnan\w*|disab\w*|sobriety|sober|rehab|addict\w*|"
-    r"sexual\w*|gay|lesbian|bisexual|queer|transgender|trans|nonbinary|"
-    r"religio\w*|christian|muslim|jewish|hindu|buddhist|atheist|church|mosque|synagogue|"
-    r"politic\w*|republican|democrat|liberal|conservative|vote\w*|"
-    r"salary|income|debt|bank|loan|mortgage|credit|bankrupt\w*|"
+    r"pregnan\w*|disab\w*|sobriety|sober|rehab|addict\w*|weed|cannabis|marijuana|"
+    r"sex\w*|gay|lesbian|bisexual|queer|transgender|trans|nonbinary|"
+    r"religio\w*|god|jesus|allah|christian|muslim|jewish|hindu|buddhist|atheist|"
+    r"church|mosque|synagogue|temple|pray\w*|"
+    r"politic\w*|republican|democrat|liberal|conservative|vot\w*|trump|biden|"
+    r"salary|income|earn\w*|paid|pay|wage\w*|debt|bank|loan|mortgage|credit|bankrupt\w*|"
     r"password|passcode|pin|secret|address|street|zip|postcode|phone|email|"
     r"ssn|social security|passport|license|licence|"
     r"lawsuit|arrest\w*|convict\w*|probation|immigra\w*|visa)\b"
-    r"|\d{4,}|@",
-    re.IGNORECASE,
-)
-_UNCERTAIN = re.compile(
-    r"\b(if|maybe|perhaps|probably|possibly|hypothetic\w*|pretend|roleplay|role-play|imagine|"
-    r"story|character|fiction\w*|scenario|might|could|would|should|wish|guess|suppose|"
-    r"think|thinks|thought|believe|feel like|kinda|sort of)\b",
-    re.IGNORECASE,
-)
-_NEGATION = re.compile(
-    r"\b(not|no|never|none|nothing|neither|nor|no longer|anymore|used to|without)\b|n['’]t\b",
-    re.IGNORECASE,
-)
-_CONTRAST = re.compile(
-    r"\b(but|although|though|however|except|unless|whereas|yet|instead|until)\b",
-    re.IGNORECASE,
-)
-# Any quoted or reported speech anywhere in the message makes ownership of
-# a first-person sentence uncertain ('My boss wrote "I am moving."').
-_REPORTED_SPEECH = re.compile(
-    r"[\"“”„«»]|^\s*>|\b(said|says|saying|wrote|writes|written|told|tells|asked|asks|"
-    r"texted|emailed|messaged|posted|replied|quot\w*|according to|claim\w*|"
-    r"heard|insist\w*|swear\w*|swore|pretend\w*)\b",
+    # anything with digits, money, contact handles, or quotes
+    r"|\d|[$€£¥@#%]|[\"“”„«»]|n['’]t\b|\?|^\s*>",
     re.IGNORECASE | re.MULTILINE,
 )
-# Auto-save only these explicit first-person shapes. Anything else is review.
-_FIRST_PERSON_FACT = re.compile(
-    r"^(?:i(?:['’]m|['’]ve| am| have)?\s+[^\W\d_]"
-    r"|my\s+(?:(?:least\s+)?favou?rite|preferred|name|nickname|job|profession|"
-    r"occupation|hobby|hobbies|first language|native language)\b"
-    r"|(?:[^\W\d_][\w'’-]*\s+){1,4}(?:is|are)\s+my\s+(?:(?:least\s+)?favou?rite|preferred)\b)",
+# Common pharmaceutical name endings, since medication names are open-ended.
+_DRUG_NAME = re.compile(
+    r"\b\w+(?:formin|pril|sartan|olol|statin|azole|cillin|mycin|cycline|floxacin|"
+    r"azepam|zolam|oxetine|aline|triptan|tidine|prazole|semide|lukast|"
+    r"glutide|gliptin|mab|nib|vir|done|codone|morphone|phetamine|phenidate)\b",
     re.IGNORECASE,
 )
-_POSITIVE_PREFERENCE = frozenset({"like", "love", "enjoy", "prefer", "preferred", "favorite", "adore", "fan"})
-_NEGATIVE_PREFERENCE = re.compile(
-    r"\b(hate\w*|dislike\w*|detest\w*|loath\w*|despise\w*|can['’]?t stand|avoid\w*|allergic)\b",
+# A preference about another person is a relationship fact, not a taste.
+_PERSON_OBJECT = re.compile(
+    r"\b(?:his|her|their|your|our|him|them|you|us|"
+    r"my\s+(?:\w+\s+)?(?:wife|husband|partner|spouse|boyfriend|girlfriend|ex|fianc\w*|"
+    r"mom|mother|dad|father|parents?|son|daughter|kids?|children|child|baby|"
+    r"brother|sister|siblings?|family|grand\w*|aunt|uncle|cousin|"
+    r"friends?|boss|manager|coworkers?|colleagues?|neighbou?rs?|teacher|"
+    r"doctor|therapist|pastor|priest))\b",
     re.IGNORECASE,
 )
-# Wording that may appear in content without being quoted from the evidence.
-_CONTENT_FRAMING = frozenset({"user", "name", "named", "called"})
-_AUTO_SOURCE_MAX_CHARS = 1000
 
 
-def _whole_sentence(source: str, evidence: str) -> bool:
-    """Evidence must be a complete sentence of the source, not a fragment of one."""
-    quote = evidence.strip()
-    if not quote:
-        return False
-    start = source.find(quote)
-    while start >= 0:
-        before = source[:start].rstrip(" \t")
-        after = source[start + len(quote):].lstrip(" \t")
-        opens = not before or before[-1] in ".!?\n"
-        closes = quote[-1] in ".!" or not after or after[0] in ".!\n"
-        if opens and closes:
-            return True
-        start = source.find(quote, start + 1)
-    return False
+def _sentence(text: str) -> str:
+    return " ".join(text.split()).rstrip(".! ")
 
 
-def _content_grounded(content: str, evidence: str) -> bool:
-    """Every content term must come from the evidence, with preference polarity kept."""
-    content_terms = terms(content)
-    evidence_terms = terms(evidence)
-    if content_terms & _POSITIVE_PREFERENCE:
-        if not evidence_terms & _POSITIVE_PREFERENCE or _NEGATIVE_PREFERENCE.search(evidence):
-            return False
-    leftover = content_terms - _CONTENT_FRAMING - _POSITIVE_PREFERENCE
-    return bool(leftover) and leftover <= evidence_terms
+def _preference_object(sentence: str, shapes) -> tuple[str, str] | None:
+    for shape in shapes:
+        match = shape.match(sentence)
+        if match:
+            return match.group("obj"), match.groupdict().get("kind") or ""
+    return None
 
 
 def automatic_candidate(candidate, evidence, source=None):
-    """Fail closed: model flags are necessary, never sufficient.
+    """Fail closed: unreviewed saving is limited to one allowlisted fact class.
 
-    Saving without review needs an explicit first-person sentence, quoted in
-    full, whose content says nothing the evidence does not. Sensitivity,
-    negation, contrast, uncertainty and reported speech are checked on the
-    evidence, content and topic text themselves; anything doubtful stays a
-    reviewable proposal.
+    Model flags are necessary, never sufficient. The ENTIRE source message
+    must be one simple positive first-person preference that the evidence
+    quotes in full, and the content must restate that same preference about
+    the same object. Anything else is left as a reviewable proposal.
     """
     source = evidence if source is None else source
-    quote = " ".join(evidence.split())
-    content = " ".join(candidate.content.split())
-    checked = "\n".join((quote, content, candidate.topic.replace("_", " ")))
     if not (candidate.durable and candidate.subject == "user" and candidate.direct_assertion
             and not candidate.sensitive and not candidate.conflicting
             and re.fullmatch(r"[a-z][a-z0-9_]{1,79}", candidate.topic)):
         return False
-    if "?" in checked or _SENSITIVE.search(checked) or _UNCERTAIN.search(checked):
+    statement = _sentence(source)
+    content = _sentence(candidate.content)
+    if (len(source) > _AUTO_SOURCE_MAX_CHARS or "\n" in source.strip()
+            or _sentence(evidence) != statement or re.search(r"[.!;:]", statement)):
         return False
-    if _NEGATION.search(checked) or _CONTRAST.search(checked):
+    for text in (source, content, candidate.topic.replace("_", " ")):
+        if _REVIEW_SIGNALS.search(text) or _DRUG_NAME.search(text):
+            return False
+    said = _preference_object(statement, _PREFERENCE_SHAPES)
+    saved = _preference_object(content, _CONTENT_SHAPES)
+    if not said or not saved:
         return False
-    if len(source) > _AUTO_SOURCE_MAX_CHARS or _REPORTED_SPEECH.search(source):
+    obj, kind = said
+    if len(obj.split()) > _AUTO_OBJECT_MAX_WORDS or _PERSON_OBJECT.search(obj):
         return False
-    if not _FIRST_PERSON_FACT.match(quote) or not _whole_sentence(source, evidence):
-        return False
-    return content.casefold().startswith("the user") and _content_grounded(content, quote)
+    # Same object, nothing added or dropped. The favorite's kind ("season")
+    # may be restated in the content but is not required.
+    said_terms, saved_terms = terms(obj), terms(saved[0])
+    return bool(said_terms) and said_terms <= saved_terms <= said_terms | terms(kind)
