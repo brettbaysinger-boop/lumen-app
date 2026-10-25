@@ -118,9 +118,18 @@ def classify_natural_evidence(
     if _ADDRESS_REQUEST.search(source):
         return DurabilityDecision("review", "form_of_address_request")
 
-    if _EPHEMERAL_MOOD.match(source):
-        return DurabilityDecision("review" if "from now on" in source.casefold()
-                                  else "skip", "temporary_state")
+    mood = _EPHEMERAL_MOOD.match(source)
+    if mood:
+        # A temporary opening does not make everything after it temporary.
+        # Keep mixed turns reviewable, rather than silently dropping a
+        # potentially lasting fact from "I'm tired. My project ..." etc.
+        tail = source[mood.end():].strip()
+        if ("from now on" in source.casefold()
+                or re.search(r"\b(?:i|my|our|we|but|because|although)\b", tail, re.I)
+                or re.search(r"[.;:]", tail)
+                or len(tail.split()) > 3):
+            return DurabilityDecision("review", "mixed_temporary_state")
+        return DurabilityDecision("skip", "temporary_state")
 
     if _GREETING.match(source) and not assertive:
         return DurabilityDecision("skip", "greeting")
