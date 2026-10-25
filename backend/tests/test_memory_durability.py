@@ -54,10 +54,15 @@ class NaturalDurabilityTests(unittest.TestCase):
             "I'm hungry, but my daughter prefers gluten-free cookies.",
             "I'm exhausted; my long-running project is finally launched.",
             "I'm hungry because I have an important dietary restriction.",
+            "I'm tired. The project deadline is Friday.",
+            "I'm hungry! This recipe contains peanuts.",
         ):
             with self.subTest(statement=statement):
                 self.assertEqual(self.decision(statement), "review")
-        for statement in ("I'm hungry.", "I'm tired right now.", "Im exhausted"):
+        for statement in (
+            "I'm hungry.", "I'm hungry!", "I'm tired right now.",
+            "I'm tired...", "Im exhausted", "Im exhausted.",
+        ):
             with self.subTest(statement=statement):
                 self.assertEqual(self.decision(statement), "skip")
 
