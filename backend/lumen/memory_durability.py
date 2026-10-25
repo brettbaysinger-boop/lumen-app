@@ -80,6 +80,22 @@ _SOURCE_ADDITIONAL_ASSERTION = re.compile(
 )
 
 
+# Words that may follow a mood after a comma without adding a new fact.
+_MOOD_FILLER = frozenset(
+    "lol haha hah ugh ok okay so very really honestly tbh again today tonight "
+    "now rn goodnight night bye man dude babe hun".split()
+)
+
+
+def _comma_clause(tail: str) -> bool:
+    """True when text after a comma has words beyond conversational filler."""
+    for part in tail.split(",")[1:]:
+        words = re.findall(r"[^\W_]+", part.casefold())
+        if any(word not in _MOOD_FILLER for word in words):
+            return True
+    return False
+
+
 def _clean(value: str) -> str:
     return " ".join((value or "").strip().split())
 
@@ -129,11 +145,17 @@ def classify_natural_evidence(
                 # A separator must introduce another clause. Sentence-final
                 # punctuation alone is not evidence of a durable statement.
                 or re.search(r"[.;:!?]\s+\S", tail)
+                # "I'm tired, vegan btw" adds an attribute after a comma.
+                or _comma_clause(tail)
                 or len(tail.split()) > 3):
             return DurabilityDecision("review", "mixed_temporary_state")
         return DurabilityDecision("skip", "temporary_state")
 
-    if _GREETING.match(source) and not assertive:
+    if _GREETING.match(source):
+        # "Hi! I'm a nurse." still carries a possible lasting fact; the
+        # PostgreSQL guard treats any greeting opening as review-only too.
+        if assertive:
+            return DurabilityDecision("review", "greeting_with_assertion")
         return DurabilityDecision("skip", "greeting")
 
     if _TRANSIENT_FEEDBACK.match(source) and not assertive:

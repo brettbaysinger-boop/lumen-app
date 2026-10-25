@@ -24,6 +24,10 @@ class Settings(BaseSettings):
     ollama_keep_alive: str = "15m"
     memory_observations_enabled: bool = True
     memory_observation_model: str = ""
+    # Token window the memory extractor may assume, independent of num_ctx.
+    # Ollama was observed truncating at ~4099 tokens with num_ctx=8192, so the
+    # default stays conservative. Raise only after verifying on the host.
+    memory_observation_context_tokens: int = Field(default=4096, ge=2048, le=32768)
     embedding_model: str = "nomic-embed-text"
     # Semantic memory remains disabled until a dedicated local embedding endpoint is configured.
     semantic_memory_enabled: bool = False

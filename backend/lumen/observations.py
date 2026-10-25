@@ -57,46 +57,7 @@ def relevant_existing_for_extraction(memories: list[dict], statement: str, *, li
     return selected
 
 
-async def observe(settings, token: str, message_id: str):
-    task = asyncio.create_task(_observe(settings, token, message_id))
-    observation_tasks.add(task)
-    try:
-        await task
-    except asyncio.CancelledError:
-        # Foreground chat preempted extraction; its failed job remains retryable.
-        if not task.cancelled():
-            raise
-    finally:
-        observation_tasks.discard(task)
-
-async def _observe(settings, token: str, message_id: str):
-    db = SupabaseRepository(settings, token)
-    try:
-        claimed = await db._request("POST", "rpc/claim_memory_observation", json={"p_message": message_id})
-        if not claimed:
-            return
-        rows = await db._request("GET", "messages", params={"id": f"eq.{message_id}", "limit": "1"})
-        if not rows or rows[0]["role"] != "user":
-            raise ValueError("Source unavailable")
-        source = rows[0]
-        companion = await db.get_companion(source["companion_id"])
-        # This is a conservative, model-independent check. Obvious single-turn
-        # requests and greetings cannot become durable user memories merely
-        # because a model invents candidate facts from other context.
-        decision = classify_natural_evidence(source["content"], source["content"])
-        if decision.action == "skip":
-            await db._request("PATCH", "memory_observations",
-                              params={"source_message_id": f"eq.{message_id}"},
-                              json={"status": "done", "updated_at": "now()"})
-            return
-        existing = await db._request("GET", "memories", params={
-            "companion_id": f"eq.{source['companion_id']}", "select": "content,subject,is_active,tags", "limit": "500"})
-        # Retrieval is restricted to a small, relevant subset. Supplying the
-        # entire memory inventory can overflow the inference context and
-        # silently truncate the source-only evidence instructions.
-        extraction_memories = relevant_existing_for_extraction(
-            existing, source["content"])
-        prompt = """Extract up to three useful long-term memory proposals from the current user's statement.
+EXTRACTION_PROMPT = """Extract up to three useful long-term memory proposals from the current user's statement.
 Conversation context may be supplied only to resolve references such as "you", "her",
 "that", or an omitted subject. Never extract a memory from context alone. The current
 user statement is the only evidence source.
@@ -135,6 +96,99 @@ wording in the current user statement. topic is a stable lowercase snake_case at
 (e.g. favorite_color, preferred_season, current_project); use an empty topic if no clear
 attribute exists. Never mark questions, hypotheticals, instructions or inferred facts
 as direct. Return JSON matching the required structured-output schema."""
+
+
+# Ollama drops the FRONT of an oversized prompt, which is where the grounding
+# instructions are. Never send one: budget the whole request conservatively.
+_OUTPUT_RESERVE_TOKENS = 1000  # structured() max_tokens
+_TEMPLATE_RESERVE_TOKENS = 256  # chat template, role markers, special tokens
+
+
+def estimate_tokens(text: str) -> int:
+    """Conservative token estimate without the model's tokenizer.
+
+    Non-ASCII text counts one token per UTF-8 byte, an upper bound for
+    byte-level tokenizers. ASCII counts one token per three characters.
+    """
+    ascii_chars = sum(1 for ch in text if ord(ch) < 128)
+    other_bytes = len(text.encode("utf-8")) - ascii_chars
+    return -(-ascii_chars // 3) + other_bytes
+
+
+def extraction_prompt_budget(settings) -> int:
+    window = min(getattr(settings, "memory_observation_context_tokens", 4096),
+                 getattr(settings, "chat_context_length", 8192))
+    return window - _OUTPUT_RESERVE_TOKENS - _TEMPLATE_RESERVE_TOKENS
+
+
+def fit_extraction_messages(prompt: str, payload: dict, schema: dict, budget: int):
+    """Return chat messages within budget, or None if the statement cannot fit.
+
+    Optional context goes first: lowest-ranked memories, then the oldest prior
+    turns. The user statement is never shortened, because it is the only
+    evidence source.
+    """
+    payload = {**payload,
+               "existing_memories": list(payload["existing_memories"]),
+               "conversation_context": list(payload["conversation_context"])}
+    fixed = estimate_tokens(prompt) + estimate_tokens(json.dumps(schema, ensure_ascii=False))
+    while True:
+        content = json.dumps(payload, ensure_ascii=False)
+        if fixed + estimate_tokens(content) <= budget:
+            return [{"role": "system", "content": prompt}, {"role": "user", "content": content}]
+        if payload["existing_memories"]:
+            payload["existing_memories"].pop()
+        elif payload["conversation_context"]:
+            payload["conversation_context"].pop(0)
+        else:
+            return None
+
+
+async def observe(settings, token: str, message_id: str):
+    task = asyncio.create_task(_observe(settings, token, message_id))
+    observation_tasks.add(task)
+    try:
+        await task
+    except asyncio.CancelledError:
+        # Foreground chat preempted extraction; its failed job remains retryable.
+        if not task.cancelled():
+            raise
+    finally:
+        observation_tasks.discard(task)
+
+async def _observe(settings, token: str, message_id: str):
+    if not token:
+        # SupabaseRepository falls back to the service-role key without a user
+        # token, which bypasses RLS. Extraction must only run as the owner.
+        logger.warning("Memory observation skipped: no user token")
+        return
+    db = SupabaseRepository(settings, token)
+    try:
+        claimed = await db._request("POST", "rpc/claim_memory_observation", json={"p_message": message_id})
+        if not claimed:
+            return
+        rows = await db._request("GET", "messages", params={"id": f"eq.{message_id}", "limit": "1"})
+        if not rows or rows[0]["role"] != "user":
+            raise ValueError("Source unavailable")
+        source = rows[0]
+        companion = await db.get_companion(source["companion_id"])
+        # This is a conservative, model-independent check. Obvious single-turn
+        # requests and greetings cannot become durable user memories merely
+        # because a model invents candidate facts from other context.
+        decision = classify_natural_evidence(source["content"], source["content"])
+        if decision.action == "skip":
+            await db._request("PATCH", "memory_observations",
+                              params={"source_message_id": f"eq.{message_id}"},
+                              json={"status": "done", "updated_at": "now()"})
+            return
+        existing = await db._request("GET", "memories", params={
+            "companion_id": f"eq.{source['companion_id']}", "select": "content,subject,is_active,tags", "limit": "500"})
+        # Retrieval is restricted to a small, relevant subset. Supplying the
+        # entire memory inventory can overflow the inference context and
+        # silently truncate the source-only evidence instructions.
+        extraction_memories = relevant_existing_for_extraction(
+            existing, source["content"])
+        prompt = EXTRACTION_PROMPT
         prior = []
         if source.get("conversation_id") and source.get("created_at"):
             prior = await db._request("GET", "messages", params={
@@ -158,12 +212,28 @@ as direct. Return JSON matching the required structured-output schema."""
             # The schema is already enforced by Ollama's "format" parameter.
             # Do not waste prompt budget serializing it a second time.
         }
+        schema = Candidates.model_json_schema()
+        budget = extraction_prompt_budget(settings)
+        messages = fit_extraction_messages(prompt, payload, schema, budget)
+        if messages is None:
+            # Fail closed and stay retryable: no model call, no proposal, and
+            # the original message is untouched. Counts only, never text.
+            logger.warning("Memory observation source exceeds extraction budget "
+                           "source_tokens_est=%d budget=%d",
+                           estimate_tokens(source["content"]), budget)
+            raise ValueError("Memory observation source exceeds extraction budget")
+        stats = {}
         async with model_lock:
             # Follow the selected chat model by default to avoid a second large model load.
             raw = await asyncio.wait_for(OllamaProvider(settings).structured(
                 settings.memory_observation_model or companion.get("conversation_model") or settings.conversation_model,
-                [{"role": "system", "content": prompt}, {"role": "user", "content": json.dumps(payload)}],
-                Candidates.model_json_schema(), think=False), timeout=60)
+                messages, schema, think=False, stats=stats), timeout=60)
+        evaluated = stats.get("prompt_eval_count")
+        if isinstance(evaluated, int) and evaluated > budget + _TEMPLATE_RESERVE_TOKENS:
+            # The estimate was wrong, so the instructions may have been cut.
+            logger.warning("Memory observation prompt exceeded budget "
+                           "prompt_eval_count=%d budget=%d", evaluated, budget)
+            raise ValueError("Memory observation prompt exceeded budget")
         proposals = Candidates.model_validate_json(raw)
         # Validate the entire model batch BEFORE creating proposals. A later
         # invalid candidate must not leave earlier partial writes behind
@@ -217,7 +287,7 @@ as direct. Return JSON matching the required structured-output schema."""
             proposal = await db._request("POST", "rpc/propose_memory", json={
                 "p_message": message_id, "p_content": c.content, "p_evidence": evidence,
                 "p_subject": c.subject, "p_type": c.type})
-            if proposal and automatic_candidate(c, evidence) and len(existing) < 500:
+            if proposal and automatic_candidate(c, evidence, source["content"]) and len(existing) < 500:
                 await db._request("POST", "rpc/auto_save_memory_suggestion", json={
                     "p_id": proposal, "p_topic": c.topic})
         await db._request("PATCH", "memory_observations", params={"source_message_id": f"eq.{message_id}"},
@@ -234,13 +304,111 @@ as direct. Return JSON matching the required structured-output schema."""
             raise
 
 
-def automatic_candidate(candidate, evidence):
-    """Fail closed: exact evidence + explicit user fact + two layers of review checks."""
-    text = evidence.lower()
-    sensitive = r"\b(health|diagnos\w*|medicat\w*|cancer|depress\w*|pregnan\w*|sexual\w*|religio\w*|christian|muslim|jewish|politic\w*|republican|democrat|salary|income|debt|bank|password|secret|address|ssn|social security|passport|lawsuit|arrest\w*)\b"
-    uncertain = r"\b(if|maybe|perhaps|hypothetic\w*|pretend|roleplay|imagine|might|could|would)\b"
-    return (candidate.durable and candidate.subject == "user" and candidate.direct_assertion
+_SENSITIVE = re.compile(
+    r"\b(health|diagnos\w*|medicat\w*|medicine|prescri\w*|therap\w*|disorder|disease|illness|"
+    r"cancer|diabet\w*|hiv|adhd|autis\w*|anxiety|depress\w*|bipolar|ptsd|suicid\w*|surgery|"
+    r"pregnan\w*|disab\w*|sobriety|sober|rehab|addict\w*|"
+    r"sexual\w*|gay|lesbian|bisexual|queer|transgender|trans|nonbinary|"
+    r"religio\w*|christian|muslim|jewish|hindu|buddhist|atheist|church|mosque|synagogue|"
+    r"politic\w*|republican|democrat|liberal|conservative|vote\w*|"
+    r"salary|income|debt|bank|loan|mortgage|credit|bankrupt\w*|"
+    r"password|passcode|pin|secret|address|street|zip|postcode|phone|email|"
+    r"ssn|social security|passport|license|licence|"
+    r"lawsuit|arrest\w*|convict\w*|probation|immigra\w*|visa)\b"
+    r"|\d{4,}|@",
+    re.IGNORECASE,
+)
+_UNCERTAIN = re.compile(
+    r"\b(if|maybe|perhaps|probably|possibly|hypothetic\w*|pretend|roleplay|role-play|imagine|"
+    r"story|character|fiction\w*|scenario|might|could|would|should|wish|guess|suppose|"
+    r"think|thinks|thought|believe|feel like|kinda|sort of)\b",
+    re.IGNORECASE,
+)
+_NEGATION = re.compile(
+    r"\b(not|no|never|none|nothing|neither|nor|no longer|anymore|used to|without)\b|n['’]t\b",
+    re.IGNORECASE,
+)
+_CONTRAST = re.compile(
+    r"\b(but|although|though|however|except|unless|whereas|yet|instead|until)\b",
+    re.IGNORECASE,
+)
+# Any quoted or reported speech anywhere in the message makes ownership of
+# a first-person sentence uncertain ('My boss wrote "I am moving."').
+_REPORTED_SPEECH = re.compile(
+    r"[\"“”„«»]|^\s*>|\b(said|says|saying|wrote|writes|written|told|tells|asked|asks|"
+    r"texted|emailed|messaged|posted|replied|quot\w*|according to|claim\w*|"
+    r"heard|insist\w*|swear\w*|swore|pretend\w*)\b",
+    re.IGNORECASE | re.MULTILINE,
+)
+# Auto-save only these explicit first-person shapes. Anything else is review.
+_FIRST_PERSON_FACT = re.compile(
+    r"^(?:i(?:['’]m|['’]ve| am| have)?\s+[^\W\d_]"
+    r"|my\s+(?:(?:least\s+)?favou?rite|preferred|name|nickname|job|profession|"
+    r"occupation|hobby|hobbies|first language|native language)\b"
+    r"|(?:[^\W\d_][\w'’-]*\s+){1,4}(?:is|are)\s+my\s+(?:(?:least\s+)?favou?rite|preferred)\b)",
+    re.IGNORECASE,
+)
+_POSITIVE_PREFERENCE = frozenset({"like", "love", "enjoy", "prefer", "preferred", "favorite", "adore", "fan"})
+_NEGATIVE_PREFERENCE = re.compile(
+    r"\b(hate\w*|dislike\w*|detest\w*|loath\w*|despise\w*|can['’]?t stand|avoid\w*|allergic)\b",
+    re.IGNORECASE,
+)
+# Wording that may appear in content without being quoted from the evidence.
+_CONTENT_FRAMING = frozenset({"user", "name", "named", "called"})
+_AUTO_SOURCE_MAX_CHARS = 1000
+
+
+def _whole_sentence(source: str, evidence: str) -> bool:
+    """Evidence must be a complete sentence of the source, not a fragment of one."""
+    quote = evidence.strip()
+    if not quote:
+        return False
+    start = source.find(quote)
+    while start >= 0:
+        before = source[:start].rstrip(" \t")
+        after = source[start + len(quote):].lstrip(" \t")
+        opens = not before or before[-1] in ".!?\n"
+        closes = quote[-1] in ".!" or not after or after[0] in ".!\n"
+        if opens and closes:
+            return True
+        start = source.find(quote, start + 1)
+    return False
+
+
+def _content_grounded(content: str, evidence: str) -> bool:
+    """Every content term must come from the evidence, with preference polarity kept."""
+    content_terms = terms(content)
+    evidence_terms = terms(evidence)
+    if content_terms & _POSITIVE_PREFERENCE:
+        if not evidence_terms & _POSITIVE_PREFERENCE or _NEGATIVE_PREFERENCE.search(evidence):
+            return False
+    leftover = content_terms - _CONTENT_FRAMING - _POSITIVE_PREFERENCE
+    return bool(leftover) and leftover <= evidence_terms
+
+
+def automatic_candidate(candidate, evidence, source=None):
+    """Fail closed: model flags are necessary, never sufficient.
+
+    Saving without review needs an explicit first-person sentence, quoted in
+    full, whose content says nothing the evidence does not. Sensitivity,
+    negation, contrast, uncertainty and reported speech are checked on the
+    evidence, content and topic text themselves; anything doubtful stays a
+    reviewable proposal.
+    """
+    source = evidence if source is None else source
+    quote = " ".join(evidence.split())
+    content = " ".join(candidate.content.split())
+    checked = "\n".join((quote, content, candidate.topic.replace("_", " ")))
+    if not (candidate.durable and candidate.subject == "user" and candidate.direct_assertion
             and not candidate.sensitive and not candidate.conflicting
-            and bool(re.fullmatch(r"[a-z][a-z0-9_]{1,79}", candidate.topic))
-            and bool(re.search(r"\b(i|my|me)\b", text)) and "?" not in text
-            and not re.search(sensitive, text) and not re.search(uncertain, text))
+            and re.fullmatch(r"[a-z][a-z0-9_]{1,79}", candidate.topic)):
+        return False
+    if "?" in checked or _SENSITIVE.search(checked) or _UNCERTAIN.search(checked):
+        return False
+    if _NEGATION.search(checked) or _CONTRAST.search(checked):
+        return False
+    if len(source) > _AUTO_SOURCE_MAX_CHARS or _REPORTED_SPEECH.search(source):
+        return False
+    if not _FIRST_PERSON_FACT.match(quote) or not _whole_sentence(source, evidence):
+        return False
+    return content.casefold().startswith("the user") and _content_grounded(content, quote)
