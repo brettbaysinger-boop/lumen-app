@@ -55,6 +55,7 @@ import { requestKey, type DayItem } from '@/lib/my-day';
 import { router, useLocalSearchParams, useFocusEffect } from 'expo-router';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth';
+import { useMemoryBackend } from '@/lib/memory-backend';
 import { respondToMessage, generateImage, isImageRequest } from '@/lib/cognition';
 import { EffortControl } from '@/components/EffortControl';
 import { imagePromptFromConfirmation } from '@/lib/image-followup';
@@ -97,6 +98,7 @@ export default function ChatScreen() {
   const [liveReply, setLiveReply] = useState('');
   const [pendingQuestion, setPendingQuestion] = useState('');
   const [memoryNotice, setMemoryNotice] = useState<{id: string; content: string} | null>(null);
+  const memoryBackend = useMemoryBackend();
   const [creatingImage, setCreatingImage] = useState(false);
   const [pendingImages, setPendingImages] = useState<PickedImage[]>([]);
   const { session } = useAuth();
@@ -186,7 +188,8 @@ export default function ChatScreen() {
   }, [cancelVoice]);
 
   useEffect(() => {
-    if (!companion || !activeConversation || sending) return;
+    // Supabase memory notices/suggestions only exist when Supabase is the store.
+    if (!companion || !activeConversation || sending || memoryBackend !== 'supabase') return;
     let active = true;
     const since = memoryWindowRef.current || new Date().toISOString();
     const timer = setInterval(async () => {
@@ -203,7 +206,7 @@ export default function ChatScreen() {
 
     }, 2500);
     return () => { active = false; clearInterval(timer); };
-  }, [companion?.id, activeConversation?.id, sending]);
+  }, [companion?.id, activeConversation?.id, sending, memoryBackend]);
 
   const toggleRecording = useCallback(async () => {
     if (voicePhaseRef.current === 'recording') {

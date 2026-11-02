@@ -84,6 +84,9 @@ async def index_memory_batch_background(
 
 def queue_semantic_index(background_tasks, settings: Settings, access_token: str, companion_id: str) -> bool:
     """Queue indexing only when both explicit semantic flags are enabled."""
+    from .memory_backend import supabase_memory_enabled
+    if not supabase_memory_enabled(settings):
+        return False
     if not (
         getattr(settings, "semantic_memory_enabled", False) is True
         and getattr(settings, "semantic_index_after_chat", False) is True

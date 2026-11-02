@@ -19,6 +19,7 @@ import {
 import { useFocusEffect } from 'expo-router';
 import { MemoryCorrectionCard } from '@/components/MemoryCorrectionCard';
 import { authHeaders } from '@/lib/auth';
+import { useMemoryBackend } from '@/lib/memory-backend';
 import { supabase } from '@/lib/supabase';
 import { useTheme } from '@/lib/theme-context';
 import { memorySubjectIssue } from '@/lib/memory-subject';
@@ -77,6 +78,9 @@ export default function MemoriesScreen() {
   const [newType, setNewType] = useState<MemoryType>('semantic');
   const [newImportance, setNewImportance] = useState('0.5');
   const [manualWarningSignature, setManualWarningSignature] = useState<string | null>(null);
+  // Only the Supabase store is listed and edited here; see lib/memory-backend.ts.
+  const memoryBackend = useMemoryBackend();
+  const supabaseMemories = memoryBackend === 'supabase';
 
   const loadCompanion = useCallback(async () => {
     const { data, error: err } = await supabase
@@ -89,7 +93,7 @@ export default function MemoriesScreen() {
   }, []);
 
   const loadMemories = useCallback(async () => {
-    if (!companion) return;
+    if (!companion || !supabaseMemories) return;
     let query = supabase.from('memories').select('*')
       .eq('companion_id', companion.id).eq('is_active', true)
       .order('updated_at', { ascending: false }).order('id', { ascending: false });
@@ -98,18 +102,18 @@ export default function MemoriesScreen() {
     const { data, error: err } = await query;
     if (err) { setError(err.message); return; }
     setMemories((data as Memory[]) || []);
-  }, [companion, filterType, searchQuery]);
+  }, [companion, filterType, searchQuery, supabaseMemories]);
 
   useEffect(() => { loadCompanion(); }, [loadCompanion]);
   useEffect(() => { if (companion) loadMemories(); }, [companion, loadMemories]);
 
   const loadSuggestions = useCallback(async () => {
-    if (!companion) return;
+    if (!companion || !supabaseMemories) return;
     const { data, error: err } = await supabase.from('memory_suggestions').select('*')
       .eq('companion_id', companion.id).eq('status', 'pending').order('created_at', { ascending: false });
     if (err) setError(err.message);
     else setSuggestions(data || []);
-  }, [companion]);
+  }, [companion, supabaseMemories]);
 
   useFocusEffect(useCallback(() => {
     if (!companion) return;
@@ -217,10 +221,30 @@ export default function MemoriesScreen() {
     setManualWarningSignature(null); setError(null);
   }, [companion, newContent, newType, newImportance, newSubject, manualWarningSignature]);
 
-  if (loading) {
+  if (loading || memoryBackend === 'checking') {
     return (
       <SafeAreaView style={styles.loadingContainer} edges={['top']}>
         <ActivityIndicator size="large" color={c.primary[400]} />
+      </SafeAreaView>
+    );
+  }
+
+  if (memoryBackend === 'rmc') {
+    return (
+      <SafeAreaView style={styles.container} edges={['top']}>
+        <View style={styles.header}>
+          <View style={styles.headerTitleRow}>
+            <Brain color={c.primary[400]} size={22} strokeWidth={2} />
+            <Text style={styles.headerTitle}>Memories</Text>
+          </View>
+        </View>
+        <View style={{ padding: Spacing.lg }}>
+          <Text style={{ color: c.neutral[100] }}>
+            {companion?.name || 'Your companion'} now keeps long-term memories in the Raialume Memory Core.
+            Viewing and editing them here is not available yet. You can still ask in chat what is remembered,
+            or say “remember that” followed by a fact.
+          </Text>
+        </View>
       </SafeAreaView>
     );
   }
