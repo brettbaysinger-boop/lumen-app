@@ -19,7 +19,7 @@ import {
 import { useFocusEffect } from 'expo-router';
 import { MemoryCorrectionCard } from '@/components/MemoryCorrectionCard';
 import { authHeaders } from '@/lib/auth';
-import { useMemoryBackend } from '@/lib/memory-backend';
+import { useMemoryBackend, backendNotice, MUTATION_BLOCKED_MESSAGE } from '@/lib/memory-backend';
 import { supabase } from '@/lib/supabase';
 import { useTheme } from '@/lib/theme-context';
 import { memorySubjectIssue } from '@/lib/memory-subject';
@@ -79,8 +79,15 @@ export default function MemoriesScreen() {
   const [newImportance, setNewImportance] = useState('0.5');
   const [manualWarningSignature, setManualWarningSignature] = useState<string | null>(null);
   // Only the Supabase store is listed and edited here; see lib/memory-backend.ts.
-  const memoryBackend = useMemoryBackend();
-  const supabaseMemories = memoryBackend === 'supabase';
+  const { state: backendState, canEditSupabase: supabaseMemories, refresh: refreshBackend,
+    authorizeMutation } = useMemoryBackend();
+  // Every Supabase memory write below awaits this first: it asks the server
+  // again and refuses unless Supabase is confirmed active for this account.
+  const authorizeMemoryMutation = useCallback(async () => {
+    if (await authorizeMutation()) return true;
+    setError(MUTATION_BLOCKED_MESSAGE);
+    return false;
+  }, [authorizeMutation]);
 
   const loadCompanion = useCallback(async () => {
     const { data, error: err } = await supabase
@@ -115,6 +122,9 @@ export default function MemoriesScreen() {
     else setSuggestions(data || []);
   }, [companion, supabaseMemories]);
 
+  // Screen activation re-checks the active memory store.
+  useFocusEffect(useCallback(() => { void refreshBackend(); }, [refreshBackend]));
+
   useFocusEffect(useCallback(() => {
     if (!companion) return;
     void loadSuggestions();
@@ -143,6 +153,7 @@ export default function MemoriesScreen() {
     }
     setReviewBusy(true);
     try {
+      if (!(await authorizeMemoryMutation())) return;
       const { data, error: err } = await supabase.rpc('review_memory_suggestion_v2', {
         p_id: item.id, p_action: action,
         p_content: content,
@@ -173,6 +184,7 @@ export default function MemoriesScreen() {
   const retryObservations = async () => {
     setRetryNotice('');
     try {
+      if (!(await authorizeMemoryMutation())) return;
       const base = process.env.EXPO_PUBLIC_LUMEN_API_URL?.trim().replace(/\/+$/, '');
       if (!base) throw new Error('Lumen API address is missing.');
       const response = await fetch(`${base}/v0.2/memory-observations/retry`, {
@@ -191,10 +203,11 @@ export default function MemoriesScreen() {
   }, [loadMemories, loadSuggestions]);
 
   const deleteMemory = useCallback(async (id: string) => {
+    if (!(await authorizeMemoryMutation())) return;
     const { error: err } = await supabase.from('memories').update({ is_active: false }).eq('id', id);
     if (err) { setError(err.message); return; }
     setMemories((prev) => prev.filter((m) => m.id !== id));
-  }, []);
+  }, [authorizeMemoryMutation]);
 
   const addMemory = useCallback(async () => {
     if (!companion || !newContent.trim()) return;
@@ -208,6 +221,7 @@ export default function MemoriesScreen() {
       return;
     }
     const importance = parseFloat(newImportance) || 0.5;
+    if (!(await authorizeMemoryMutation())) return;
     const { data, error: err } = await supabase
       .from('memories').insert({
         companion_id: companion.id, type: newType,
@@ -219,9 +233,9 @@ export default function MemoriesScreen() {
     setMemories((prev) => [data as Memory, ...prev]);
     setNewContent(''); setNewImportance('0.5'); setShowAddModal(false);
     setManualWarningSignature(null); setError(null);
-  }, [companion, newContent, newType, newImportance, newSubject, manualWarningSignature]);
+  }, [companion, newContent, newType, newImportance, newSubject, manualWarningSignature, authorizeMemoryMutation]);
 
-  if (loading || memoryBackend === 'checking') {
+  if (loading || (backendState.kind === 'checking' && !supabaseMemories)) {
     return (
       <SafeAreaView style={styles.loadingContainer} edges={['top']}>
         <ActivityIndicator size="large" color={c.primary[400]} />
@@ -229,7 +243,8 @@ export default function MemoriesScreen() {
     );
   }
 
-  if (memoryBackend === 'rmc') {
+  if (!supabaseMemories) {
+    // RMC active, or the active store can't be confirmed: fail closed.
     return (
       <SafeAreaView style={styles.container} edges={['top']}>
         <View style={styles.header}>
@@ -238,12 +253,15 @@ export default function MemoriesScreen() {
             <Text style={styles.headerTitle}>Memories</Text>
           </View>
         </View>
-        <View style={{ padding: Spacing.lg }}>
+        <View style={{ padding: Spacing.lg, gap: Spacing.md }}>
           <Text style={{ color: c.neutral[100] }}>
-            {companion?.name || 'Your companion'} now keeps long-term memories in the Raialume Memory Core.
-            Viewing and editing them here is not available yet. You can still ask in chat what is remembered,
-            or say “remember that” followed by a fact.
+            {backendNotice(backendState, companion?.name || 'Your companion')}
           </Text>
+          {backendState.kind === 'unavailable' && (
+            <TouchableOpacity accessibilityRole="button" onPress={() => { void refreshBackend(); }}>
+              <Text style={{ color: c.primary[300] }}>Check again</Text>
+            </TouchableOpacity>
+          )}
         </View>
       </SafeAreaView>
     );
@@ -394,6 +412,7 @@ export default function MemoriesScreen() {
                         );
                         if (issue) { setError(issue); return; }
                         setSavingMemory(true);
+                        if (!(await authorizeMemoryMutation())) { setSavingMemory(false); return; }
                         const { data, error: err } = await supabase
                           .from('memories')
                           .update({
@@ -455,6 +474,7 @@ export default function MemoriesScreen() {
                           item.content, subject, companion?.name || 'Companion', item.type
                         );
                         if (issue) { setError(issue); return; }
+                        if (!(await authorizeMemoryMutation())) return;
                         const { data, error: err } = await supabase
                           .from('memories')
                           .update({ subject })

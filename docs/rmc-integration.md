@@ -98,6 +98,45 @@ and the contract. It does not prove a deployable gateway.
 * New endpoint: `GET /v0.2/memory/backend` (signed-in users only) lets the
   app know which store is active.
 
+### App behaviour: fail closed
+
+The app writes Supabase memories directly (Memories tab add, edit, subject,
+delete, suggestion review, observation retry; chat suggestion review and
+"Undo"; correction undo), so the app must never assume Supabase is active.
+`lib/memory-backend-core.ts` decides, and `lib/memory-backend.ts` wires it in:
+
+* Supabase memory screens are shown, and Supabase memory rows read, only
+  while the server has answered exactly `{"backend":"supabase"}` for the
+  **same signed-in account** within the last 30 seconds.
+* Checking, no API address, network error, timeout, any HTTP error
+  (including 404), a malformed answer, an account change during the request,
+  or an answer older than 30 seconds all mean **unavailable**. The Memories
+  tab then shows a read-only notice with "Check again", and chat hides
+  memory notices and suggestions.
+* A remembered answer is only a display hint. **Every Supabase memory write
+  first asks the server again**. It goes ahead only if that new answer is
+  `supabase` for the same account, and otherwise shows "nothing was changed".
+  A test fails if any such write in the app lacks this check.
+* Only the newest check for the current account can change the state, so a
+  slow old answer cannot win a race against a newer one, and one account's
+  answer is never applied to another.
+* The app re-checks on sign-in, sign-out and account switch, when the app
+  returns to the foreground, on browser `online` and `focus`, when the
+  Memories or Chat screen gains focus, every 15 seconds while signed in, and
+  every 10 seconds after a failure.
+
+### Gateway socket checks
+
+Before every request, `validate_socket` refuses the socket unless the path
+is absolute and normalized with no symlink anywhere in it
+(`realpath == path`), its directory is a real directory owned by the Lumen
+service uid with mode 0700, and the socket itself (checked with `lstat`) is
+a socket owned by that uid with no group or other permissions. Because the
+directory is owner-only, no other account can swap the socket between the
+check and the connect. The host key file gets the same symlink check. A
+refused socket means nothing is sent, and the result is `not_saved` or
+"couldn't check".
+
 ## 4. Tests
 
 ```bash
@@ -107,7 +146,7 @@ LUMEN_RMC_SOURCE_DIR=/path/to/raialume-memory-core@bd64be1 \
 python3 -m pytest -q
 ```
 
-`tests/test_rmc_integration.py` (25 tests) covers: save then recall in a
+`tests/test_rmc_integration.py` (32 tests) covers: save then recall in a
 later request; streaming and non-streaming routes; no bearer → 401 and no RMC
 contact; another user's recall, a foreign companion, an adapter-level
 ownership check and gateway owner binding; wrong key, stale and replayed
@@ -116,8 +155,17 @@ idempotent retry; Hindsight outage, lost reply, gateway 5xx and gateway
 absent; unsafe key/socket configuration; Supabase-only paths off in RMC mode;
 flag default, invalid values and rollback. The suite refuses an RMC checkout
 other than `bd64be1` unless `LUMEN_RMC_ALLOW_OTHER_SHA=YES`. Without
-`LUMEN_RMC_SOURCE_DIR`, the 16 gateway tests skip and the 9 client and flag
-tests still run.
+`LUMEN_RMC_SOURCE_DIR`, the 16 gateway tests skip and the 16 client, flag
+and socket tests still run. The socket tests cover symlinked sockets, parent
+directories and keys, unnormalized paths, socket and directory modes,
+non-socket and missing paths, foreign owners (when run as root), and a client
+that never connects to a refused socket.
+
+Frontend: `node --test tests/memory-backend.test.cjs` (11 tests) covers
+backend-switch races, network failures and timeouts, HTTP errors including
+404, malformed answers, missing configuration, stale answers, cross-account
+switches during a check, a fresh check on every mutation, reconnect after a
+failure, and the static check that every app memory write is guarded.
 
 ## 5. Deployment procedure (do not run until the blockers are cleared)
 
@@ -140,7 +188,8 @@ owner's approval.
 5. Leave `LUMEN_MEMORY_BACKEND` unset (or `supabase`) and restart
    `lumen-api` only when the owner approves a restart. Behaviour is the same
    as today.
-6. To enable RMC, set these in the Lumen API environment (systemd drop-in or
+6. Apply the owner-approved database guard (§6 item 4) and set
+   `lumen_memory_store.backend = 'rmc'`. Then, to enable RMC, set these in the Lumen API environment (systemd drop-in or
    `backend/.env`, which is not committed):
    ```
    LUMEN_MEMORY_BACKEND=rmc
@@ -157,7 +206,7 @@ owner's approval.
    Check that the RMC ledger row count grew by one and that the Supabase
    `memories` row count did not change.
 8. Rollback: set `LUMEN_MEMORY_BACKEND=supabase` (or remove it) and restart
-   `lumen-api`. Facts saved in RMC stay in RMC. They are not copied back.
+   `lumen-api`. Then set `lumen_memory_store.backend = 'supabase'`. Facts saved in RMC stay in RMC. They are not copied back.
 
 ## 6. Blockers needing owner approval
 
@@ -174,11 +223,39 @@ owner's approval.
    private-chat mode or memory on/off switch for RMC yet. Every Lumen
    conversation is sent as a `normal` session. Learning and recall switches,
    forget and private sessions are enforced only by the gateway's store.
-4. **Old app builds.** Supabase RLS still lets an older app build write the
-   `memories` table directly. Lumen's server never reads it in RMC mode, but
-   a database-level write lock (a migration) or a forced app update is
-   needed to stop that store drifting. Not done here because it changes the
-   live database.
+4. **Database-level protection against old app builds (required before
+   enabling RMC).** The app-side checks above protect only builds that
+   contain them. Any older build, and anyone holding a user's Supabase
+   session, can still write `memories`, `memory_suggestions` and
+   `memory_revisions` directly, because RLS allows owners to do so. That
+   would quietly grow a second, divergent store. Before setting
+   `LUMEN_MEMORY_BACKEND=rmc`, the owner should approve and apply a
+   migration that refuses those writes in the database itself, for example:
+   ```sql
+   -- PROPOSED, not applied by this branch.
+   CREATE TABLE public.lumen_memory_store (
+     singleton boolean PRIMARY KEY DEFAULT true CHECK (singleton),
+     backend text NOT NULL DEFAULT 'supabase' CHECK (backend IN ('supabase','rmc')));
+   INSERT INTO public.lumen_memory_store DEFAULT VALUES;
+   ALTER TABLE public.lumen_memory_store ENABLE ROW LEVEL SECURITY; -- no policies: clients cannot change it
+   CREATE FUNCTION public.refuse_memory_write_when_rmc() RETURNS trigger
+     LANGUAGE plpgsql SET search_path = '' AS $$
+   BEGIN
+     IF (SELECT backend FROM public.lumen_memory_store) <> 'supabase' THEN
+       RAISE EXCEPTION 'Lumen memories are managed by RMC' USING ERRCODE = '42501';
+     END IF;
+     RETURN COALESCE(NEW, OLD);
+   END $$;
+   -- Repeat for memory_suggestions and memory_revisions.
+   CREATE TRIGGER memories_store_guard BEFORE INSERT OR UPDATE OR DELETE
+     ON public.memories FOR EACH ROW EXECUTE FUNCTION public.refuse_memory_write_when_rmc();
+   ```
+   The trigger also covers the security-definer RPCs (review, correction,
+   undo, observation), because it fires on the table whatever the caller.
+   Turning RMC on: set the row to `rmc` first, then the API flag. Rolling
+   back: set the API flag to `supabase` first, then the row. Old builds can
+   still read the frozen Supabase rows. Forcing an app update is a separate
+   option.
 5. **Live acceptance.** A fictional-account run against the real gateway,
    Hindsight and PostgreSQL ledger is still needed. Gold Master is not
    released, and personal-memory writes stay unauthorized.

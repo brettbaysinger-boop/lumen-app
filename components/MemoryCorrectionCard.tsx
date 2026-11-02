@@ -2,6 +2,7 @@ import {useEffect, useRef, useState} from 'react';
 import {View, Text, Pressable} from 'react-native';
 import {supabase} from '@/lib/supabase';
 import {useAuth} from '@/lib/auth';
+import {useMemoryBackend, MUTATION_BLOCKED_MESSAGE} from '@/lib/memory-backend';
 import {useTheme} from '@/lib/theme-context';
 
 type Revision = {id:string; kind:'correction'|'change'; before_content:string; after_content:string; undone_at:string|null};
@@ -9,6 +10,9 @@ export function MemoryCorrectionCard({value, memoryId, onUndo}:{value?:unknown; 
  const {colors:c}=useTheme();
  const {session}=useAuth();
  const owner=session?.user.id;
+ // Revisions live in Supabase: only read or undo them while Supabase is the
+ // confirmed active memory store for this account.
+ const {canEditSupabase,authorizeMutation}=useMemoryBackend();
  const id=value && typeof value==='object' && 'id' in value && typeof value.id==='string' ? value.id : null;
  const [revision,setRevision]=useState<Revision|null>(null);
  const [busy,setBusy]=useState(false);
@@ -20,7 +24,7 @@ export function MemoryCorrectionCard({value, memoryId, onUndo}:{value?:unknown; 
  useEffect(()=>{
   const current=++generation.current;
   setRevision(null);setError('');setBusy(false);setExpanded(false);setLoadedOwner(undefined);
-  if((!id && !memoryId) || !owner)return;
+  if((!id && !memoryId) || !owner || !canEditSupabase)return;
   let query=supabase.from('memory_revisions')
    .select('id,kind,before_content,after_content,undone_at');
   query=id ? query.eq('id',id) : query.eq('memory_id',memoryId!)
@@ -32,7 +36,7 @@ export function MemoryCorrectionCard({value, memoryId, onUndo}:{value?:unknown; 
     else {setRevision(data as Revision|null);setLoadedOwner(owner);}
    });
   return ()=>{generation.current++;};
- },[id,memoryId,owner]);
+ },[id,memoryId,owner,canEditSupabase]);
  const undo=async()=>{
   if(!revision || busy || revision.undone_at || loadedOwner!==owner)return;
   const current=generation.current;
@@ -41,6 +45,7 @@ export function MemoryCorrectionCard({value, memoryId, onUndo}:{value?:unknown; 
   try {
    const {data:auth}=await supabase.auth.getSession();
    if(auth.session?.user.id!==expectedOwner || activeOwner.current!==expectedOwner)return;
+   if(!(await authorizeMutation())){if(generation.current===current)setError(MUTATION_BLOCKED_MESSAGE);return;}
    const {data,error:err}=await supabase.rpc('undo_memory_correction',{p_id:revision.id});
    if(generation.current!==current || activeOwner.current!==expectedOwner)return;
    if(err) {setError('Could not undo. The memory may have changed; review its current value in Memories.');return;}
@@ -51,7 +56,7 @@ export function MemoryCorrectionCard({value, memoryId, onUndo}:{value?:unknown; 
    if(generation.current===current)setError('Undo could not be confirmed. Please refresh before retrying.');
   } finally {if(generation.current===current)setBusy(false);}
  };
- if((!id && !memoryId) || !owner)return null;
+ if((!id && !memoryId) || !owner || !canEditSupabase)return null;
  if(!revision || loadedOwner!==owner)return error ? <Text style={{color:c.neutral[400]}}>{error}</Text> : null;
  return <View style={{gap:6,marginTop:10}}>
   <View style={{flexDirection:'row',gap:14,alignItems:'center',flexWrap:'wrap'}}>

@@ -51,7 +51,8 @@ def require_rmc_source(testcase):
 
 
 def private_dir(parent=None):
-    path = tempfile.mkdtemp(prefix="lumen-rmc-", dir=parent)
+    # realpath: the socket check refuses any symlinked path component.
+    path = os.path.realpath(tempfile.mkdtemp(prefix="lumen-rmc-", dir=parent))
     os.chmod(path, 0o700)
     return path
 
@@ -515,6 +516,97 @@ class ClientUnit(unittest.IsolatedAsyncioTestCase):
             rmc_client.load_host_key(path)
         self.assertEqual(caught.exception.code, "RMC_HOST_KEY_DIR_UNSAFE")
         self.assertTrue(stat.S_IMODE(os.stat(path).st_mode) == 0o600)
+
+
+class SocketValidation(unittest.IsolatedAsyncioTestCase):
+    """Gateway socket checks: ownership, permissions, symlink safety."""
+
+    def setUp(self):
+        import socket as socketlib
+        self.root = private_dir()
+        self.addCleanup(shutil.rmtree, self.root, True)
+        self.dir = private_dir(self.root)
+        self.path = os.path.join(self.dir, "gateway.sock")
+        self.listener = socketlib.socket(socketlib.AF_UNIX, socketlib.SOCK_STREAM)
+        self.addCleanup(self.listener.close)
+        self.listener.bind(self.path)
+        os.chmod(self.path, 0o600)
+
+    def code(self, path):
+        try:
+            rmc_client.validate_socket(path)
+        except rmc_client.RmcConfigError as exc:
+            return exc.code
+        return "OK"
+
+    def test_owner_only_socket_in_owner_only_dir_is_accepted(self):
+        self.assertEqual(self.code(self.path), "OK")
+
+    def test_symlinks_are_refused(self):
+        link = os.path.join(self.dir, "link.sock")
+        os.symlink(self.path, link)
+        self.assertEqual(self.code(link), "RMC_GATEWAY_SOCKET_SYMLINK")
+        linked_dir = os.path.join(self.root, "linked-dir")
+        os.symlink(self.dir, linked_dir)
+        self.assertEqual(self.code(os.path.join(linked_dir, "gateway.sock")), "RMC_GATEWAY_SOCKET_SYMLINK")
+        self.assertEqual(self.code(self.dir + "/../" + os.path.basename(self.dir) + "/gateway.sock"),
+                         "RMC_GATEWAY_SOCKET_PATH_INVALID")
+
+    def test_permissions_are_enforced(self):
+        for mode in (0o660, 0o606, 0o666, 0o777):
+            os.chmod(self.path, mode)
+            self.assertEqual(self.code(self.path), "RMC_GATEWAY_SOCKET_MODE_UNSAFE", oct(mode))
+        os.chmod(self.path, 0o600)
+        for mode in (0o750, 0o705, 0o755, 0o1777):
+            os.chmod(self.dir, mode)
+            self.assertEqual(self.code(self.path), "RMC_GATEWAY_SOCKET_DIR_UNSAFE", oct(mode))
+        os.chmod(self.dir, 0o700)
+        self.assertEqual(self.code(self.path), "OK")
+
+    def test_wrong_kind_or_missing_is_refused(self):
+        regular = os.path.join(self.dir, "plain")
+        with open(regular, "w") as handle:
+            handle.write("x")
+        os.chmod(regular, 0o600)
+        self.assertEqual(self.code(regular), "RMC_GATEWAY_SOCKET_NOT_SOCKET")
+        self.assertEqual(self.code(os.path.join(self.dir, "absent.sock")), "RMC_GATEWAY_SOCKET_MISSING")
+        self.assertEqual(self.code("relative.sock"), "RMC_GATEWAY_SOCKET_PATH_INVALID")
+
+    def test_foreign_owner_is_refused(self):
+        if os.geteuid() != 0:
+            self.skipTest("changing ownership needs root")
+        os.chown(self.path, 65534, 65534)
+        self.assertEqual(self.code(self.path), "RMC_GATEWAY_SOCKET_OWNER_MISMATCH")
+        os.chown(self.path, 0, 0)
+        os.chown(self.dir, 65534, 65534)
+        self.assertEqual(self.code(self.path), "RMC_GATEWAY_SOCKET_DIR_UNSAFE")
+
+    async def test_client_sends_nothing_to_an_unsafe_socket(self):
+        link = os.path.join(self.dir, "link.sock")
+        os.symlink(self.path, link)
+        client = rmc_client.RmcGatewayClient(rmc_client.RmcConfig(INSTALL, link, b"k" * 32, 2))
+        result = await client.remember(user_id=ADA, companion_id=ADA_COMPANION, session_id="s-1",
+                                       session_mode="normal", source_id="lumen-1",
+                                       timestamp="2026-11-02T08:00:00Z", text=FACT)
+        self.assertEqual(result.outcome, "unavailable")
+        self.assertEqual(client.last_socket_error, "RMC_GATEWAY_SOCKET_SYMLINK")
+        self.listener.settimeout(0.2)
+        self.listener.listen(1)
+        import socket as socketlib
+        with self.assertRaises(socketlib.timeout):
+            self.listener.accept()  # nothing connected
+
+    def test_symlinked_host_key_is_refused(self):
+        key = os.path.join(self.dir, "host.key")
+        with open(key, "wb") as handle:
+            handle.write(b"k" * 40)
+        os.chmod(key, 0o600)
+        link = os.path.join(self.dir, "key-link")
+        os.symlink(key, link)
+        with self.assertRaises(rmc_client.RmcConfigError) as caught:
+            rmc_client.load_host_key(link)
+        self.assertEqual(caught.exception.code, "RMC_HOST_KEY_SYMLINK")
+        self.assertEqual(rmc_client.load_host_key(key), b"k" * 40)
 
 
 if __name__ == "__main__":

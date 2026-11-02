@@ -92,9 +92,49 @@ def _require_private_parent(path: str, code: str):
         raise RmcConfigError(code)
 
 
+def _require_owner_only_dir(path: str, code: str):
+    """Directory must be a real (non-symlink) dir owned by us, mode 0700."""
+    try:
+        info = os.lstat(path)
+    except OSError as exc:
+        raise RmcConfigError(code) from exc
+    if (not stat.S_ISDIR(info.st_mode) or info.st_uid != os.geteuid()
+            or info.st_mode & 0o077):
+        raise RmcConfigError(code)
+
+
+def validate_socket(path: str):
+    """The gateway socket must be exactly what the RMC installation created.
+
+    * absolute path with no symlink anywhere in it (realpath == path), so a
+      link cannot redirect the client to another socket;
+    * its directory is a real directory owned by this uid, mode 0700, so no
+      other account can replace the socket between check and connect;
+    * the socket itself is a socket (lstat, not followed), owned by this
+      uid, and not accessible to group or others.
+    """
+    if not path or not os.path.isabs(path) or os.path.normpath(path) != path:
+        raise RmcConfigError("RMC_GATEWAY_SOCKET_PATH_INVALID")
+    if os.path.realpath(path) != path:
+        raise RmcConfigError("RMC_GATEWAY_SOCKET_SYMLINK")
+    _require_owner_only_dir(os.path.dirname(path), "RMC_GATEWAY_SOCKET_DIR_UNSAFE")
+    try:
+        info = os.lstat(path)
+    except OSError as exc:
+        raise RmcConfigError("RMC_GATEWAY_SOCKET_MISSING") from exc
+    if not stat.S_ISSOCK(info.st_mode):
+        raise RmcConfigError("RMC_GATEWAY_SOCKET_NOT_SOCKET")
+    if info.st_uid != os.geteuid():
+        raise RmcConfigError("RMC_GATEWAY_SOCKET_OWNER_MISMATCH")
+    if info.st_mode & 0o077:
+        raise RmcConfigError("RMC_GATEWAY_SOCKET_MODE_UNSAFE")
+
+
 def load_host_key(path: str) -> bytes:
-    if not path or not os.path.isabs(path):
+    if not path or not os.path.isabs(path) or os.path.normpath(path) != path:
         raise RmcConfigError("RMC_HOST_KEY_PATH_INVALID")
+    if os.path.realpath(path) != path:
+        raise RmcConfigError("RMC_HOST_KEY_SYMLINK")
     _require_private_parent(path, "RMC_HOST_KEY_DIR_UNSAFE")
     try:
         info = os.lstat(path)
@@ -141,6 +181,7 @@ class RmcGatewayClient:
         self.config = config
         self._transport = transport
         self._clock = clock
+        self.last_socket_error: str | None = None
 
     def _assertion(self, user_id, companion_id, session_id, session_mode):
         for value in (user_id, companion_id, session_id):
@@ -161,11 +202,12 @@ class RmcGatewayClient:
         }
 
     def _socket_ok(self) -> bool:
-        path = self.config.socket_path
+        # Re-checked before every request: the gateway may have restarted.
         try:
-            _require_private_parent(path, "RMC_GATEWAY_SOCKET_DIR_UNSAFE")
-            return stat.S_ISSOCK(os.lstat(path).st_mode)
-        except (OSError, RmcConfigError):
+            validate_socket(self.config.socket_path)
+            return True
+        except RmcConfigError as exc:
+            self.last_socket_error = exc.code
             return False
 
     async def _post(self, path, payload):
