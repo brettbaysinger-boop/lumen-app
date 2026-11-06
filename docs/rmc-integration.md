@@ -161,7 +161,7 @@ directories and keys, unnormalized paths, socket and directory modes,
 non-socket and missing paths, foreign owners (when run as root), and a client
 that never connects to a refused socket.
 
-Frontend: `node --test tests/memory-backend.test.cjs` (11 tests) covers
+Frontend: `node --test tests/memory-backend.test.cjs` (12 tests) covers
 backend-switch races, network failures and timeouts, HTTP errors including
 404, malformed answers, missing configuration, stale answers, cross-account
 switches during a check, a fresh check on every mutation, reconnect after a

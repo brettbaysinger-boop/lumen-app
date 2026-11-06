@@ -143,6 +143,20 @@ test('a mutation check racing an account switch is refused',async()=>{
   assert.equal(await check,false);
 });
 
+test('a superseded mutation check answering supabase after a newer rmc answer is refused',async()=>{
+  const slow=deferred();let n=0;
+  const w=world({respond:()=>(++n===1?reply(200,{backend:'supabase'}):n===2?slow.promise:reply(200,{backend:'rmc'}))});
+  const tracker=new MemoryBackendTracker(w.deps);
+  await tracker.setActiveUser(ADA);                 // 1: supabase
+  const old=tracker.authorizeSupabaseMutation();    // 2: slow, same account
+  await tracker.refresh();                          // 3: newer check says rmc
+  assert.equal(tracker.state.kind,'rmc');
+  slow.resolve(reply(200,{backend:'supabase'}));    // the old answer arrives late
+  assert.equal(await old,false,'superseded supabase answer must not authorize a mutation');
+  assert.equal(tracker.state.kind,'rmc','superseded answer must not overwrite the newer state');
+  assert.equal(await tracker.authorizeSupabaseMutation(),false);
+});
+
 test('notices describe RMC, checking and unavailable without implying Supabase',()=>{
   assert.match(backendNotice({kind:'rmc'},'Nova'),/Raialume Memory Core/);
   assert.match(backendNotice({kind:'unavailable'},'Nova'),/could not confirm/);

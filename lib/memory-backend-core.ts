@@ -151,7 +151,11 @@ export class MemoryBackendTracker {
     const generation = ++this.generation;
     const result = await probeMemoryBackend(this.deps, userId);
     if (userId !== this.activeUser) return false;
-    if (generation === this.generation) this.set(result);
+    // A newer check for this account started while we waited. Its answer is
+    // the one that counts, so this older answer may neither update the state
+    // nor authorize anything, even if it says supabase.
+    if (generation !== this.generation) return false;
+    this.set(result);
     return result.userId === userId && isCurrentSupabase(result, userId, this.deps.now());
   }
 }
