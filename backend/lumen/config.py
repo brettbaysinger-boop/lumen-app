@@ -1,4 +1,5 @@
 from functools import lru_cache
+from typing import Literal
 
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -48,6 +49,21 @@ class Settings(BaseSettings):
     comfyui_url: str = ""
     comfyui_workflow: str = ""
     image_generation_timeout: int = Field(default=300, ge=30, le=1800)
+
+    # Memory backend selector. "supabase" (default) keeps the existing Lumen
+    # memory tables as the only store. "rmc" routes chat memory reads and
+    # explicit saves to the installed Raialume Memory Core through its
+    # application gateway and disables every Supabase memory write path.
+    # There is no automatic fallback between the two.
+    lumen_memory_backend: Literal["supabase", "rmc"] = "supabase"
+    # RMC application gateway (only read when lumen_memory_backend == "rmc").
+    # The gateway socket is an owner-only Unix domain socket created by the
+    # RMC installation; no TCP port is used. The host key is read from a
+    # 0600 file and is never stored in the environment or the repository.
+    rmc_installation_id: str = ""
+    rmc_gateway_socket: str = ""
+    rmc_host_key_file: str = ""
+    rmc_timeout_seconds: float = Field(default=10.0, ge=1.0, le=60.0)
 
     lumen_cors_origins: str = "http://localhost:8081,http://localhost:19006"
 

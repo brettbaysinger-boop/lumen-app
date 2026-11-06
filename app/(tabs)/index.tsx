@@ -55,6 +55,7 @@ import { requestKey, type DayItem } from '@/lib/my-day';
 import { router, useLocalSearchParams, useFocusEffect } from 'expo-router';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth';
+import { useMemoryBackend, MUTATION_BLOCKED_MESSAGE } from '@/lib/memory-backend';
 import { respondToMessage, generateImage, isImageRequest } from '@/lib/cognition';
 import { EffortControl } from '@/components/EffortControl';
 import { imagePromptFromConfirmation } from '@/lib/image-followup';
@@ -97,6 +98,10 @@ export default function ChatScreen() {
   const [liveReply, setLiveReply] = useState('');
   const [pendingQuestion, setPendingQuestion] = useState('');
   const [memoryNotice, setMemoryNotice] = useState<{id: string; content: string} | null>(null);
+  // Supabase memory notices, suggestions and undo only while Supabase is
+  // confirmed (fresh, same account) as the active store; see lib/memory-backend.ts.
+  const { canEditSupabase: supabaseMemories, refresh: refreshMemoryBackend,
+    authorizeMutation: authorizeMemoryMutation } = useMemoryBackend();
   const [creatingImage, setCreatingImage] = useState(false);
   const [pendingImages, setPendingImages] = useState<PickedImage[]>([]);
   const { session } = useAuth();
@@ -179,6 +184,8 @@ export default function ChatScreen() {
     changeVoicePhase('idle');
   }, [changeVoicePhase]);
   useFocusEffect(useCallback(() => () => { playbackRef.current?.abort(); cancelVoice(); }, [cancelVoice]));
+  // Screen activation re-checks the active memory store.
+  useFocusEffect(useCallback(() => { void refreshMemoryBackend(); }, [refreshMemoryBackend]));
   useEffect(() => { cancelVoice(); }, [activeConversation?.id, cancelVoice]);
   useEffect(() => {
     const listener = AppState.addEventListener('change', state => { if (state === 'background' || (state !== 'active' && voicePhaseRef.current !== 'starting')) cancelVoice(); });
@@ -186,7 +193,11 @@ export default function ChatScreen() {
   }, [cancelVoice]);
 
   useEffect(() => {
-    if (!companion || !activeConversation || sending) return;
+    // Supabase memory notices/suggestions only exist when Supabase is the store.
+    if (!companion || !activeConversation || sending || !supabaseMemories) {
+      setMemoryNotice(null); setMemoryQuestions([]);
+      return;
+    }
     let active = true;
     const since = memoryWindowRef.current || new Date().toISOString();
     const timer = setInterval(async () => {
@@ -203,7 +214,7 @@ export default function ChatScreen() {
 
     }, 2500);
     return () => { active = false; clearInterval(timer); };
-  }, [companion?.id, activeConversation?.id, sending]);
+  }, [companion?.id, activeConversation?.id, sending, supabaseMemories]);
 
   const toggleRecording = useCallback(async () => {
     if (voicePhaseRef.current === 'recording') {
@@ -948,7 +959,8 @@ export default function ChatScreen() {
         <Text style={styles.errorBannerText}>Should I remember this? {question.content} (About: {question.subject})</Text>
         <Text style={styles.errorBannerText}>You can edit the wording and ownership in Memories.</Text>
         <View style={{ flexDirection: 'row', gap: 20 }}>
-          {(['approve', 'dismiss'] as const).map(action => <TouchableOpacity key={action} onPress={async () => {
+          {(['approve', 'dismiss'] as const).map(action => <TouchableOpacity key={action} disabled={!supabaseMemories} onPress={async () => {
+            if (!(await authorizeMemoryMutation())) { setError(MUTATION_BLOCKED_MESSAGE); return; }
             const { error } = await supabase.rpc('review_memory_suggestion', { p_id: question.id, p_action: action });
             if (error) setError('Could not review this memory. Try again in Memories.');
             else setMemoryQuestions(items => items.filter(item => item.id !== question.id));
@@ -957,7 +969,8 @@ export default function ChatScreen() {
       </View>)}
       {memoryNotice && <View style={styles.errorBanner}>
         <Text style={styles.errorBannerText}>Memory saved: {memoryNotice.content}</Text>
-        <TouchableOpacity onPress={async () => {
+        <TouchableOpacity disabled={!supabaseMemories} onPress={async () => {
+          if (!(await authorizeMemoryMutation())) { setError(MUTATION_BLOCKED_MESSAGE); return; }
           const { error } = await supabase.from('memories').update({ is_active: false }).eq('id', memoryNotice.id);
           if (error) setError('Could not undo this memory. Try again in Memories.');
           else setMemoryNotice(null);

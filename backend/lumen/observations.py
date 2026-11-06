@@ -34,6 +34,9 @@ class Candidates(BaseModel):
     candidates: list[Candidate] = Field(max_length=3)
 
 async def observe(settings, token: str, message_id: str):
+    from .memory_backend import supabase_memory_enabled
+    if not supabase_memory_enabled(settings):
+        return  # observations write Supabase memories; off while RMC is the store
     task = asyncio.create_task(_observe(settings, token, message_id))
     observation_tasks.add(task)
     try:

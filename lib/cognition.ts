@@ -11,7 +11,7 @@ export interface RespondResponse {
   latency_ms: number;
   memory_count: number;
   memory_subject?: 'user' | 'companion' | 'shared' | 'unknown' | null;
-  memory_status?: 'none' | 'saved' | 'existing' | 'deleted' | 'clarification_needed';
+  memory_status?: 'none' | 'saved' | 'existing' | 'deleted' | 'clarification_needed' | 'memory_off' | 'not_saved' | 'unconfirmed';
 }
 
 export interface MessageAttachment {
