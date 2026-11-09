@@ -19,6 +19,7 @@ import {
 import { useFocusEffect } from 'expo-router';
 import { MemoryCorrectionCard } from '@/components/MemoryCorrectionCard';
 import { authHeaders } from '@/lib/auth';
+import { useMemoryBackend, backendNotice, MUTATION_BLOCKED_MESSAGE } from '@/lib/memory-backend';
 import { supabase } from '@/lib/supabase';
 import { useTheme } from '@/lib/theme-context';
 import { memorySubjectIssue } from '@/lib/memory-subject';
@@ -77,6 +78,16 @@ export default function MemoriesScreen() {
   const [newType, setNewType] = useState<MemoryType>('semantic');
   const [newImportance, setNewImportance] = useState('0.5');
   const [manualWarningSignature, setManualWarningSignature] = useState<string | null>(null);
+  // Only the Supabase store is listed and edited here; see lib/memory-backend.ts.
+  const { state: backendState, canEditSupabase: supabaseMemories, refresh: refreshBackend,
+    authorizeMutation } = useMemoryBackend();
+  // Every Supabase memory write below awaits this first: it asks the server
+  // again and refuses unless Supabase is confirmed active for this account.
+  const authorizeMemoryMutation = useCallback(async () => {
+    if (await authorizeMutation()) return true;
+    setError(MUTATION_BLOCKED_MESSAGE);
+    return false;
+  }, [authorizeMutation]);
 
   const loadCompanion = useCallback(async () => {
     const { data, error: err } = await supabase
@@ -89,7 +100,7 @@ export default function MemoriesScreen() {
   }, []);
 
   const loadMemories = useCallback(async () => {
-    if (!companion) return;
+    if (!companion || !supabaseMemories) return;
     let query = supabase.from('memories').select('*')
       .eq('companion_id', companion.id).eq('is_active', true)
       .order('updated_at', { ascending: false }).order('id', { ascending: false });
@@ -98,18 +109,21 @@ export default function MemoriesScreen() {
     const { data, error: err } = await query;
     if (err) { setError(err.message); return; }
     setMemories((data as Memory[]) || []);
-  }, [companion, filterType, searchQuery]);
+  }, [companion, filterType, searchQuery, supabaseMemories]);
 
   useEffect(() => { loadCompanion(); }, [loadCompanion]);
   useEffect(() => { if (companion) loadMemories(); }, [companion, loadMemories]);
 
   const loadSuggestions = useCallback(async () => {
-    if (!companion) return;
+    if (!companion || !supabaseMemories) return;
     const { data, error: err } = await supabase.from('memory_suggestions').select('*')
       .eq('companion_id', companion.id).eq('status', 'pending').order('created_at', { ascending: false });
     if (err) setError(err.message);
     else setSuggestions(data || []);
-  }, [companion]);
+  }, [companion, supabaseMemories]);
+
+  // Screen activation re-checks the active memory store.
+  useFocusEffect(useCallback(() => { void refreshBackend(); }, [refreshBackend]));
 
   useFocusEffect(useCallback(() => {
     if (!companion) return;
@@ -139,6 +153,7 @@ export default function MemoriesScreen() {
     }
     setReviewBusy(true);
     try {
+      if (!(await authorizeMemoryMutation())) return;
       const { data, error: err } = await supabase.rpc('review_memory_suggestion_v2', {
         p_id: item.id, p_action: action,
         p_content: content,
@@ -169,6 +184,7 @@ export default function MemoriesScreen() {
   const retryObservations = async () => {
     setRetryNotice('');
     try {
+      if (!(await authorizeMemoryMutation())) return;
       const base = process.env.EXPO_PUBLIC_LUMEN_API_URL?.trim().replace(/\/+$/, '');
       if (!base) throw new Error('Lumen API address is missing.');
       const response = await fetch(`${base}/v0.2/memory-observations/retry`, {
@@ -187,10 +203,11 @@ export default function MemoriesScreen() {
   }, [loadMemories, loadSuggestions]);
 
   const deleteMemory = useCallback(async (id: string) => {
+    if (!(await authorizeMemoryMutation())) return;
     const { error: err } = await supabase.from('memories').update({ is_active: false }).eq('id', id);
     if (err) { setError(err.message); return; }
     setMemories((prev) => prev.filter((m) => m.id !== id));
-  }, []);
+  }, [authorizeMemoryMutation]);
 
   const addMemory = useCallback(async () => {
     if (!companion || !newContent.trim()) return;
@@ -204,6 +221,7 @@ export default function MemoriesScreen() {
       return;
     }
     const importance = parseFloat(newImportance) || 0.5;
+    if (!(await authorizeMemoryMutation())) return;
     const { data, error: err } = await supabase
       .from('memories').insert({
         companion_id: companion.id, type: newType,
@@ -215,12 +233,36 @@ export default function MemoriesScreen() {
     setMemories((prev) => [data as Memory, ...prev]);
     setNewContent(''); setNewImportance('0.5'); setShowAddModal(false);
     setManualWarningSignature(null); setError(null);
-  }, [companion, newContent, newType, newImportance, newSubject, manualWarningSignature]);
+  }, [companion, newContent, newType, newImportance, newSubject, manualWarningSignature, authorizeMemoryMutation]);
 
-  if (loading) {
+  if (loading || (backendState.kind === 'checking' && !supabaseMemories)) {
     return (
       <SafeAreaView style={styles.loadingContainer} edges={['top']}>
         <ActivityIndicator size="large" color={c.primary[400]} />
+      </SafeAreaView>
+    );
+  }
+
+  if (!supabaseMemories) {
+    // RMC active, or the active store can't be confirmed: fail closed.
+    return (
+      <SafeAreaView style={styles.container} edges={['top']}>
+        <View style={styles.header}>
+          <View style={styles.headerTitleRow}>
+            <Brain color={c.primary[400]} size={22} strokeWidth={2} />
+            <Text style={styles.headerTitle}>Memories</Text>
+          </View>
+        </View>
+        <View style={{ padding: Spacing.lg, gap: Spacing.md }}>
+          <Text style={{ color: c.neutral[100] }}>
+            {backendNotice(backendState, companion?.name || 'Your companion')}
+          </Text>
+          {backendState.kind === 'unavailable' && (
+            <TouchableOpacity accessibilityRole="button" onPress={() => { void refreshBackend(); }}>
+              <Text style={{ color: c.primary[300] }}>Check again</Text>
+            </TouchableOpacity>
+          )}
+        </View>
       </SafeAreaView>
     );
   }
@@ -370,6 +412,7 @@ export default function MemoriesScreen() {
                         );
                         if (issue) { setError(issue); return; }
                         setSavingMemory(true);
+                        if (!(await authorizeMemoryMutation())) { setSavingMemory(false); return; }
                         const { data, error: err } = await supabase
                           .from('memories')
                           .update({
@@ -431,6 +474,7 @@ export default function MemoriesScreen() {
                           item.content, subject, companion?.name || 'Companion', item.type
                         );
                         if (issue) { setError(issue); return; }
+                        if (!(await authorizeMemoryMutation())) return;
                         const { data, error: err } = await supabase
                           .from('memories')
                           .update({ subject })

@@ -38,7 +38,8 @@ class RespondResponse(BaseModel):
     observation_message_id: str | None = None
     timings_ms: dict[str, int] = {}
     memory_count: int
-    memory_status: Literal["none", "saved", "existing", "deleted", "clarification_needed"] = "none"
+    memory_status: Literal["none", "saved", "existing", "deleted", "clarification_needed",
+                           "memory_off", "not_saved", "unconfirmed"] = "none"
 
 
 class HealthResponse(BaseModel):

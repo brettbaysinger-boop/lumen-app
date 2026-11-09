@@ -23,6 +23,8 @@ from .db import SupabaseRepository
 from .ollama import OllamaProvider
 from .schemas import Attachment, RespondResponse
 from .memory import memory_request, has_save_claim, is_memory_recall, memory_subject
+from .memory_backend import uses_rmc
+from .rmc.adapter import LumenRmcMemory
 
 
 class CognitionRuntime:
@@ -31,6 +33,8 @@ class CognitionRuntime:
         self.db = SupabaseRepository(settings, access_token)
         self.user_id = user_id
         self.provider = OllamaProvider(settings)
+        # Exactly one memory store is active; see memory_backend.py.
+        self.rmc_memory = LumenRmcMemory(settings, user_id) if uses_rmc(settings) else None
 
     async def respond(self, companion_id: str, conversation_id: str | None, user_message: str,
                       attachments: list[Attachment] | None = None, emit=None, document_id: str | None = None) -> RespondResponse:
@@ -61,10 +65,16 @@ class CognitionRuntime:
         if emit:
             await emit({"type": "activity", "text": "Checking memories…"})
         state = await self.db.get_state(companion_id)
-        memories = await self.db.get_relevant_memories(
-            companion_id,
-            query="" if is_memory_recall(user_message, companion["name"]) else user_message,
-        )
+        rmc_memory = getattr(self, "rmc_memory", None)  # None: Supabase is the memory store
+        rmc_read_status = None
+        if rmc_memory is not None:
+            rmc_read_status, memories = await rmc_memory.relevant(
+                companion, conversation_id, user_message)
+        else:
+            memories = await self.db.get_relevant_memories(
+                companion_id,
+                query="" if is_memory_recall(user_message, companion["name"]) else user_message,
+            )
         recent = await self.db.get_recent_messages(conversation_id, limit=20)
         from .conversation_titles import name_first_turn
         conversation = await name_first_turn(
@@ -82,10 +92,15 @@ class CognitionRuntime:
             messages.append(await practice_context(self.db,companion_id,conversation))
         for message in reversed(recent[:8] if practice else recent):
             messages.append({"role": message["role"], "content": message["content"][:1500] if practice else message["content"]})
-        current_memory_context = await memory_turn_context(
+        # Supabase revision receipts do not describe RMC memories.
+        current_memory_context = None if rmc_memory is not None else await memory_turn_context(
             self.db, companion_id, conversation_id, recent, memories, user_message, companion["name"])
         if current_memory_context:
             messages.append({k: current_memory_context[k] for k in ("role", "content")})
+        if rmc_read_status not in (None, "ok"):
+            messages.append({"role": "system", "content":
+                "Long-term memory could not be checked for this turn. Do not say that nothing "
+                "is saved, and do not guess what was saved."})
         vision_used = False
         action = None
         if attachments:
@@ -116,11 +131,13 @@ class CognitionRuntime:
         else:
             messages.append({"role": "user", "content": user_message})
             action = (current_memory_context or {}).get("recall_action") if not document_id and not practice else None
-            if not action and not document_id and not practice:
+            # Natural updates and corrections rewrite Supabase memory rows, so
+            # they are off while RMC is the memory store.
+            if not action and not document_id and not practice and rmc_memory is None:
                 action = await natural_memory_update(
                     self.db, companion_id, conversation_id, user_message, recent, memories,
                     getattr(self, "request_key", str(uuid4())), companion["name"])
-            if (not action and not document_id and not practice and
+            if (not action and not document_id and not practice and rmc_memory is None and
                     (correction_candidate(user_message, companion["name"]) or
                      (recent and recent[0].get("role") == "assistant" and
                       (recent[0].get("metadata") or {}).get("memory_correction_pending")))):
@@ -158,14 +175,22 @@ class CognitionRuntime:
                       "tokens_in": action.get("tokens_in"), "tokens_out": action.get("tokens_out")}
         elif memory_content and not attachments:
             subject = memory_subject(memory_content, companion["name"], (profile or {}).get("display_name", ""))
-            outcome = await self.db.remember(companion_id, conversation_id, memory_content, subject)
+            if rmc_memory is not None:
+                outcome = await rmc_memory.remember(
+                    companion, conversation_id, getattr(self, "request_key", str(uuid4())), memory_content)
+            else:
+                outcome = await self.db.remember(companion_id, conversation_id, memory_content, subject)
             memory_status = outcome
-            saved_subject = subject
+            saved_subject = subject if outcome in ("saved", "existing", "deleted") else None
             acknowledgements = {
                 "saved": "Saved to my long-term memories: ",
                 "existing": "That is already in my long-term memories: ",
                 "deleted": "You previously removed this memory, so I haven't restored it. "
                            "You can add it again from the Memories tab: ",
+                # RMC outcomes. None of these claims a save.
+                "memory_off": "Memory saving is turned off for this conversation, so I haven't saved this: ",
+                "not_saved": "I couldn't reach my memory service, so nothing was saved: ",
+                "unconfirmed": "I couldn't confirm whether this was saved, so please don't rely on it yet: ",
             }
             result = {"content": acknowledgements[outcome] + memory_content,
                       "model": "explicit-memory-command", "latency_ms": 0,
@@ -180,6 +205,10 @@ class CognitionRuntime:
             content = ("Here are the saved memories available to me for this turn (up to 12):\n" +
                        "\n".join("• [" + m.get("subject", "unknown") + "] " + m["content"] for m in memories)) if memories else (
                        "No saved memories are available to me for this turn.")
+            if not memories and rmc_read_status not in (None, "ok"):
+                content = ("I couldn't check my memories for this turn"
+                           + (" because memory is turned off for this conversation." if rmc_read_status == "privacy_denied" else ".")
+                           + " This doesn't mean nothing is saved.")
             result = {"content": content, "model": "memory-recall", "latency_ms": 0,
                       "tokens_in": None, "tokens_out": None}
         else:
@@ -384,7 +413,8 @@ class CognitionRuntime:
         await self.db.touch_conversation(conversation_id, 2)
 
         observation_message_id = None
-        if not practice and not attachments and not action and memory_status == "none" and getattr(self.settings, "memory_observations_enabled", False) is True:
+        if (rmc_memory is None and not practice and not attachments and not action and memory_status == "none"
+                and getattr(self.settings, "memory_observations_enabled", False) is True):
             try:
                 await self.db._request("POST", "memory_observations",
                     headers={"Prefer": "resolution=ignore-duplicates"},

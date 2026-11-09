@@ -17,6 +17,7 @@ from .auth import AuthUser, require_user
 from .config import get_settings
 from .ollama import OllamaProvider
 from .runtime import CognitionRuntime
+from .memory_backend import memory_backend, supabase_memory_enabled
 from .schemas import (
     HealthResponse,
     RespondRequest,
@@ -105,9 +106,7 @@ async def respond(request: RespondRequest, background_tasks: BackgroundTasks, us
                 request.attachments,
                 document_id=str(request.document_id) if request.document_id else None,
             )
-        if response.observation_message_id:
-            background_tasks.add_task(observe, settings, user.token, response.observation_message_id)
-        queue_semantic_index(background_tasks, settings, user.token, request.companion_id)
+        queue_supabase_memory_work(background_tasks, user, request.companion_id, response.observation_message_id)
         return response
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
@@ -115,9 +114,25 @@ async def respond(request: RespondRequest, background_tasks: BackgroundTasks, us
         raise HTTPException(status_code=502, detail="Lumen could not complete this request. Check the API logs.") from exc
 
 
+def queue_supabase_memory_work(background_tasks: BackgroundTasks, user: AuthUser, companion_id: str,
+                               observation_message_id: str | None):
+    """Observations and semantic indexing write Supabase memory tables only."""
+    if not supabase_memory_enabled(settings):
+        return
+    if observation_message_id:
+        background_tasks.add_task(observe, settings, user.token, observation_message_id)
+    queue_semantic_index(background_tasks, settings, user.token, companion_id)
+
+
+@app.get("/v0.2/memory/backend")
+async def memory_backend_status(user: AuthUser = Depends(require_user)):
+    """Lets the app hide Supabase memory screens while RMC is the store."""
+    return {"backend": memory_backend(settings)}
+
+
 @app.post("/v0.2/memory-observations/retry")
 async def retry_observations(background_tasks: BackgroundTasks, user: AuthUser = Depends(require_user)):
-    if not settings.memory_observations_enabled:
+    if not settings.memory_observations_enabled or not supabase_memory_enabled(settings):
         return {"queued": 0}
     rows = await SupabaseRepository(settings, user.token)._request("GET", "memory_observations",
         params={"status": "neq.done", "order": "updated_at.asc", "limit": "5"})
@@ -330,9 +345,7 @@ async def respond_stream(request: RespondRequest, background_tasks: BackgroundTa
                         document_id=str(request.document_id) if request.document_id else None,
                         emit=queue.put,
                     )
-                if result.observation_message_id:
-                    background_tasks.add_task(observe, settings, user.token, result.observation_message_id)
-                queue_semantic_index(background_tasks, settings, user.token, request.companion_id)
+                queue_supabase_memory_work(background_tasks, user, request.companion_id, result.observation_message_id)
                 await queue.put({"type": "done", "response": result.model_dump()})
             except Exception:
                 await queue.put({"type": "error", "text": "Lumen could not finish this reply. Reload before retrying."})
