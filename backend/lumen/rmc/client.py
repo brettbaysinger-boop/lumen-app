@@ -34,6 +34,10 @@ REMEMBER_PATH = "/v1/host/remember"
 RECALL_PATH = "/v1/host/recall"
 _ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$")
 _MAX_RESPONSE_BYTES = 512 * 1024
+_DENIED_STATUSES = frozenset((400, 403, 404, 405))
+# Gateway limits (RMC scripts/rmc_app_gateway_protocol.py).
+MAX_MEMORY_TEXT = 10000
+MAX_QUESTION = 2000
 
 # Write outcomes. Only STORED and ALREADY_STORED mean the fact is durable.
 STORED = "stored"
@@ -222,7 +226,7 @@ class RmcGatewayClient:
                 "Content-Type": "application/json",
                 SIGNATURE_HEADER: signature(self.config.host_key, path, body),
             })
-        if response.status_code != 200 or len(response.content) > _MAX_RESPONSE_BYTES:
+        if len(response.content) > _MAX_RESPONSE_BYTES:
             raise _BadResponse()
         try:
             data = json.loads(response.content)
@@ -230,7 +234,16 @@ class RmcGatewayClient:
             raise _BadResponse() from exc
         if not isinstance(data, dict):
             raise _BadResponse()
-        return data
+        if response.status_code == 200:
+            return data
+        # The RMC gateway (D01-16) refuses unauthenticated, malformed or
+        # unadmitted requests with 400/403/404/405 and exactly
+        # {"outcome":"denied"}, always BEFORE any memory operation, so that
+        # is a definite "not stored". Every other status (503 included) may
+        # follow a write and stays uncertain.
+        if response.status_code in _DENIED_STATUSES and data == {"outcome": DENIED}:
+            return data
+        raise _BadResponse()
 
     async def remember(self, *, user_id, companion_id, session_id,
                        session_mode, source_id, timestamp, text) -> WriteResult:

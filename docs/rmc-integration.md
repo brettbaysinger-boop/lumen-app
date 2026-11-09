@@ -1,13 +1,41 @@
 # Lumen ↔ Raialume Memory Core (RMC) integration
 
-Status: **integration candidate, offline-tested only.** Default is unchanged
-(`LUMEN_MEMORY_BACKEND=supabase`). Turning RMC on for live Lumen is blocked
-on a missing RMC component (below). Nothing here has been deployed, no
-service was restarted, and no personal memory was read, written or migrated.
+Status (2026-11-09): **ready-to-deploy candidate, offline-tested.** The
+default is unchanged (`LUMEN_MEMORY_BACKEND=supabase`). Nothing here has
+been deployed, no service was restarted, and no personal memory was read,
+written or migrated. Activation is one owner-gated command (§5) and is
+reversible with one command.
 
-Target installation: `/data/rmc-lumen-rmc01`, installation ID `lumen-rmc01`,
-frozen RMC source `bd64be1644c6401b67cf6bdceeafb8aa31245184`. RMC is used
-read-only; no RMC file is changed by this work.
+Target: a **new, Lumen-owned RMC installation** with the D01-16 application
+gateway, built from RMC gateway candidate
+`345edd0b9231fe506f561449bad8d0702ec132f4` (passed live Docker, PostgreSQL
+and Hindsight acceptance on Forge). The examples use `lumen-rmc02` at
+`/data/rmc-lumen-rmc02`. The certified `lumen-rmc01` (`bd64be1`, no gateway)
+stays untouched. RMC source is used read-only.
+
+## 0. Compatibility with the working gateway (345edd0)
+
+Compared against `scripts/rmc_app_gateway_protocol.py` and
+`scripts/rmc_app_gateway_socket.py`, and exercised by
+`backend/tests/test_rmc_gateway_interop.py` against that unmodified code:
+
+| Item | Lumen client | Gateway | Result |
+| --- | --- | --- | --- |
+| Transport | HTTP/1.1 over Unix socket, no TCP | owner-only socket, SO_PEERCRED uid+gid | match. `lumen-api` must run as the RMC owner's uid **and** primary gid |
+| Socket path | any validated absolute path | `rmc-<id>/run/gateway/gateway.sock` (stable across generations) | configure that path |
+| Headers | one `Content-Type: application/json`, `Content-Length`, one signature | exactly those, no `Transfer-Encoding` | match |
+| Body | canonical JSON (sorted, compact, ASCII) | must be byte-identical to canonical | match |
+| MAC | `hmac-sha256` over `rmc-host-v1\0path\0body` | same | match |
+| Key | raw file bytes, stripped | same reader; installer writes 64 hex chars to `keys/gateway-hosts/<host>-host.key` | match. Host name is `lumen` |
+| Assertion | v1, host `lumen`, 32-hex nonce, `issued_at` | ±120 s, nonce kept in PostgreSQL | match |
+| Write outcomes | 6 fixed codes | same 6 | match |
+| Refusals | **was**: any non-200 = uncertain | 400/403/404/405 + `{"outcome":"denied"}`, always before any memory write | **fixed**: now `denied` → "nothing was saved". 503 stays uncertain |
+| Text limit | none | 10,000 chars | **fixed**: longer text is reported not saved without sending |
+
+Gateway behaviours Lumen relies on and does not change: first-owner
+binding of a companion, private sessions, and the policy journal. A
+learning-disabled write comes back as `denied` from the real engine, so Lumen
+says "nothing was saved" rather than "memory is off".
 
 ## 1. How the installed RMC is reached on the network today
 
@@ -37,7 +65,7 @@ brief forbids: join Lumen to the internal bridge (Lumen would then hold raw,
 unauthenticated Hindsight and PostgreSQL access), publish a port, or call
 Hindsight without the RMC guards. This branch does none of those.
 
-## 2. Missing component: the RMC application gateway
+## 2. The RMC application gateway (was missing on 2026-11-02; now D01-16)
 
 A long-running, installation-owned service that is the only application
 client of raw Hindsight, and that host applications reach through one narrow,
@@ -142,122 +170,112 @@ refused socket means nothing is sent, and the result is `not_saved` or
 ```bash
 cd backend
 SUPABASE_URL=http://supabase.invalid SUPABASE_SERVICE_ROLE_KEY=fictional \
-LUMEN_RMC_SOURCE_DIR=/path/to/raialume-memory-core@bd64be1 \
+LUMEN_RMC_SOURCE_DIR=/path/to/raialume-memory-core@345edd0 \
 python3 -m pytest -q
+# outside the venv, as an ordinary user:
+scripts/test-rmc-memory-guard-sql.sh          # needs local PostgreSQL binaries
+scripts/test-lumen-rmc-script.sh              # activation script, all stubs
+node --test tests/memory-backend.test.cjs
 ```
 
-`tests/test_rmc_integration.py` (32 tests) covers: save then recall in a
-later request; streaming and non-streaming routes; no bearer → 401 and no RMC
-contact; another user's recall, a foreign companion, an adapter-level
-ownership check and gateway owner binding; wrong key, stale and replayed
-assertions; learning off, recall off, forgotten source and private session;
-idempotent retry; Hindsight outage, lost reply, gateway 5xx and gateway
-absent; unsafe key/socket configuration; Supabase-only paths off in RMC mode;
-flag default, invalid values and rollback. The suite refuses an RMC checkout
-other than `bd64be1` unless `LUMEN_RMC_ALLOW_OTHER_SHA=YES`. Without
-`LUMEN_RMC_SOURCE_DIR`, the 16 gateway tests skip and the 16 client, flag
-and socket tests still run. The socket tests cover symlinked sockets, parent
-directories and keys, unnormalized paths, socket and directory modes,
-non-socket and missing paths, foreign owners (when run as root), and a client
-that never connects to a refused socket.
+* `tests/test_rmc_gateway_interop.py` (8): the Lumen client and adapter
+  against the **real** gateway transport, authentication and key reader
+  from 345edd0 on a real socket. Covers save, retry and recall; full
+  streaming and non-streaming Lumen turns; first-owner binding and bank
+  isolation; wrong key, stale clock, wrong installation and revoked host;
+  private session; engine failures; oversized text; and a peer with another
+  gid. The PostgreSQL registry and Hindsight engine are stand-ins here
+  because they were accepted live on Forge.
+* `tests/test_rmc_integration.py` (33): the Lumen side end to end with the
+  RMC SDK and reference host behind a test gateway. Covers auth, isolation,
+  privacy switches, idempotency, failures, socket safety, the flag and
+  rollback, plus gateway refusal statuses.
+* `scripts/test-rmc-memory-guard-sql.sh` (13 checks, throwaway PostgreSQL):
+  the guard is idempotent and changes nothing in Supabase mode. In RMC mode
+  it refuses insert, update and delete on all three memory tables, through
+  security-definer RPCs too, and refuses clients touching the guard row.
+  Reads and rows are kept, and rollback reopens writes.
+* `scripts/test-lumen-rmc-script.sh` (21 checks): preflight, owner
+  confirmation, activation, status, rollback, automatic abort on an
+  unhealthy API or a Supabase row-count change, and preflight failures for
+  bad socket, directory or key modes, a published port, a missing gateway,
+  a `.env` override, the `lumen-rmc01` path and a dead gateway.
+* `tests/memory-backend.test.cjs` (12): the fail-closed app logic.
 
-Frontend: `node --test tests/memory-backend.test.cjs` (12 tests) covers
-backend-switch races, network failures and timeouts, HTTP errors including
-404, malformed answers, missing configuration, stale answers, cross-account
-switches during a check, a fresh check on every mutation, reconnect after a
-failure, and the static check that every app memory write is guarded.
+## 5. Deployment (owner-gated; nothing here has been run)
 
-## 5. Deployment procedure (do not run until the blockers are cleared)
+**Step A: the Lumen-owned RMC installation (RMC side, after GW03).** Use
+the RMC installer from the final gateway SHA to make a NEW installation
+(for example `lumen-rmc02` at `/data/rmc-lumen-rmc02`) as the same user that
+runs `lumen-api`. Follow `docs/RMC-INSTALLER.md` in that RMC SHA, with its
+own owner gates. Then enroll Lumen as a host:
+`rmc_installer.py gateway-host --host lumen --install-dir /data/rmc-lumen-rmc02`.
+This creates `keys/gateway-hosts/lumen-host.key` (0600). Never reuse or
+modify `lumen-rmc01`, and do not copy keys or memories into the new
+installation.
 
-Prerequisite: an RMC release that contains the application gateway in §2,
-installed and smoke-tested as a new generation of `lumen-rmc01`, with the
-owner's approval.
+**Step B: Lumen checkout.** On the Lumen host, check out this branch in the
+existing Lumen repo (the Supabase default keeps behaviour unchanged). Then
+`backend/.venv/bin/pip install -e backend`, which adds no new dependency, and
+restart `lumen-api` in a maintenance window you approve. Rebuild the web/app
+so the fail-closed Memories tab ships.
 
-1. On `aiLumen-llm-video`, as the Lumen service user (the same uid that owns
-   `/data/rmc-lumen-rmc01`), confirm read-only:
-   `stat -c '%a %U' /data/rmc-lumen-rmc01/run/gN/gw /data/rmc-lumen-rmc01/run/gN/gw/gateway.sock`
-   gives `700 <owner>` and `600 <owner>`, and the RMC installer's `status`
-   reports the gateway bound and no published ports.
-2. Confirm the host key file `/data/rmc-lumen-rmc01/keys/gN/lumen-host.key`
-   is `600 <owner>` and its directory is not group or world writable. Never
-   copy it into the repo, `.env` or logs.
-3. Check out this branch into the Lumen deployment and install the backend
-   (`backend/.venv/bin/pip install -e backend`). No new dependency is added.
-4. Run the offline suite above against the RMC `bd64be1` checkout. Expect
-   all tests to pass.
-5. Leave `LUMEN_MEMORY_BACKEND` unset (or `supabase`) and restart
-   `lumen-api` only when the owner approves a restart. Behaviour is the same
-   as today.
-6. Apply the owner-approved database guard (§6 item 4) and set
-   `lumen_memory_store.backend = 'rmc'`. Then, to enable RMC, set these in the Lumen API environment (systemd drop-in or
-   `backend/.env`, which is not committed):
-   ```
-   LUMEN_MEMORY_BACKEND=rmc
-   RMC_INSTALLATION_ID=lumen-rmc01
-   RMC_GATEWAY_SOCKET=/data/rmc-lumen-rmc01/run/gN/gw/gateway.sock
-   RMC_HOST_KEY_FILE=/data/rmc-lumen-rmc01/keys/gN/lumen-host.key
-   RMC_TIMEOUT_SECONDS=10
-   ```
-   Then restart `lumen-api` (owner approval required) and ship an app build
-   that includes the Memories-tab change.
-7. Verify with a fictional test account and a fictional companion only: say
-   "Remember: Fictional Ada keeps a teal kayak named Pebble", expect "Saved
-   to my long-term memories", then ask in a new chat and expect Pebble.
-   Check that the RMC ledger row count grew by one and that the Supabase
-   `memories` row count did not change.
-8. Rollback: set `LUMEN_MEMORY_BACKEND=supabase` (or remove it) and restart
-   `lumen-api`. Then set `lumen_memory_store.backend = 'supabase'`. Facts saved in RMC stay in RMC. They are not copied back.
+**Step C: read-only preflight**, which changes nothing:
 
-## 6. Blockers needing owner approval
+```bash
+scripts/lumen-rmc.sh preflight --rmc-dir /data/rmc-lumen-rmc02 --installation-id lumen-rmc02
+```
 
-1. **Build the RMC application gateway (§2)** in the RMC repo and installer.
-   This is a new RMC component and a new reviewed release, not a Lumen
-   change. Until it exists, `LUMEN_MEMORY_BACKEND=rmc` makes every memory
-   operation report `not_saved` or "couldn't check".
-2. **Pick the host identity model.** This branch assumes Lumen is the
-   authenticating host and asserts user, companion and session over the
-   signed channel, and the gateway binds a companion to its first owner. The
-   alternative is for the gateway to verify Supabase tokens itself, but that
-   needs egress from the `--internal` bridge.
-3. **Durable host policy store and privacy controls.** Lumen has no
-   private-chat mode or memory on/off switch for RMC yet. Every Lumen
-   conversation is sent as a `normal` session. Learning and recall switches,
-   forget and private sessions are enforced only by the gateway's store.
-4. **Database-level protection against old app builds (required before
-   enabling RMC).** The app-side checks above protect only builds that
-   contain them. Any older build, and anyone holding a user's Supabase
-   session, can still write `memories`, `memory_suggestions` and
-   `memory_revisions` directly, because RLS allows owners to do so. That
-   would quietly grow a second, divergent store. Before setting
-   `LUMEN_MEMORY_BACKEND=rmc`, the owner should approve and apply a
-   migration that refuses those writes in the database itself, for example:
-   ```sql
-   -- PROPOSED, not applied by this branch.
-   CREATE TABLE public.lumen_memory_store (
-     singleton boolean PRIMARY KEY DEFAULT true CHECK (singleton),
-     backend text NOT NULL DEFAULT 'supabase' CHECK (backend IN ('supabase','rmc')));
-   INSERT INTO public.lumen_memory_store DEFAULT VALUES;
-   ALTER TABLE public.lumen_memory_store ENABLE ROW LEVEL SECURITY; -- no policies: clients cannot change it
-   CREATE FUNCTION public.refuse_memory_write_when_rmc() RETURNS trigger
-     LANGUAGE plpgsql SET search_path = '' AS $$
-   BEGIN
-     IF (SELECT backend FROM public.lumen_memory_store) <> 'supabase' THEN
-       RAISE EXCEPTION 'Lumen memories are managed by RMC' USING ERRCODE = '42501';
-     END IF;
-     RETURN COALESCE(NEW, OLD);
-   END $$;
-   -- Repeat for memory_suggestions and memory_revisions.
-   CREATE TRIGGER memories_store_guard BEFORE INSERT OR UPDATE OR DELETE
-     ON public.memories FOR EACH ROW EXECUTE FUNCTION public.refuse_memory_write_when_rmc();
-   ```
-   The trigger also covers the security-definer RPCs (review, correction,
-   undo, observation), because it fires on the table whatever the caller.
-   Turning RMC on: set the row to `rmc` first, then the API flag. Rolling
-   back: set the API flag to `supabase` first, then the row. Old builds can
-   still read the frozen Supabase rows. Forcing an app update is a separate
-   option.
-5. **Live acceptance.** A fictional-account run against the real gateway,
-   Hindsight and PostgreSQL ledger is still needed. Gold Master is not
-   released, and personal-memory writes stay unauthorized.
-6. **Existing memories.** Nothing is migrated. Whether, and how, existing
-   Supabase memories ever move to RMC is a separate decision.
+It checks the `lumen-api` user, the adapter in this checkout, that `.env`
+does not override the backend, API health, the installer `status`, the
+socket and key ownership and modes, a running gateway, no published ports,
+a 405 liveness answer, and that Lumen's own adapter accepts the socket and
+key.
+
+**Step D: activate (the one owner-gated command).**
+
+```bash
+LUMEN_RMC_CONFIRM=activate:lumen-rmc02 scripts/lumen-rmc.sh activate --rmc-dir /data/rmc-lumen-rmc02 --installation-id lumen-rmc02
+```
+
+It re-runs the preflight and saves rollback evidence (environment and row
+counts only) to `~/.local/state/lumen-rmc/`. It applies
+`supabase/rmc/memory_store_guard.sql` with the row set to `rmc`, writes
+`/etc/systemd/system/lumen-api.service.d/60-lumen-rmc.conf` (paths only,
+never the key), restarts `lumen-api` and checks health, the setting and
+unchanged Supabase row counts. On any failure it restores Supabase mode by
+itself and prints `ACTIVATION_ABORTED`.
+
+**Step E: verify with a fictional account only.** Say "Remember: Fictional
+Ada keeps a teal kayak named Pebble" and expect "Saved to my long-term
+memories". Ask in a new chat and expect Pebble. `status` should show RMC
+mode, and the Supabase row counts should be unchanged.
+
+**Rollback (one command, any time):**
+
+```bash
+LUMEN_RMC_CONFIRM=rollback:lumen-rmc02 scripts/lumen-rmc.sh rollback --installation-id lumen-rmc02
+```
+
+It removes the drop-in, restarts `lumen-api`, then sets the guard row back
+to `supabase`. Facts saved in RMC stay in RMC. Supabase memories were never
+changed.
+
+Side effects to expect while RMC is active. Supabase memory rows are
+read-only at the database, so deleting a companion or account whose
+memories would cascade fails until rollback. The Memories tab shows a
+notice instead of the Supabase list. Chat, voice, avatars, documents and
+other services are untouched.
+
+## 6. Remaining owner gates
+
+1. **GW03**: final same-SHA and post-backup privacy-rewind acceptance of the
+   gateway (RMC release blockers). Activate only on the SHA that passes.
+2. **Step A install** of the Lumen-owned RMC under the RMC installer's own
+   owner authority.
+3. **Maintenance window** for the Step B restart and the Step D command.
+4. **Privacy controls in Lumen**: Lumen has no private-chat mode or memory
+   on/off switch yet. Every conversation is a `normal` session. Privacy
+   changes go through RMC's `gateway-policy` command.
+5. **Existing memories**: nothing is migrated. Personal-memory writes and
+   Gold Master remain unauthorized.

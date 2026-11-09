@@ -2,7 +2,7 @@
 
 It serves the Lumen host contract (lumen/rmc/client.py) on a real Unix domain
 socket and, behind it, runs the UNMODIFIED RMC code from a read-only RMC
-checkout (LUMEN_RMC_SOURCE_DIR, expected at bd64be1):
+checkout (LUMEN_RMC_SOURCE_DIR, expected at 345edd0):
 
   ReferenceHost -> signed V2 grants -> SessionGuardedWriter /
   SessionGuardedReadGateway, PrivacyCoordinator, PrivacyGate, PrivacyLog.
@@ -29,7 +29,9 @@ import tempfile
 import threading
 import time
 
-EXPECTED_RMC_SHA = "bd64be1644c6401b67cf6bdceeafb8aa31245184"
+# RMC gateway candidate (D01-16), which also carries the unchanged SDK and
+# reference host. The installed lumen-rmc01 (bd64be1) has no gateway.
+EXPECTED_RMC_SHA = "345edd0b9231fe506f561449bad8d0702ec132f4"
 SIGNATURE_HEADER = "X-RMC-Host-Signature"
 _ASSERTION_KEYS = {"v", "host", "installation_id", "user_id", "companion_id",
                    "session_id", "session_mode", "issued_at", "nonce"}

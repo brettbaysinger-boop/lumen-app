@@ -40,7 +40,7 @@ _WRITE_STATUS = {
 # enforced by RMC host policy at the gateway.
 SESSION_MODE = "normal"
 MAX_MEMORIES = 12
-MAX_QUESTION = 2000
+MAX_QUESTION = rmc.MAX_QUESTION
 
 
 def source_id_for(installation_id: str, user_id: str, companion_id: str,
@@ -128,6 +128,8 @@ class LumenRmcMemory:
                        request_key: str, content: str) -> str:
         if not self._owned(companion) or not rmc.valid_id(conversation_id):
             return NOT_SAVED
+        if not content or not content.strip() or len(content) > rmc.MAX_MEMORY_TEXT:
+            return NOT_SAVED  # the gateway would refuse it; nothing is sent
         client = self._gateway()
         if client is None:
             return NOT_SAVED

@@ -472,6 +472,22 @@ class ClientUnit(unittest.IsolatedAsyncioTestCase):
             raise httpx.ConnectError("refused", request=request)
         self.assertEqual((await self.client(refused).remember(**self.args())).outcome, "unavailable")
 
+    async def test_gateway_refusal_statuses(self):
+        import httpx
+        for status in (400, 403, 404, 405):
+            result = await self.client(lambda r, s=status: httpx.Response(s, json={"outcome": "denied"})).remember(**self.args())
+            self.assertEqual(result.outcome, "denied", status)
+        for response in (httpx.Response(403, json={"outcome": "denied", "x": 1}),
+                         httpx.Response(403, json={"outcome": "stored"}),
+                         httpx.Response(401, json={"outcome": "denied"}),
+                         httpx.Response(503, json={"outcome": "unavailable"}),
+                         httpx.Response(502, json={"outcome": "denied"})):
+            result = await self.client(lambda r, x=response: x).remember(**self.args())
+            self.assertEqual(result.outcome, "uncertain", response.status_code)
+        read = await self.client(lambda r: httpx.Response(403, json={"outcome": "denied"})).recall(
+            user_id=ADA, companion_id=ADA_COMPANION, session_id="s-1", session_mode="normal", question=QUESTION)
+        self.assertEqual(read.outcome, "denied")
+
     async def test_request_is_signed_and_carries_no_bearer_token(self):
         import httpx
         seen = {}
