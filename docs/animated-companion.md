@@ -7,7 +7,7 @@ while a reply is played, idle again afterwards.
 Nothing else about Lumen changes. The reply comes from the existing
 authenticated conversation pipeline, the speech from the existing
 `/v0.1/voice/speak` route and the companion's saved Helios voice. Conversation
-history and memory are not touched by this feature, and RMC is not involved.
+history and memory are not touched by this feature, and RMC is not changed.
 
 ## How it works
 
@@ -68,7 +68,7 @@ git clone https://github.com/brettbaysinger-boop/lumen-app.git ~/lumen-animated-
 cd ~/lumen-animated-preview && git checkout feat/lumen-animated-companion-20261114
 
 export AVATAR_URL=http://aiLumen-llm-heavy:8283      # https://... and AVATAR_TLS_VERIFY=false if the bridge printed https
-scripts/animated-preview.sh check                    # read-only
+scripts/animated-preview.sh check                    # read-only; must end with "preview memory store: ... (same as live)"
 scripts/animated-preview.sh api                      # terminal 1: preview API on :8011
 scripts/animated-preview.sh web                      # terminal 2: preview web app on :8091
 ```
@@ -82,10 +82,40 @@ preview are real chats on the real account, with the usual history and memory
 behaviour. If the live web `.env` points Supabase at `localhost`, browse from
 the Lumen host or set `EXPO_PUBLIC_SUPABASE_URL` before `web`.
 
+### Memory preflight (fail closed)
+
+The live API may take its memory store from systemd rather than from
+`backend/.env` (for example `LUMEN_MEMORY_BACKEND=rmc` in the
+`60-lumen-rmc.conf` drop-in). A second API process that read only `.env` would
+then quietly use a different store. `check` and `api` therefore run
+`scripts/animated_preview_memory.py` first. It:
+
+1. reads the memory settings of the running `lumen-api` process (its own
+   environment, then the live `backend/.env`, then the built-in default);
+2. when the store is RMC, checks the installation ID, gateway socket, host key
+   file and service user with the same adapter checks the live API uses, and
+   sends the gateway its existing liveness probe, which admits nothing;
+3. loads the preview's settings and confirms they equal the live values;
+4. only then starts the preview API, with exactly those settings. Memory
+   settings exported in your shell are ignored.
+
+If any step cannot be confirmed it prints `REFUSED: ...`, exits with status 3
+and the preview API does not start. It never activates, deactivates, migrates
+or changes RMC, reads or writes no memory, and prints no key, token or secret
+(the installation ID and file paths are shown; the host key never is).
+
+Run `check` and `api` as the same user as the `lumen-api` service
+(`systemctl show -p User --value lumen-api`), without `sudo`. The RMC gateway
+only admits that user, and only that user can read the service's settings.
+
+Ownership and privacy are unchanged: the preview API runs the same Lumen code
+path as the live API, so every memory request still goes through `require_user`,
+companion ownership and the RMC gateway's own checks.
+
 ## Tests
 
 ```bash
-cd backend && python -m pytest -q          # includes tests/test_avatar.py and the existing voice tests
+cd backend && python -m pytest -q          # includes tests/test_avatar.py, tests/test_animated_preview_memory.py and the voice tests
 node --test tests/*.test.cjs               # includes tests/animated-companion.test.cjs
 npm run typecheck
 ```

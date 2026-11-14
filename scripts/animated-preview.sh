@@ -17,6 +17,11 @@
 #
 # The live checkout is used read-only for three things: its backend/.env and
 # root .env (linked, not copied or edited) and its backend virtualenv's Python.
+#
+# Memory: `check` and `api` first confirm which memory store the running live
+# API uses (Supabase or RMC) and that the preview will use exactly the same one.
+# If that cannot be confirmed the preview API does not start. Run as the same
+# user as the lumen-api service. Nothing about RMC is changed.
 set -euo pipefail
 MODE="${1:-}"
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -27,7 +32,7 @@ API_PORT="${PREVIEW_API_PORT:-8011}"
 WEB_PORT="${PREVIEW_WEB_PORT:-8091}"
 PYTHON="${PREVIEW_PYTHON:-$LIVE_DIR/backend/.venv/bin/python}"
 fail() { echo "Cannot continue: $*" >&2; exit 2; }
-case "$MODE" in check|api|web) ;; *) sed -n '2,19p' "${BASH_SOURCE[0]}"; exit 2 ;; esac
+case "$MODE" in check|api|web) ;; *) sed -n '2,24p' "${BASH_SOURCE[0]}"; exit 2 ;; esac
 [ "$(realpath "$REPO")" != "$(realpath "$LIVE_DIR" 2>/dev/null || echo "$LIVE_DIR")" ] || fail "run this from a separate clone, not the live checkout."
 link() {  # link a live env file into this clone; never overwrite a real file
   [ -f "$1" ] || fail "$1 not found (set LIVE_DIR)."
@@ -51,8 +56,15 @@ if [ "$MODE" = check ]; then
   else
     echo "avatar bridge:   not checked (set AVATAR_URL and copy the secret file first)"
   fi
+  # The memory preflight decides whether the preview API may start at all.
+  status=0
+  if [ -x "$PYTHON" ]; then
+    (cd "$REPO/backend" && PYTHONDONTWRITEBYTECODE=1 "$PYTHON" "$REPO/scripts/animated_preview_memory.py" --live-dir "$LIVE_DIR") || status=$?
+  else
+    echo "memory preflight: not run ($PYTHON not found)"; status=2
+  fi
   echo "Nothing was changed."
-  exit 0
+  exit "$status"
 fi
 
 if [ "$MODE" = api ]; then
@@ -60,6 +72,9 @@ if [ "$MODE" = api ]; then
   [ -s "$SECRET_FILE" ] || fail "$SECRET_FILE not found. Copy it from the GPU host."
   [ -x "$PYTHON" ] || fail "$PYTHON not found (set PREVIEW_PYTHON)."
   port_free "$API_PORT" || fail "port $API_PORT is in use."
+  if [ -e "$REPO/backend/.env" ] && [ ! -L "$REPO/backend/.env" ]; then
+    fail "$REPO/backend/.env is a separate file; the preview must use the live settings. Remove it and run again."
+  fi
   link "$LIVE_DIR/backend/.env" "$REPO/backend/.env"
   cd "$REPO/backend"
   export PYTHONDONTWRITEBYTECODE=1 AVATAR_URL AVATAR_TLS_VERIFY="${AVATAR_TLS_VERIFY:-true}"
@@ -67,7 +82,10 @@ if [ "$MODE" = api ]; then
   loaded=$("$PYTHON" -c 'import lumen, os; print(os.path.dirname(os.path.realpath(lumen.__file__)))')
   [ "$loaded" = "$(realpath "$REPO/backend/lumen")" ] || fail "Python loaded Lumen from $loaded, not from this clone."
   echo "Preview API on http://$PREVIEW_HOST:$API_PORT (code from $REPO, settings from the live .env, avatar at $AVATAR_URL)"
-  AVATAR_SHARED_SECRET="$(tr -d '\n' < "$SECRET_FILE")" exec "$PYTHON" -m uvicorn lumen.main:app --host 0.0.0.0 --port "$API_PORT"
+  # Fail closed: the API starts only if it will use the live service's memory store,
+  # verified by scripts/animated_preview_memory.py. That script starts uvicorn itself.
+  AVATAR_SHARED_SECRET="$(tr -d '\n' < "$SECRET_FILE")" exec "$PYTHON" "$REPO/scripts/animated_preview_memory.py" \
+    --live-dir "$LIVE_DIR" --exec -- "$PYTHON" -m uvicorn lumen.main:app --host 0.0.0.0 --port "$API_PORT"
 fi
 
 port_free "$WEB_PORT" || fail "port $WEB_PORT is in use."
