@@ -116,3 +116,71 @@ export async function playThroughAvatar(link: AvatarLink, audio: Blob, signal: A
   limit = setTimeout(close, length === null ? MAX_SPEECH_MS : Math.min(MAX_SPEECH_MS, length + END_GRACE_MS));
   return { ended, release: () => { if (!done) link.send(interruptMessage()); close(); } };
 }
+
+// --- Speaking new replies automatically -----------------------------------
+
+export interface SpokenCandidate { id: string; role: string; content: string }
+
+/**
+ * Decides which reply is spoken without a press on Play reply.
+ *
+ * Only the reply to a message sent from this screen qualifies: `begin` is called
+ * when the user sends, `claim` once the reply has been saved and loaded. Loading
+ * or reloading a conversation never calls `begin`, so history is never spoken.
+ * A reply is claimed at most once, and a claim is void if the user has sent
+ * again, switched conversation or turned the mode off in the meantime.
+ */
+export class AutoSpeak {
+  private turn = 0;
+  private pending: { turn: number; conversationId: string | null; known: Set<string> } | null = null;
+  private spoken = new Set<string>();
+
+  /** The user sent a message. `known` are the ids of the messages already on screen. */
+  begin(conversationId: string | null, known: Iterable<string>): number {
+    this.pending = { turn: ++this.turn, conversationId, known: new Set(known) };
+    return this.turn;
+  }
+
+  /** The send failed, or the user moved to another conversation. */
+  cancel() { this.pending = null; }
+
+  /** The user moved to `conversationId`. A reply still on its way to another conversation stays unspoken. */
+  moved(conversationId: string | null) {
+    // A first message has no conversation yet; the server names it when it replies.
+    if (this.pending && this.pending.conversationId !== null && this.pending.conversationId !== conversationId) this.pending = null;
+  }
+
+  /** The reply to speak for this turn, or null. Never returns the same reply twice. */
+  claim<T extends SpokenCandidate>(turn: number, conversationId: string, messages: readonly T[], enabled: boolean): T | null {
+    const pending = this.pending;
+    if (!pending || pending.turn !== turn) return null;
+    this.pending = null;
+    if (pending.conversationId !== null && pending.conversationId !== conversationId) return null;
+    const last = messages[messages.length - 1];
+    if (!enabled || !last || last.role !== 'assistant' || !last.content.trim()) return null;
+    if (pending.known.has(last.id) || this.spoken.has(last.id)) return null;
+    this.spoken.add(last.id);
+    return last;
+  }
+}
+
+// --- Browser autoplay rules -----------------------------------------------
+
+export interface SoundElement { muted: boolean; play(): Promise<void> }
+
+/**
+ * Mute or unmute the avatar. Browsers may refuse sound until the user has
+ * interacted with the page; they then pause the video as well. In that case
+ * the picture is kept moving silently and 'blocked' is returned, so the screen
+ * can offer an Enable sound control instead of failing silently.
+ */
+export async function setElementAudible(element: SoundElement, audible: boolean, stillWanted: () => boolean = () => true): Promise<'ok' | 'blocked'> {
+  element.muted = !audible;
+  if (!audible) return 'ok';
+  try { await element.play(); return 'ok'; } catch (error) {
+    if ((error as { name?: string } | null)?.name !== 'NotAllowedError' || !stillWanted()) return 'ok';
+    element.muted = true;
+    void element.play().catch(() => {});
+    return 'blocked';
+  }
+}

@@ -107,6 +107,8 @@ export function speechChunks(text: string, maximum = 500): string[] {
 // audio plays in the browser as usual, so each chunk is requested once and heard once.
 export type ReplyPlayer = (audio: Blob, signal: AbortSignal) => Promise<{ ended: Promise<void>; release: () => void } | null>;
 
+export const SOUND_BLOCKED_MESSAGE = 'Could not play the audio. Check browser sound permissions and try Play again.';
+
 export async function playReply(text: string, signal: AbortSignal, onEnd: () => void, options: { companionId?: string; voice?: string; onStart?: () => void; onError?: (error: Error) => void; player?: ReplyPlayer } = {}): Promise<() => void> {
   browserAudio();
   const chunks = speechChunks(text).filter(chunk => chunk.trim());
@@ -151,7 +153,7 @@ export async function playReply(text: string, signal: AbortSignal, onEnd: () => 
     void ended.catch(() => {});
     try { await audio.play(); } catch {
       release();
-      throw new Error('Could not play the audio. Check browser sound permissions and try Play again.');
+      throw new Error(SOUND_BLOCKED_MESSAGE);
     }
     if (finished) { release(); throw new Error('Playback cancelled.'); }
     return { ended };

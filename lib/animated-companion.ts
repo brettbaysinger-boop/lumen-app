@@ -6,7 +6,7 @@
 // The reply text and its Helios speech are still produced by Lumen exactly as
 // before: this module only hands the audio the app already has to the avatar.
 import { authHeaders } from './auth';
-import { playThroughAvatar, playbackEvent, wavMilliseconds, type AvatarLink, type AvatarPlayback, type PlaybackEvent } from './animated-companion-core';
+import { playThroughAvatar, playbackEvent, setElementAudible, wavMilliseconds, type AvatarLink, type AvatarPlayback, type PlaybackEvent } from './animated-companion-core';
 
 export type AnimatedState = 'off' | 'connecting' | 'ready';
 const CONNECT_TIMEOUT_MS = 15_000;
@@ -58,8 +58,24 @@ export class AnimatedCompanionSession {
   private audible = false;
   private listeners = new Set<{ event: (event: PlaybackEvent) => void; closed: () => void }>();
   private attempt = 0;
+  /** True while the browser refuses to play the avatar's sound until the user interacts with the page. */
+  soundBlocked = false;
 
-  constructor(private onChange: (state: AnimatedState) => void) {}
+  constructor(private onChange: (state: AnimatedState) => void, private onSoundBlocked: (blocked: boolean) => void = () => {}) {}
+
+  private block(blocked: boolean) {
+    if (this.soundBlocked === blocked) return;
+    this.soundBlocked = blocked;
+    this.onSoundBlocked(blocked);
+  }
+
+  /** Call from a click or key press: the browser then allows sound, including for speech already under way. */
+  enableSound() {
+    this.block(false);
+    void this.placeholders?.audio.resume().catch(() => {});
+    const element = this.element;
+    if (element) void setElementAudible(element, this.audible, () => this.element === element && this.audible).then(result => { if (result === 'blocked') this.block(true); });
+  }
 
   private change(state: AnimatedState) {
     if (this.state === state) return;
@@ -152,6 +168,7 @@ export class AnimatedCompanionSession {
     for (const listener of [...this.listeners]) listener.closed();
     this.listeners.clear();
     this.audible = false;
+    this.block(false);
     if (this.element) { this.element.muted = true; this.element.srcObject = null; }
     try { this.channel?.close(); } catch {}
     this.channel = null;
@@ -185,10 +202,8 @@ export class AnimatedCompanionSession {
       },
       setAudible: audible => {
         this.audible = audible;
-        if (this.element) {
-          this.element.muted = !audible;
-          if (audible) void this.element.play().catch(() => {});
-        }
+        const element = this.element;
+        if (element) void setElementAudible(element, audible, () => this.element === element && this.audible).then(result => { if (result === 'blocked') this.block(true); });
       },
       duration: async audio => wavMilliseconds(await audio.arrayBuffer()),
     };

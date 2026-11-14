@@ -49,6 +49,14 @@ With `AVATAR_URL` blank (the default) the mode is off: `status` reports
 - While on, a video panel under the header. Message portraits are unchanged.
 - **Play reply** / **Stop audio** work as before. Stop interrupts the avatar
   and returns it to idle.
+- While the animated companion is on and connected, each new reply to a
+  message you send is spoken automatically, once. Old messages are never
+  spoken by themselves, also not when a conversation is opened or reloaded.
+  Sending another message, switching conversation, **Stop audio** or turning
+  the mode off stops the speech. With the mode off, **Play reply** is manual
+  as before.
+- If the browser holds back sound until you interact with the page, an
+  **Enable sound** control appears. Press it once.
 - If the avatar service is unreachable or drops, the panel disappears and
   replies play as ordinary audio with the existing portrait.
 
@@ -75,7 +83,7 @@ scripts/animated-preview.sh web                      # terminal 2: preview web a
 
 Then, in a browser on the same network as the GPU host, open
 `http://aiLumen-llm-video:8091`, sign in, turn on **Animated**, send a message
-and press **Play reply**.
+and send a message. The reply is spoken by itself; **Play reply** replays it.
 
 The preview API reads the live `backend/.env` through a link, so chats in the
 preview are real chats on the real account, with the usual history and memory
@@ -128,8 +136,8 @@ stand-in avatar) lives in lumen-avatar-lab under `tests/e2e/`.
 - Web only. Native apps keep the portrait and existing audio.
 - One avatar and one session at a time. Every companion shows the same
   prepared avatar; choosing an avatar per companion is not part of this step.
-- Speech is played when the user presses **Play reply**, as today. Nothing is
-  spoken automatically.
+- Only replies to messages sent from the open screen are spoken automatically.
+  A reply that arrives while another conversation is open is not.
 - The browser must be on the same network as the GPU host (no TURN relay).
 - Speech tickets live in the API process's memory, so the API must run as a
   single process (it does today).
