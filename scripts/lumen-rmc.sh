@@ -51,8 +51,24 @@ db_container() {
 }
 psql_lumen() { docker_cmd exec -i "$(db_container)" psql -X -q -A -t -v ON_ERROR_STOP=1 -U postgres -d postgres "$@"; }
 guard_backend() {
-  psql_lumen -c "SELECT CASE WHEN to_regclass('public.lumen_memory_store') IS NULL THEN 'absent'
-                 ELSE (SELECT backend FROM public.lumen_memory_store WHERE singleton) END" 2>/dev/null || echo unknown
+  local exists backend
+  exists=$(psql_lumen -c "SELECT to_regclass('public.lumen_memory_store') IS NOT NULL" 2>/dev/null) || {
+    echo unknown
+    return
+  }
+  if [[ $exists == f ]]; then
+    echo absent
+    return
+  fi
+  [[ $exists == t ]] || { echo unknown; return; }
+  backend=$(psql_lumen -c "SELECT backend FROM public.lumen_memory_store WHERE singleton" 2>/dev/null) || {
+    echo unknown
+    return
+  }
+  case $backend in
+    supabase|rmc) echo "$backend" ;;
+    *) echo unknown ;;
+  esac
 }
 memory_counts() {
   # Counts only; no memory content is read.
@@ -106,11 +122,33 @@ preflight() {
     && pass "lumen host key $me 0600 (enrolled with: gateway-host --host lumen)" || fail "lumen host key missing or unsafe: $key"
   [[ $(mode_of "$keydir") =~ ^7[0-5][0-5]$ && $(( 8#$(mode_of "$keydir") & 8#022 )) == 0 ]] \
     && pass "host key dir not group/world writable" || fail "host key dir is writable by others"
-  local ports
-  if ports=$(docker_cmd ps --filter "label=rmc.installation=$INSTALL_ID" --format '{{.Names}}|{{.Ports}}' 2>/dev/null); then
-    grep -q -- '-gw|' <<<"$ports" && pass "gateway container running" || fail "no running gateway container for $INSTALL_ID"
-    if awk -F'|' '$2 != "" {bad=1} END {exit !bad}' <<<"$ports"; then fail "an RMC container publishes a port"
-    else pass "no RMC container publishes a port"; fi
+  local names
+  if names=$(docker_cmd ps --filter "label=rmc.installation=$INSTALL_ID" --format '{{.Names}}' 2>/dev/null); then
+    grep -q -- '-gw$' <<<"$names" && pass "gateway container running" || fail "no running gateway container for $INSTALL_ID"
+    if [[ -z $names ]]; then fail "no RMC containers running"
+    else
+      local -a rmc_containers=()
+      mapfile -t rmc_containers <<<"$names"
+      if docker_cmd inspect "${rmc_containers[@]}" | python3 -I -B -c '
+import json, sys
+try:
+    containers = json.load(sys.stdin)
+    if not isinstance(containers, list) or not containers:
+        raise ValueError("missing inspect records")
+    for obj in containers:
+        host = obj.get("HostConfig") or {}
+        net = obj.get("NetworkSettings") or {}
+        bindings = host.get("PortBindings") or {}
+        ports = net.get("Ports") or {}
+        if (host.get("PublishAllPorts") or host.get("NetworkMode") == "host"
+                or not isinstance(bindings, dict) or not isinstance(ports, dict)
+                or any(bindings.values()) or any(ports.values())):
+            raise ValueError("host port exposure")
+except (ValueError, TypeError, KeyError):
+    sys.exit(1)
+'; then pass "no RMC container publishes a port"
+      else fail "RMC port bindings unsafe or Docker inspect failed"; fi
+    fi
   else fail "cannot list Docker containers (docker or sudo -n docker)"; fi
   # Liveness without admission: the gateway answers anything but POST with 405.
   if python3 -I - "$sock" <<'PY'
