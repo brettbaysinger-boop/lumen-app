@@ -102,7 +102,12 @@ export function speechChunks(text: string, maximum = 500): string[] {
   return chunks;
 }
 
-export async function playReply(text: string, signal: AbortSignal, onEnd: () => void, options: { companionId?: string; voice?: string; onStart?: () => void; onError?: (error: Error) => void } = {}): Promise<() => void> {
+// An optional alternative output for reply audio (Animated Companion mode). It receives
+// the audio already fetched for a chunk. If it resolves with null or fails, the same
+// audio plays in the browser as usual, so each chunk is requested once and heard once.
+export type ReplyPlayer = (audio: Blob, signal: AbortSignal) => Promise<{ ended: Promise<void>; release: () => void } | null>;
+
+export async function playReply(text: string, signal: AbortSignal, onEnd: () => void, options: { companionId?: string; voice?: string; onStart?: () => void; onError?: (error: Error) => void; player?: ReplyPlayer } = {}): Promise<() => void> {
   browserAudio();
   const chunks = speechChunks(text).filter(chunk => chunk.trim());
   if (!chunks.length) throw new Error('Reply text is empty.');
@@ -124,6 +129,15 @@ export async function playReply(text: string, signal: AbortSignal, onEnd: () => 
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text: chunk, companion_id: options.companionId, voice: options.voice }),
     }, controller.signal) as Blob;
     if (finished) throw new Error('Playback cancelled.');
+    if (options.player) {
+      const external = await options.player(blob, controller.signal).catch(() => null);
+      if (finished) { external?.release(); throw new Error('Playback cancelled.'); }
+      if (external) {
+        release = external.release;
+        const ended = new Promise<void>(resolve => { completeChunk = resolve; void external.ended.then(resolve, resolve); });
+        return { ended };
+      }
+    }
     const objectUrl = URL.createObjectURL(blob);
     const audio = new Audio(objectUrl);
     let released = false;

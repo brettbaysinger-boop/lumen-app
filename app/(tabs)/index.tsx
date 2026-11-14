@@ -42,6 +42,8 @@ import {
 } from 'lucide-react-native';
 import { CameraCapture } from '@/components/CameraCapture';
 import { CompanionPortrait } from '@/components/CompanionPortrait';
+import { AnimatedCompanion } from '@/components/AnimatedCompanion';
+import { AnimatedCompanionSession, animatedCompanionAvailable, type AnimatedState } from '@/lib/animated-companion';
 import { PracticeSavedCard } from '@/components/PracticeSavedCard';
 import { ProviderRequests } from '@/components/ProviderRequests';
 import { DayActionCard } from '@/components/DayActionCard';
@@ -78,6 +80,13 @@ export default function ChatScreen() {
   const isMobile = screenWidth < 600;
   const [showCamera, setShowCamera] = useState(false);
   const [speakingId, setSpeakingId] = useState<string | null>(null);
+  // Optional Animated Companion mode (web only). Off unless the server offers it and the user turns it on.
+  const [animatedOffered, setAnimatedOffered] = useState(false);
+  const [animatedState, setAnimatedState] = useState<AnimatedState>('off');
+  const [animatedNote, setAnimatedNote] = useState<string | null>(null);
+  const animatedRef = useRef<AnimatedCompanionSession | null>(null);
+  if (!animatedRef.current) animatedRef.current = new AnimatedCompanionSession(state => setAnimatedState(state));
+  const animated = animatedRef.current;
 
   const [companion, setCompanion] = useState<Companion | null>(null);
   const { state: companionState } = useCompanionState(companion?.id);
@@ -174,6 +183,7 @@ export default function ChatScreen() {
       recordingRef.current?.cancel();
       voiceRequestRef.current?.abort();
       playbackRef.current?.abort();
+      animatedRef.current?.close();
     };
   }, []);
 
@@ -278,14 +288,31 @@ export default function ChatScreen() {
       if (mountedRef.current && playbackRef.current === controller) { setPlayingId(null); setSpeakingId(null); }
     };
     try {
-      await playReply(message.content, controller.signal, finished, { companionId: companion?.id, onError: err => { if (mountedRef.current && !controller.signal.aborted) setError(err.message); }, onStart: () => { if (mountedRef.current && !controller.signal.aborted) setSpeakingId(message.id); } });
+      await playReply(message.content, controller.signal, finished, { companionId: companion?.id, player: animated.state === 'ready' ? animated.player : undefined, onError: err => { if (mountedRef.current && !controller.signal.aborted) setError(err.message); }, onStart: () => { if (mountedRef.current && !controller.signal.aborted) setSpeakingId(message.id); } });
     } catch (err) {
       if (mountedRef.current && !controller.signal.aborted) {
         setError(err instanceof Error ? err.message : 'Playback failed.');
         finished();
       }
     }
-  }, [playingId, companion?.id]);
+  }, [playingId, companion?.id, animated]);
+
+  useEffect(() => {
+    animated.close();
+    setAnimatedOffered(false);
+    if (Platform.OS !== 'web' || !companion?.id) return;
+    const controller = new AbortController();
+    void animatedCompanionAvailable(controller.signal).then(available => { if (!controller.signal.aborted) setAnimatedOffered(available); });
+    return () => controller.abort();
+  }, [companion?.id, animated]);
+  const toggleAnimated = useCallback(async () => {
+    setAnimatedNote(null);
+    if (animated.state !== 'off') { playbackRef.current?.abort(); animated.close(); return; }
+    if (!companion?.id) return;
+    if (!await animated.connect(companion.id) && mountedRef.current) {
+      setAnimatedNote('The animated companion is not available right now. Lumen is using the portrait.');
+    }
+  }, [animated, companion?.id]);
 
   const loadConversations = useCallback(async (companionId: string, userId: string) => {
     if (managementBusyRef.current) return;
@@ -776,6 +803,9 @@ export default function ChatScreen() {
           </View>
         </View>
         <View style={styles.headerStatus}>
+          {animatedOffered && <TouchableOpacity accessibilityRole="switch" accessibilityState={{ checked: animatedState !== 'off', busy: animatedState === 'connecting' }} accessibilityLabel="Animated companion" disabled={animatedState === 'connecting'} onPress={toggleAnimated}>
+            <Text style={{color:colors.primary[300],fontSize:12}}>{animatedState === 'ready' ? 'Animated: on' : animatedState === 'connecting' ? 'Connecting…' : 'Animated: off'}</Text>
+          </TouchableOpacity>}
           <TouchableOpacity accessibilityRole="button" accessibilityLabel="Open your documents" disabled={sending || voiceBusy || documentBusy} onPress={() => router.push('/documents')}>
             <Text style={{color:colors.primary[300],fontSize:12}}>Documents</Text>
           </TouchableOpacity>
@@ -917,6 +947,9 @@ export default function ChatScreen() {
         chat={activeConversation} chats={conversations}
         disabled={sending || voiceBusy || managementBusy || documentBusy}
         onOpen={chat => setActiveConversation(chat)} />}
+      {animatedState === 'ready' && <View style={{ alignItems: 'center', paddingVertical: 8 }}>
+        <AnimatedCompanion session={animated} size={isMobile ? 180 : 260} borderColor={colors.primary[400]} />
+      </View>}
       <ConversationList
         ref={flatListRef}
         data={messages}
@@ -983,6 +1016,7 @@ export default function ChatScreen() {
           </Text>
         </View>
       )}
+      {!!animatedNote && <View style={styles.errorBanner}><Text accessibilityRole="alert" style={styles.errorBannerText}>{animatedNote}</Text><TouchableOpacity onPress={() => setAnimatedNote(null)} accessibilityLabel="Dismiss animated companion notice"><Text style={styles.errorBannerText}>Dismiss</Text></TouchableOpacity></View>}
       {!!voiceError && <View style={styles.errorBanner}><Text accessibilityRole="alert" selectable style={styles.errorBannerText}>{voiceError}</Text><TouchableOpacity onPress={() => setVoiceError(null)} accessibilityLabel="Dismiss voice error"><Text style={styles.errorBannerText}>Dismiss</Text></TouchableOpacity></View>}
       {voiceBusy && (
         <View style={styles.errorBanner}>
