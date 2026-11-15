@@ -24,7 +24,7 @@ REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 LIVE_DIR="${LIVE_DIR:-/home/brett/lumen-push}"
 WEB_URL="${WEB_URL:-http://127.0.0.1:8081}"
 STATE_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/lumen-animated/web-updates"
-FRONTEND_ONLY='^(app/|components/|lib/|hooks/|types/|tests/|docs/|scripts/(test-)?animated[-_][A-Za-z0-9_.-]+$)'
+FRONTEND_ONLY='^(app/|components/|lib/|hooks/|types/|tests/|docs/|scripts/(test-)?(animated[-_][A-Za-z0-9_.-]+|android-refresh\.sh)$)'
 # Set only by scripts/animated-api-update.sh, which restarts lumen-api itself and checks it afterwards:
 # the animated companion's own backend routes and their tests may then be part of the step. Nothing else may.
 [ "${LUMEN_WEB_UPDATE_WITH_AVATAR_API:-}" != 1 ] || FRONTEND_ONLY="${FRONTEND_ONLY%)}|backend/lumen/avatar\\.py\$|backend/tests/test_avatar\\.py\$)"
