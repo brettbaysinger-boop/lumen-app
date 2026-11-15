@@ -1,0 +1,27 @@
+# Raialume / Lumen — project checkpoint
+**Date:** 2026-11-15 (America/Phoenix)  
+**Status:** working single-user private companion; mobile, alternative scenes and memory follow-up remain unfinished.
+
+> This document is a dated reconciliation of owner terminal/screenshot evidence and GitHub. It does not claim an independent live host audit, nor that open draft PRs are merged. For the detailed authoritative current-work tracker see [Issue #21](https://github.com/brettbaysinger-boop/lumen-app/issues/21). Earlier `docs/PROJECT-STATUS.md` includes historically accurate October milestones but should not be read as the latest animation/Android checkpoint.
+
+## Working baseline (owner evidence)
+- Raialume = app; Lumen = companion. `lumen-app` holds web/native UI/API, `lumen-avatar-lab` holds Heavy avatar and scene tools.
+- Desktop web at verified owner checkpoint `f23d112ada23` renders GOLD V2 with Compact / Large / Theater / uncropped 3:2 Wide Theater; owner screenshots confirmed. Browser speech/lip sync tested.
+- Heavy bridge `lumen-avatar-bridge.service` was restored with GOLD V2; `100.116.230.90:8283` private health 401 without secret, 200 with secret; GOLD V2 original SHA256 `e5e07d9b73db2f0b2558f80c777b7444e65803c7f02eb06a8fa58d8786b6aeb1` verified. Original V2 cache/snapshot preserved. Snapshot is on same disk, not verified off-host recovery.
+- Native Android Galaxy S22 (SM-S901U) owner installed signed APK SHA256 `34fc7de87d1cfa1ad2e217fdd341d7a6a2a3d4ac1b446c4736a4d868f426ab29`, package `com.raialume.preview`, versionCode 1, successful `adb install -r` preserving app installation and private data. Old APK e963ef43... copied to `~/.local/state/lumen-android-refresh/backup-20261115T185409Z/installed.apk`. User confirmed Live Video opens live GOLD V2 in phone Chrome, **not** inside native app. Android UI remains cramped.
+- Existing chat, Helios voice, reminders/My Day, gallery, documents, and companion identity had prior implementation and owner milestones, but today's audit does not independently retest every path.
+
+## Open work, in recommended order
+1. **Mobile usability and in-app video: [Issue #19](https://github.com/brettbaysinger-boop/lumen-app/issues/19), [draft PR #20](https://github.com/brettbaysinger-boop/lumen-app/pull/20).** Resolve Android 16 status bar/reminder overlap, cramped header, composer/tab/keyboard/OS navigation. WebView-based video feature is coded, but real Galaxy S22 WebRTC/canvas/audio/auth/navigation acceptance **is pending**. Existing Chrome fallback must remain. No APK for PR #20 built or installed yet.
+2. **Scene catalog/switching: [Issue #15](https://github.com/brettbaysinger-boop/lumen-app/issues/15), [app draft PR #18](https://github.com/brettbaysinger-boop/lumen-app/pull/18), [avatar draft PR #5](https://github.com/brettbaysinger-boop/lumen-avatar-lab/pull/5).** Not deployed; needs real protected end-to-end GPU busy refusal, service restart, single WebRTC session reconnect, rollback to GOLD V2. Reconcile with Android PR #17 and #20 before integration.
+3. **Second scene: [Midnight Sanctuary Issue #3](https://github.com/brettbaysinger-boop/lumen-avatar-lab/issues/3), [draft PR #4](https://github.com/brettbaysinger-boop/lumen-avatar-lab/pull/4).** Image/reference workflow and FramePack test activity exist, but no accepted 768×512 25fps scene clip + separate MuseTalk cache + lip-sync review + scene registry proven. Keep generated/private media off GitHub and preserve original GOLD.
+4. **Operational resilience.** ComfyUI once retained ~12GiB and idle FramePack Studio ~6.5GiB, starving the MuseTalk bridge. Formalize owner-approved GPU handoff/cleanup (ComfyUI queue check and `/free`; normal FramePack Studio stop; free VRAM verification; GOLD V2 liveness). Improve service health visibility; test isolated GOLD restore and encrypted off-host recovery before claiming full backups.
+5. **Memory/RMC architecture and quality.** Historic October Phase 1 memory durability accepted, semantic retrieval was shadow only. Later app reported RMC-enabled service drop-in; current Lumen bank and retrieval not freshly inspected. Keep Lumen RMC separate from ChatGPT Brother Memory. Reconcile old [Hindsight Issue #9](https://github.com/brettbaysinger-boop/lumen-app/issues/9) and [memory-review Issue #4](https://github.com/brettbaysinger-boop/lumen-app/issues/4) with actual RMC state; do not build another engine or merge stale experimental PRs without owner decision.
+6. **Later original roadmap:** iOS acceptance/push, independent memory retrieval benchmark, My Day richer actions/step undo, OCR/document extraction, and capability routing. These are historical open/uncertain work, not newly authorized sprint commitments.
+
+## Release boundaries and Git housekeeping
+- GOLD V2 must remain immutable and selectable; no hidden model downloads, runtime changes, or GPU process killing during unrelated work.
+- Do not equate deployed/owner-tested code with merged GitHub PR state. Already deployed features still have open PRs (#11/#12/#14/#17 and bridge #2). Triage after comparing the exact production checkout to branch heads.
+- Preserve private keys, production .env, account memory, scene media, OAuth/Firebase and the current Android signing identity outside Git. No production deployment/merge is approved by this documentation-only change.
+
+**Next owner-visible milestone:** Android PR #20 real S22 acceptance with uncramped layout and a working in-app WebView or explicit Chrome fallback. Then prepare one second MuseTalk scene for scene-switching acceptance.
