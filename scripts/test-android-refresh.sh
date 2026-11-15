@@ -14,13 +14,13 @@ apk() {  # apk FILE PACKAGE VERSIONCODE CERT BUNDLE-TEXT
   (cd "$d" && zip -q -r "$1" .); rm -rf "$d"
 }
 apk "$T/old.apk" com.raialume.preview 1 AAAA "old app $SETTINGS"
-apk "$T/new.apk" com.raialume.preview 1 AAAA "new app Video currently unavailable $SETTINGS"
-apk "$T/other-package.apk" com.raialume.other 1 AAAA "new app Video currently unavailable $SETTINGS"
-apk "$T/other-key.apk" com.raialume.preview 1 BBBB "new app Video currently unavailable $SETTINGS"
-apk "$T/unsigned.apk" com.raialume.preview 1 INVALID "new app Video currently unavailable $SETTINGS"
-apk "$T/no-settings.apk" com.raialume.preview 1 AAAA "new app Video currently unavailable undefined undefined undefined"
-apk "$T/other-server.apk" com.raialume.preview 1 AAAA "new app Video currently unavailable https://supabase.fictional.invalid fictional-anon-key https://elsewhere.invalid"
-apk "$T/newer.apk" com.raialume.preview 2 AAAA "new app Video currently unavailable $SETTINGS"
+apk "$T/new.apk" com.raialume.preview 1 AAAA "new app Watch it here inside Raialume $SETTINGS"
+apk "$T/other-package.apk" com.raialume.other 1 AAAA "new app Watch it here inside Raialume $SETTINGS"
+apk "$T/other-key.apk" com.raialume.preview 1 BBBB "new app Watch it here inside Raialume $SETTINGS"
+apk "$T/unsigned.apk" com.raialume.preview 1 INVALID "new app Watch it here inside Raialume $SETTINGS"
+apk "$T/no-settings.apk" com.raialume.preview 1 AAAA "new app Watch it here inside Raialume undefined undefined undefined"
+apk "$T/other-server.apk" com.raialume.preview 1 AAAA "new app Watch it here inside Raialume https://supabase.fictional.invalid fictional-anon-key https://elsewhere.invalid"
+apk "$T/newer.apk" com.raialume.preview 2 AAAA "new app Watch it here inside Raialume $SETTINGS"
 cp "$T/old.apk" "$R/preview.fictional/android/app/app-release.apk"; touch "$R/preview.fictional/android/app/google-services.json"
 echo 'MYAPP_UPLOAD_STORE_PASSWORD=never-print-this' > "$R/preview.fictional/android/gradle.properties"
 cp "$T/old.apk" "$S/phone.apk"; echo 1 > "$S/devices"
@@ -119,7 +119,7 @@ printf "package: name='com.raialume.preview' versionCode='1' versionName='1.0.0'
 rm -f app/build/outputs/apk/release/app-release.apk; (cd "\$d" && zip -q -r "$N/android/app/build/outputs/apk/release/app-release.apk" .)
 STUB
 printf '#!/usr/bin/env bash\necho %s >&2\n' "'openjdk version \"17.0.12\" 2026-01-01'" > "$B/java"; chmod +x "$N/android/gradlew" "$B/java"
-cp "$SRC/scripts/android-refresh.sh" "$C/scripts/"; echo "chat v2 Video currently unavailable" > "$C/app/index.tsx"; echo "new screen" > "$C/app/added.tsx"; g -C "$C" rm -q app/removed.tsx
+cp "$SRC/scripts/android-refresh.sh" "$C/scripts/"; echo "chat v2 Watch it here inside Raialume" > "$C/app/index.tsx"; echo "new screen" > "$C/app/added.tsx"; g -C "$C" rm -q app/removed.tsx
 g -C "$C" add -A; g -C "$C" commit -q -m "refresh"; HEAD12=$(git -C "$C" rev-parse --short=12 HEAD)
 brun() { env PATH="$B:$PATH" HOME="$H" XDG_STATE_HOME="$H/state" LIVE_DIR="$L" BUILD_ROOT="$R" "$@" bash "$C/scripts/android-refresh.sh" "${ARGS[@]}"; }
 native() { (cd "$N" && cat app.json package.json android/app/build.gradle android/app/google-services.json android/app/release.keystore node_modules/fictional-dep/package.json | sha256sum); }

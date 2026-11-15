@@ -5,7 +5,7 @@
 // labelled action that opens the signed-in web app in the phone's own browser.
 // Nothing is handed over: no token, cookie or account detail is put in the address. The
 // browser keeps its own Lumen sign-in, separate from the app's.
-import { Linking } from 'react-native';
+import { Linking, Platform, TurboModuleRegistry } from 'react-native';
 import { authHeaders } from './auth';
 
 /**
@@ -57,12 +57,13 @@ export async function liveVideoStatus(): Promise<LiveVideoStatus> {
   } catch { return 'unknown'; } finally { clearTimeout(timer); }
 }
 
-export type LiveVideoChoice = 'cancel' | 'retry' | 'open';
+export type LiveVideoChoice = 'cancel' | 'retry' | 'open' | 'inapp';
 const OWN_SIGN_IN = 'The browser keeps its own Lumen sign-in, so sign in there the first time. This app stays as it is, with the portrait and voice.';
 
 /** What to tell the person, and what they may choose, before anything is opened. */
-export function liveVideoPrompt(url: string | null, status: LiveVideoStatus): { title: string; message: string; choices: LiveVideoChoice[] } {
+export function liveVideoPrompt(url: string | null, status: LiveVideoStatus, inApp = false): { title: string; message: string; choices: LiveVideoChoice[] } {
   if (!url) return { title: 'Live video is not set up in this app', message: 'This build does not know the address of the Lumen web app, so it cannot open live video. Everything else in the app works as before.', choices: ['cancel'] };
+  if (status === 'available' && inApp) return { title: 'Watch live video', message: 'Live video and Wide Theater run in the Lumen web app. Watch it here inside Raialume, or open it in your browser. Either one keeps its own Lumen sign-in, separate from this app, so sign in there the first time.', choices: ['cancel', 'open', 'inapp'] };
   if (status === 'available') return { title: 'Open live video in your browser?', message: `Live video and Wide Theater run in the Lumen web app. This opens it in your browser. ${OWN_SIGN_IN}`, choices: ['cancel', 'open'] };
   if (status === 'unavailable') return { title: 'Video currently unavailable', message: `Lumen's video service is not running right now. It is sometimes stopped while its computer does other work. You can check again, or open the web app anyway: it shows the portrait until video is back. ${OWN_SIGN_IN}`, choices: ['cancel', 'retry', 'open'] };
   return { title: 'Could not check live video', message: `This app could not reach Lumen to ask whether video is running. You can check again, or open the web app anyway. ${OWN_SIGN_IN}`, choices: ['cancel', 'retry', 'open'] };
@@ -72,4 +73,41 @@ export function liveVideoPrompt(url: string | null, status: LiveVideoStatus): { 
 export async function openLiveVideoOnWeb(url: string): Promise<boolean> {
   if (lumenWebUrl(url, undefined) !== url) return false;
   try { await Linking.openURL(url); return true; } catch { return false; }
+}
+
+// --- Live video inside the app ---------------------------------------------------------------------
+// A screen of the app that shows the same web app in Android's built-in web view. Still no video
+// engine in the app: the page's own WebRTC does the work, if this phone's web view can.
+
+/** True only where the web view's native part is compiled into this build. Never throws. */
+export function inAppVideoSupported(): boolean {
+  if (Platform.OS !== 'android') return false;
+  try { return TurboModuleRegistry.get('RNCWebViewModule') != null; } catch { return false; }
+}
+
+/** Is `candidate` a page of the Lumen web app at `web`? Same scheme, host and port, https only, no sign-in details in the address. */
+export function sameWebOrigin(web: string, candidate: string): boolean {
+  try {
+    const home = new URL(web), url = new URL(candidate);
+    return home.protocol === 'https:' && url.protocol === 'https:' && url.host === home.host && !url.username && !url.password;
+  } catch { return false; }
+}
+
+// Runs inside the page before it loads and reports, once, what this phone's web view can do.
+// It reads nothing from the page and is given nothing by the app: no token, no account detail.
+export const IN_APP_PROBE = `(function(){try{var c=document.createElement('canvas');window.ReactNativeWebView.postMessage(JSON.stringify({lumenProbe:1,
+rtc:typeof RTCPeerConnection!=='undefined',channel:typeof RTCPeerConnection!=='undefined'&&'createDataChannel' in RTCPeerConnection.prototype,
+capture:typeof c.captureStream==='function',audio:typeof AudioContext!=='undefined',inline:'playsInline' in document.createElement('video')}));}catch(e){}})();true;`;
+
+export const PROBE_LABELS = { rtc: 'WebRTC', channel: 'WebRTC data channel', capture: 'canvas capture', audio: 'Web Audio', inline: 'inline video' } as const;
+export type InAppProbe = { ok: boolean; missing: string[] };
+
+/** Reads the probe's report. Anything else a page posts is ignored: the page cannot instruct the app. */
+export function readInAppProbe(data: unknown): InAppProbe | null {
+  if (typeof data !== 'string' || data.length > 500) return null;
+  let report: any;
+  try { report = JSON.parse(data); } catch { return null; }
+  if (!report || typeof report !== 'object' || report.lumenProbe !== 1) return null;
+  const missing = (Object.keys(PROBE_LABELS) as (keyof typeof PROBE_LABELS)[]).filter(key => report[key] !== true).map(key => PROBE_LABELS[key]);
+  return { ok: missing.length === 0, missing };
 }

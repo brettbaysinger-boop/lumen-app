@@ -39,7 +39,7 @@ REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SOURCE_DIRS="app components lib hooks types"
 STATE_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/lumen-android-refresh"
 # Text that only this refresh's JavaScript contains: proof that an APK carries the new bundle, not an older one.
-JS_MARKER="Video currently unavailable"
+JS_MARKER="Watch it here inside Raialume"
 PUBLIC_SETTINGS="EXPO_PUBLIC_SUPABASE_URL EXPO_PUBLIC_SUPABASE_ANON_KEY EXPO_PUBLIC_LUMEN_API_URL"
 problems=0
 pass() { printf 'PASS  %s\n' "$1"; }
@@ -214,6 +214,9 @@ build_check() {
   # Every package the new source imports must already be installed in the project: nothing is installed here.
   missing=$(cd "$REPO" && node -e 'const fs=require("fs"),tree=process.argv[1];for(const name of Object.keys(require("./package.json").dependencies))if(!fs.existsSync(`${tree}/node_modules/${name}/package.json`))console.log(name)' "$BUILD_TREE" 2>/dev/null | tr '\n' ' ') || missing="(could not be checked)"
   [ -z "$missing" ] && pass "every package the source needs is already installed in the project" || bad "packages missing from the project's node_modules: $missing"
+  # Live video inside the app needs the web view's native part, which exists only if the project's own
+  # package.json lists it. This script never changes that file; without it the app offers the browser only.
+  grep -q '"react-native-webview"' "$BUILD_TREE/package.json" 2>/dev/null && info "native project lists react-native-webview: in-app Live video can be offered" || info "native project does NOT list react-native-webview: this build will offer Live video in the browser only (no crash, no in-app view)"
   for dir in $SOURCE_DIRS; do
     [ -d "$BUILD_TREE/$dir" ] || continue
     while read -r file; do
