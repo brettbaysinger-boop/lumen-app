@@ -184,3 +184,42 @@ export async function setElementAudible(element: SoundElement, audible: boolean,
     return 'blocked';
   }
 }
+
+// --- Display size ---------------------------------------------------------
+
+export type AnimatedSize = 'compact' | 'large' | 'theater';
+export const ANIMATED_SIZES: readonly AnimatedSize[] = ['compact', 'large', 'theater'];
+export const ANIMATED_SIZE_LABELS: Record<AnimatedSize, string> = { compact: 'Compact', large: 'Large', theater: 'Theater' };
+/** Edge of the square video in pixels, and the share of the window height it may take. */
+const SIZE_LIMITS: Record<AnimatedSize, { edge: number; height: number }> = {
+  compact: { edge: 260, height: 0.4 },
+  large: { edge: 420, height: 0.5 },
+  theater: { edge: 560, height: 0.62 },
+};
+const SIDE_MARGIN = 16;   // kept free on each side, so the page never scrolls sideways
+const SMALLEST = 120;
+
+export function isAnimatedSize(value: unknown): value is AnimatedSize {
+  return typeof value === 'string' && (ANIMATED_SIZES as readonly string[]).includes(value);
+}
+
+/** Large on a desktop-width window, Compact on a phone-width one. */
+export function defaultAnimatedSize(windowWidth: number): AnimatedSize {
+  return windowWidth < 600 ? 'compact' : 'large';
+}
+
+/**
+ * Edge of the square video for a size option in this window. The picture is
+ * always square, so it is never stretched; the window only limits how large it
+ * gets, leaving room for the conversation and the message box below it.
+ */
+export function animatedDisplayEdge(size: AnimatedSize, windowWidth: number, windowHeight: number): number {
+  const limit = SIZE_LIMITS[size];
+  const fits = Math.min(limit.edge, windowWidth - 2 * SIDE_MARGIN, windowHeight * limit.height);
+  return Math.round(Math.max(SMALLEST, Math.min(fits, limit.edge)));
+}
+
+/** The next larger (+1) or smaller (-1) option, or null at either end. */
+export function stepAnimatedSize(size: AnimatedSize, direction: 1 | -1): AnimatedSize | null {
+  return ANIMATED_SIZES[ANIMATED_SIZES.indexOf(size) + direction] ?? null;
+}
