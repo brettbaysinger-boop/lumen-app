@@ -120,6 +120,37 @@ Ownership and privacy are unchanged: the preview API runs the same Lumen code
 path as the live API, so every memory request still goes through `require_user`,
 companion ownership and the RMC gateway's own checks.
 
+## Normal deployment
+
+The full owner-run procedure, with acceptance tests and every way back, is
+`docs/DEPLOYMENT.md` in lumen-avatar-lab. The Lumen side is one script, run
+from the reviewed clone (not the live checkout) as the lumen-api user:
+
+```bash
+AVATAR_URL=http://<bridge address>:8283 scripts/animated-deploy.sh check     # read-only, ends with READY or NOT READY
+AVATAR_URL=... LUMEN_ANIMATED_CONFIRM=cutover:<commit> scripts/animated-deploy.sh cutover
+scripts/animated-deploy.sh status | disable
+LUMEN_ANIMATED_CONFIRM=rollback scripts/animated-deploy.sh rollback
+```
+
+`cutover` fast-forwards the live checkout to the clone's commit (local edits
+are kept; it refuses beforehand if one would be touched), builds the web app in
+the clone and swaps it in, adds the lumen-api drop-in `70-lumen-avatar.conf`
+naming a private settings file (`~/.config/lumen-avatar/lumen-api.env`, mode
+600) with `AVATAR_URL` and the shared secret, and restarts lumen-api and
+lumen-web. It then requires lumen-api to be healthy, the memory settings from
+systemd and every other drop-in to be exactly as before, and the avatar route
+to ask for sign-in; otherwise it goes back by itself. It installs nothing,
+runs no migration, and never opens the RMC drop-in, RMC or the database.
+
+With the drop-in removed (`disable`) the mode is off, which is the default:
+the switch is not shown and replies play as ordinary audio. Even when
+configured, Animated is off until the user turns it on.
+
+`scripts/test-animated-deploy.sh` exercises check, cutover, automatic undo,
+disable, enable and rollback against two generated checkouts with stand-ins for
+systemctl, sudo, curl and the web build.
+
 ## Tests
 
 ```bash
