@@ -10,6 +10,8 @@ import { useTheme } from '@/lib/theme-context';
 import { useAuth } from '@/lib/auth';
 import { IN_APP_PROBE, inAppVideoSupported, liveVideoWebUrl, openLiveVideoOnWeb, readInAppProbe, sameWebOrigin, type InAppProbe } from '@/lib/live-video-web';
 
+const PROBE_TIMEOUT_MS = 8_000;
+
 export default function LiveVideoScreen() {
   const { colors: c } = useTheme();
   const { session } = useAuth();
@@ -19,9 +21,20 @@ export default function LiveVideoScreen() {
   const [probe, setProbe] = useState<InAppProbe | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [failed, setFailed] = useState(false);
+  const [silent, setSilent] = useState(false);   // the page never reported what this phone can do
+  const [attempt, setAttempt] = useState(0);
   const view = useRef<any>(null);
   // In the background the web view is removed: no video session and no sound outlive the screen.
   useEffect(() => { const watch = AppState.addEventListener('change', state => setActive(state === 'active')); return () => watch.remove(); }, []);
+
+  // Fail closed: no capability report within a few seconds counts as "cannot", not as "fine".
+  const waiting = !!url && supported && active && !probe && !failed && !silent;
+  useEffect(() => {
+    if (!waiting) return;
+    const timer = setTimeout(() => setSilent(true), PROBE_TIMEOUT_MS);
+    return () => clearTimeout(timer);
+  }, [waiting, attempt]);
+  const retry = () => { setProbe(null); setFailed(false); setSilent(false); setNotice(null); setAttempt(n => n + 1); };
 
   if (Platform.OS === 'web' || !session) return <Redirect href="/" />;
   const close = () => { if (router.canGoBack()) router.back(); else router.replace('/'); };
@@ -34,6 +47,7 @@ export default function LiveVideoScreen() {
   const message = !url ? 'This build does not know the address of the Lumen web app.'
     : !supported ? 'This build of the app cannot show live video inside the app. Use the browser instead.'
     : failed ? 'Lumen could not be loaded here. Check the connection, or use the browser.'
+    : silent && !probe ? 'This phone did not confirm that it can play live video inside the app. Try again, or use the browser.'
     : probe && !probe.ok ? `This phone cannot play live video inside the app (missing: ${probe.missing.join(', ')}). Use the browser instead.`
     : null;
   // Loaded only where its native part exists, so a build without it never touches it.
@@ -45,11 +59,16 @@ export default function LiveVideoScreen() {
         <Text accessibilityRole="header" numberOfLines={1} style={{ color: c.neutral[200], fontSize: 15, flexShrink: 1 }}>Live video</Text>
         {link('Browser ↗', 'Open live video in your browser instead', browser)}
       </View>
+      {waiting && <Text accessibilityLiveRegion="polite" style={{ color: c.neutral[400], fontSize: 12, paddingHorizontal: 10, paddingVertical: 4 }}>Checking what this phone can play…</Text>}
       {!!notice && <Text accessibilityRole="alert" style={{ color: c.neutral[300], fontSize: 13, padding: 10 }}>{notice}</Text>}
       {message ? <View style={{ flex: 1, justifyContent: 'center', padding: 24, gap: 16 }}>
         <Text accessibilityRole="alert" style={{ color: c.neutral[200], fontSize: 16, textAlign: 'center' }}>{message}</Text>
-        {!!url && <View style={{ alignItems: 'center' }}>{link('Open in browser ↗', 'Open live video in your browser', browser)}</View>}
+        {!!url && <View style={{ alignItems: 'center' }}>
+          {supported && (failed || silent) && link('Try again', 'Try loading live video inside the app again', retry)}
+          {link('Open in browser ↗', 'Open live video in your browser', browser)}
+        </View>}
       </View> : WebView && active ? <WebView
+        key={attempt}
         ref={view}
         source={{ uri: url }}
         style={{ flex: 1, backgroundColor: c.neutral[950] }}

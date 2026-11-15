@@ -27,8 +27,9 @@ a slim bar (‹ Chat, Live video, Browser ↗) and the Lumen web app below it.
   which reports five yes/no answers and reads nothing.
 - Leaving the screen, pressing Back, or putting the app in the background removes the web view, which
   ends its video session and sound. The native chat screen keeps no video session of its own.
-- If the web view is missing, the probe fails, or the page does not load, the screen says so and
-  offers the browser. The browser route from PR #17 is unchanged.
+- If the web view is missing, the probe reports something missing, **no probe report arrives within
+  8 seconds**, or the page does not load, the web view is taken away and the screen says so, with
+  Try again and the browser. The browser route from PR #17 is unchanged.
 
 **Phone layout** (phone widths only; desktop unchanged; applies to the web app at phone width too):
 

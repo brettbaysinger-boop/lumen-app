@@ -128,6 +128,11 @@ test('the in-app screen: guarded, allowlisted, closed in the background, with th
   assert.match(screen,/WebView && active \? <WebView/);assert.match(screen,/AppState\.addEventListener\('change'/);
   assert.match(screen,/Platform\.OS === 'web' \|\| !session\) return <Redirect/);
   assert.match(screen,/Browser ↗/);
+  // Fail closed: a capability report that never arrives ends in a message, not in a web view left running.
+  assert.match(screen,/const waiting = !!url && supported && active && !probe && !failed && !silent;/);
+  assert.match(screen,/setTimeout\(\(\) => setSilent\(true\), PROBE_TIMEOUT_MS\)/);
+  assert.match(screen,/silent && !probe \? 'This phone did not confirm/);
+  assert.match(screen,/url && supported && !message \? require/);                       // any message, this one included, takes the web view away
   assert.doesNotMatch(screen,/access_token|Authorization|injectJavaScript\(|supabase/);   // nothing of the app's sign-in goes into the page
   for(const off of ['allowFileAccess={false}','setSupportMultipleWindows={false}','thirdPartyCookiesEnabled={false}','geolocationEnabled={false}','mixedContentMode="never"'])assert.ok(screen.includes(off),off);
   assert.match(fs.readFileSync('app/(tabs)/index.tsx','utf8'),/choice === 'inapp' \? \{ text: 'Watch here', onPress: \(\) => \{ router\.push\('\/live-video'\); \} \}/);
