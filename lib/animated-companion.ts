@@ -6,7 +6,7 @@
 // The reply text and its Helios speech are still produced by Lumen exactly as
 // before: this module only hands the audio the app already has to the avatar.
 import { authHeaders } from './auth';
-import { playThroughAvatar, playbackEvent, setElementAudible, wavMilliseconds, type AvatarLink, type AvatarPlayback, type PlaybackEvent } from './animated-companion-core';
+import { playThroughAvatar, playbackEvent, sceneList, setElementAudible, wavMilliseconds, type AvatarLink, type AvatarPlayback, type PlaybackEvent, type SceneList } from './animated-companion-core';
 
 export type AnimatedState = 'off' | 'connecting' | 'ready';
 const CONNECT_TIMEOUT_MS = 15_000;
@@ -31,6 +31,28 @@ export async function animatedCompanionAvailable(signal?: AbortSignal): Promise<
     const body = response.ok ? await response.json() : null;
     return body?.enabled === true && body?.available === true;
   } catch { return false; }
+}
+
+/** The scenes the avatar host offers and the one serving now. Null when they cannot be read. */
+export async function animatedScenes(signal?: AbortSignal): Promise<SceneList | null> {
+  try {
+    const response = await fetch(`${apiUrl()}/v0.1/avatar/scenes`, { headers: await authHeaders(), signal });
+    return response.ok ? sceneList(await response.json()) : null;
+  } catch { return null; }
+}
+
+/** Ask for another scene. Resolves with null when accepted, else with the reason in plain words. */
+export async function chooseAnimatedScene(companionId: string, scene: string): Promise<string | null> {
+  const failed = 'The scene could not be changed. Nothing was switched.';
+  try {
+    const response = await fetch(`${apiUrl()}/v0.1/avatar/scene`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json', ...await authHeaders() },
+      body: JSON.stringify({ companion_id: companionId, scene }),
+    });
+    if (response.status === 202) return null;
+    const body = await response.json().catch(() => null);
+    return typeof body?.detail?.message === 'string' ? body.detail.message : failed;
+  } catch { return failed; }
 }
 
 function randomId(): string {

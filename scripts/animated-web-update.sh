@@ -25,6 +25,9 @@ LIVE_DIR="${LIVE_DIR:-/home/brett/lumen-push}"
 WEB_URL="${WEB_URL:-http://127.0.0.1:8081}"
 STATE_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/lumen-animated/web-updates"
 FRONTEND_ONLY='^(app/|components/|lib/|hooks/|types/|tests/|docs/|scripts/(test-)?(animated[-_][A-Za-z0-9_.-]+|android-refresh\.sh)$)'
+# Set only by scripts/animated-api-update.sh, which restarts lumen-api itself and checks it afterwards:
+# the animated companion's own backend routes and their tests may then be part of the step. Nothing else may.
+[ "${LUMEN_WEB_UPDATE_WITH_AVATAR_API:-}" != 1 ] || FRONTEND_ONLY="${FRONTEND_ONLY%)}|backend/lumen/avatar\\.py\$|backend/tests/test_avatar\\.py\$)"
 problems=0
 pass() { printf 'PASS  %s\n' "$1"; }
 bad()  { printf 'FAIL  %s\n' "$1"; problems=$((problems + 1)); }
@@ -64,7 +67,8 @@ check() {
     local changed other touched
     changed=$(git -C "$REPO" diff --name-only "$previous" "$target")
     other=$(grep -Ev "$FRONTEND_ONLY" <<< "$changed" || true)
-    [ -z "$other" ] && pass "frontend only: $(wc -l <<< "$changed") file(s), none in the backend, database, dependencies or service scripts" \
+    local scope="frontend only"; [ "${LUMEN_WEB_UPDATE_WITH_AVATAR_API:-}" != 1 ] || scope="web app and avatar routes only"
+    [ -z "$other" ] && pass "$scope: $(wc -l <<< "$changed") file(s), none in the ${LUMEN_WEB_UPDATE_WITH_AVATAR_API:+rest of the }backend, database, dependencies or service scripts" \
       || bad "not a frontend-only change; this procedure does not apply. Outside the web app: $(tr '\n' ' ' <<< "$other")"
     touched=$(comm -12 <(sort <<< "$changed") <(local_edits | sort))
     [ -z "$touched" ] && pass "no locally edited file is touched ($(local_edits | wc -l) local edit(s) stay as they are)" \

@@ -196,12 +196,61 @@ bridge. If the web app does not answer after the swap it puts the old build
 back by itself. `scripts/test-animated-web-update.sh` exercises all of this
 offline.
 
+## Scenes
+
+A scene is another prepared MuseTalk avatar on the GPU host: Original (GOLD V2,
+always there and the default) plus whatever the owner lists there, for example
+Midnight Sanctuary. Nothing new streams video: the same OpenAvatarChat,
+MuseTalk, WebRTC session and bridge serve one scene at a time.
+
+- The bridge owns the list (`lumen_bridge/scenes.py` in lumen-avatar-lab) and
+  decides what is ready: a scene must have a complete prepared cache **and** the
+  owner's approval. Lumen only relays ids, labels and status codes through
+  `GET /v0.1/avatar/scenes` and `POST /v0.1/avatar/scene` (signed-in user, own
+  companion, scene id from the bridge's list only). No path, secret or bridge
+  address reaches the browser.
+- The app shows a small Scene row under the video (`components/AnimatedScenes.tsx`)
+  only when the host lists more than Original. The scene marked is the one the
+  bridge reports as serving. A scene that is not ready is listed, greyed out,
+  with the reason, and cannot be pressed.
+- Changing scene restarts the avatar bridge, so it is not seamless: the app
+  asks first, the video is away for about a minute, and the app reconnects by
+  itself. It cannot be chosen while Lumen is replying or speaking. The bridge
+  refuses while ComfyUI has work queued, FramePack is running or GPU memory is
+  short, and the app then says so and leaves the video as it was. If the new
+  scene fails to load, the bridge comes back with Original and the app says so.
+  Conversations, text replies and ordinary audio are unaffected throughout.
+- A further scene needs no app change: it is listed and approved on the GPU host.
+
+Because this step changes `backend/lumen/avatar.py`, the frontend-only updater
+refuses it. It goes in with `scripts/animated-api-update.sh`, run from the
+reviewed clone as the lumen-api user, after the bridge side is in place:
+
+```bash
+scripts/animated-api-update.sh check       # read-only; ends with READY or NOT READY
+LUMEN_API_UPDATE_CONFIRM=update:<commit> scripts/animated-api-update.sh update
+scripts/animated-api-update.sh status
+LUMEN_API_UPDATE_CONFIRM=rollback scripts/animated-api-update.sh rollback
+```
+
+`update` does what the web updater does (build in the clone, swap `dist`,
+fast-forward the live checkout), then restarts lumen-api only and requires it
+healthy, with the memory settings from systemd and every drop-in exactly as
+before; otherwise it puts the earlier build and commit back and restarts
+lumen-api again. It refuses any commit that changes more than the web app and
+`backend/lumen/avatar.py`. `scripts/animated-deploy.sh cutover` is not run
+again. Either order of the two sides is safe: an older bridge makes Lumen
+report Original only, and an older Lumen simply never asks the bridge.
+`scripts/test-animated-api-update.sh` exercises all of it offline.
+
 ## Tests
 
 ```bash
 cd backend && python -m pytest -q          # includes tests/test_avatar.py, tests/test_animated_preview_memory.py and the voice tests
 node --test tests/*.test.cjs               # includes tests/animated-companion.test.cjs and tests/animated-display-size.test.cjs
 node scripts/test-animated-size-component.cjs   # optional: needs react-test-renderer@19.1.0
+node scripts/test-animated-scenes-component.cjs # optional, same dependency; tests/animated-scenes.test.cjs needs nothing
+bash scripts/test-animated-api-update.sh
 npm run typecheck
 ```
 

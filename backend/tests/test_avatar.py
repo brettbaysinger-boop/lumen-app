@@ -127,6 +127,114 @@ class AvatarRoutes(unittest.TestCase):
                 self.assertEqual(self.client.post("/v0.1/avatar/offer", json=body).status_code, 422)
             upstream.assert_not_called()
 
+    # --- scenes -----------------------------------------------------------------------
+    LISTED = {"active": "original", "switching": None, "catalog_ok": True, "last_error": None, "scenes": [
+        {"id": "original", "label": "Original", "status": "ready"},
+        {"id": "midnight-sanctuary", "label": "Midnight Sanctuary", "status": "unavailable"},
+        {"id": "rose-garden", "label": "Rose Garden", "status": "ready"}]}
+
+    def scene_bridge(self, listed=None, answer=None, posts=None):
+        def handler(request):
+            self.assertEqual(request.headers["x-lumen-avatar-key"], SECRET)
+            self.assertNotIn("authorization", request.headers)
+            if request.method == "GET":
+                self.assertEqual(str(request.url), "https://heavy:8283/lumen/scenes")
+                return listed if isinstance(listed, httpx.Response) else httpx.Response(200, json=listed or self.LISTED)
+            self.assertEqual(str(request.url), "https://heavy:8283/lumen/scene")
+            if posts is not None:
+                posts.append(json.loads(request.read()))
+            return answer or httpx.Response(202, json={"accepted": True, "scene": "rose-garden", "restart": True})
+        return self.upstream(handler)
+
+    def choose(self, scene="rose-garden"):
+        return self.client.post("/v0.1/avatar/scene", json={"companion_id": COMPANION, "scene": scene})
+
+    def test_scene_routes_require_a_signed_in_user_and_an_owned_companion(self):
+        from fastapi import HTTPException
+        self.owned.stop()
+        with patch("lumen.avatar.owned_companion", AsyncMock(side_effect=HTTPException(404, "Companion not found."))), \
+                patch("lumen.avatar.httpx.AsyncClient") as upstream:
+            self.assertEqual(self.choose().status_code, 404)
+            upstream.assert_not_called()
+        self.owned.start()
+        self.app.dependency_overrides.clear()
+        with patch("lumen.avatar.httpx.AsyncClient") as upstream:
+            self.assertEqual(self.client.get("/v0.1/avatar/scenes").status_code, 401)
+            self.assertEqual(self.choose().status_code, 401)
+            upstream.assert_not_called()
+
+    def test_scenes_are_listed_with_status_and_nothing_else(self):
+        dirty = json.loads(json.dumps(self.LISTED))
+        dirty["scenes"][1]["config"] = "/data/private/midnight.yaml"
+        dirty["scenes"] += [{"id": "../etc", "label": "x", "status": "ready"},
+                            {"id": "odd", "label": "<b>", "status": "ready"},
+                            {"id": "late", "label": "Late", "status": "live"}, "junk"]
+        dirty["secret"] = SECRET
+        with self.scene_bridge(dirty):
+            reply = self.client.get("/v0.1/avatar/scenes")
+        self.assertEqual(reply.json(), {"switchable": True, "active": "original", "switching": None, "last_error": None,
+                                        "scenes": self.LISTED["scenes"]})
+        self.assertNotIn("/data", reply.text)
+        self.assertNotIn(SECRET, reply.text)
+
+    def test_a_bridge_without_scenes_offers_only_the_original(self):
+        only = {"switchable": False, "active": "original", "switching": None, "last_error": None,
+                "scenes": [{"id": "original", "label": "Original", "status": "ready"}]}
+        for listed in (httpx.Response(404), httpx.Response(200, json={"status": "ok"}), httpx.Response(200, content=b"x"),
+                       httpx.Response(200, json={"active": "gone", "scenes": self.LISTED["scenes"]})):
+            with self.scene_bridge(listed):
+                self.assertEqual(self.client.get("/v0.1/avatar/scenes").json(), only)
+            with self.scene_bridge(listed):
+                self.assertEqual(self.choose().status_code, 404)
+        for listed in (httpx.Response(500), httpx.Response(401)):
+            with self.scene_bridge(listed):
+                self.assertEqual(self.client.get("/v0.1/avatar/scenes").status_code, 503)
+        self.configure(avatar_url="")
+        with patch("lumen.avatar.httpx.AsyncClient") as upstream:
+            self.assertEqual(self.client.get("/v0.1/avatar/scenes").status_code, 503)
+            self.assertEqual(self.choose().status_code, 503)
+            upstream.assert_not_called()
+
+    def test_a_ready_scene_is_chosen_by_id_only(self):
+        posts = []
+        with self.scene_bridge(posts=posts):
+            reply = self.choose()
+        self.assertEqual((reply.status_code, reply.json()), (202, {"accepted": True, "scene": "rose-garden", "label": "Rose Garden"}))
+        self.assertEqual(posts, [{"scene": "rose-garden"}])
+
+    def test_unprepared_unknown_and_malformed_scenes_never_reach_the_switch(self):
+        posts = []
+        with self.scene_bridge(posts=posts):
+            reply = self.choose("midnight-sanctuary")
+            self.assertEqual((reply.status_code, reply.json()["detail"]["code"]), (409, "not_ready"))
+            self.assertEqual(self.choose("nope").status_code, 404)
+            self.assertEqual(self.choose("original").json()["detail"]["code"], "already_active")
+            for bad in ("../../etc/passwd", "/data/x.yaml", "UPPER", "", "a" * 40):
+                self.assertEqual(self.choose(bad).status_code, 422)
+        pending = dict(self.LISTED, scenes=[self.LISTED["scenes"][0], dict(self.LISTED["scenes"][1], status="not_approved")])
+        with self.scene_bridge(pending, posts=posts):
+            self.assertEqual(self.choose("midnight-sanctuary").json()["detail"]["code"], "not_approved")
+        with self.scene_bridge(dict(self.LISTED, switching="rose-garden"), posts=posts):
+            self.assertEqual(self.choose().json()["detail"]["code"], "switch_in_progress")
+        self.assertEqual(posts, [])
+
+    def test_bridge_refusals_are_told_plainly_and_other_failures_are_unavailable(self):
+        for code in ("comfyui_busy", "framepack_running", "gpu_memory_low", "gpu_unknown", "not_managed"):
+            with self.scene_bridge(answer=httpx.Response(409, json={"code": code, "path": "/data/x"})):
+                reply = self.choose()
+            self.assertEqual((reply.status_code, reply.json()["detail"]), (409, {"code": code, "message": avatar.SCENE_REFUSALS[code]}))
+            self.assertIn("not changed", reply.json()["detail"]["message"]) if code != "not_managed" else None
+        for answer in (httpx.Response(409, json={"code": "something_else"}), httpx.Response(500), httpx.Response(202, content=b"x"),
+                       httpx.Response(200, json={"accepted": True})):
+            with self.scene_bridge(answer=answer):
+                self.assertEqual(self.choose().status_code, 503)
+
+    def test_a_failed_scene_is_reported_after_the_original_returns(self):
+        failed = dict(self.LISTED, last_error={"code": "scene_failed_to_start", "scene": "rose-garden", "detail": "CUDA /data"})
+        with self.scene_bridge(failed):
+            body = self.client.get("/v0.1/avatar/scenes").json()
+        self.assertEqual((body["active"], body["last_error"]), ("original", {"code": "scene_failed_to_start", "scene": "rose-garden"}))
+
     # --- speech tickets ---------------------------------------------------------------
     def test_speech_ticket_is_collected_once_by_the_bridge_only(self):
         ticket = self.client.post("/v0.1/avatar/speech", content=WAV).json()["ticket"]

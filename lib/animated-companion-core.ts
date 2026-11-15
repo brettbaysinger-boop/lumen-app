@@ -238,3 +238,59 @@ export function animatedDisplayEdge(size: AnimatedSize, windowWidth: number, win
 export function stepAnimatedSize(size: AnimatedSize, direction: 1 | -1): AnimatedSize | null {
   return ANIMATED_SIZES[ANIMATED_SIZES.indexOf(size) + direction] ?? null;
 }
+
+// --- Scenes ---------------------------------------------------------------
+// A scene is another prepared avatar on the GPU host. The list, and what is ready, come from the server; the
+// app never decides that a scene is live. Choosing one restarts the avatar service, so it is never seamless:
+// the video goes away for about a minute and comes back with whichever scene is actually serving.
+
+export type SceneStatus = 'ready' | 'not_approved' | 'unavailable';
+export interface AnimatedScene { id: string; label: string; status: SceneStatus }
+export interface SceneList { switchable: boolean; active: string; switching: string | null; scenes: AnimatedScene[]; failed: string | null }
+
+const SCENE_ID = /^[a-z0-9][a-z0-9-]{0,31}$/;
+const SCENE_STATUSES: readonly string[] = ['ready', 'not_approved', 'unavailable'];
+
+/** The server's scene list, or null when the answer is not one. Anything unexpected is dropped, never shown. */
+export function sceneList(raw: any): SceneList | null {
+  if (!raw || !Array.isArray(raw.scenes)) return null;
+  const scenes: AnimatedScene[] = [];
+  for (const item of raw.scenes) {
+    if (typeof item?.id === 'string' && SCENE_ID.test(item.id) && typeof item.label === 'string' && item.label.length > 0 && item.label.length <= 40
+      && SCENE_STATUSES.includes(item.status) && !scenes.some(scene => scene.id === item.id)) scenes.push({ id: item.id, label: item.label, status: item.status });
+  }
+  if (!scenes.some(scene => scene.id === raw.active)) return null;
+  const known = (id: unknown): string | null => typeof id === 'string' && scenes.some(scene => scene.id === id) ? id : null;
+  return { switchable: raw.switchable === true, active: raw.active, switching: known(raw.switching), scenes, failed: known(raw.last_error?.scene) };
+}
+
+/** Why a scene cannot be chosen right now, or null when it can. `busy`: a reply is being written or spoken. */
+export function sceneBlocked(list: SceneList, scene: AnimatedScene, busy: boolean, switching: boolean): string | null {
+  if (scene.id === list.active) return 'showing now';
+  if (scene.status === 'unavailable') return 'not ready yet';
+  if (scene.status === 'not_approved') return 'awaiting approval';
+  if (!list.switchable) return 'not available';
+  if (switching || list.switching) return 'a scene change is under way';
+  if (busy) return 'wait until Lumen has finished speaking';
+  return null;
+}
+
+export const SCENE_POLL_MS = 5_000;
+export const SCENE_WAIT_MS = 180_000;
+
+/**
+ * After a scene change was accepted: wait for the avatar service to come back, and report the scene it is
+ * actually serving. That is the wanted scene, or the original when the wanted one could not load. Null when
+ * the service has not come back in time; the app then stays on the portrait.
+ */
+export async function awaitScene(read: () => Promise<SceneList | null>, sleep: (ms: number) => Promise<void>, stillWanted: () => boolean = () => true): Promise<SceneList | null> {
+  let gone = false;
+  for (let waited = 0; waited < SCENE_WAIT_MS && stillWanted(); waited += SCENE_POLL_MS) {
+    await sleep(SCENE_POLL_MS);
+    const list = await read().catch(() => null);
+    if (!list) { gone = true; continue; }
+    // Back after the restart, or the restart was so quick that it was never seen down.
+    if (!list.switching && (gone || waited >= 4 * SCENE_POLL_MS)) return list;
+  }
+  return null;
+}

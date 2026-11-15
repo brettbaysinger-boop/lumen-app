@@ -138,5 +138,5 @@ test('the chat screen keeps the portrait and offers the mode only when the serve
   assert.equal((screen.match(/<CompanionPortrait /g)||[]).length,3);
   const session=fs.readFileSync('lib/animated-companion.ts','utf8');
   assert.doesNotMatch(session,/getUserMedia|voice\/speak|respond/);
-  for(const path of session.match(/\/v0\.1\/[a-z/]+/g))assert.match(path,/^\/v0\.1\/avatar\/(status|offer|speech)$/);
+  for(const path of session.match(/\/v0\.1\/[a-z/]+/g))assert.match(path,/^\/v0\.1\/avatar\/(status|offer|speech|scenes|scene)$/);
 });
