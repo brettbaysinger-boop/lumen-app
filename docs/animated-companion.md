@@ -60,7 +60,8 @@ With `AVATAR_URL` blank (the default) the mode is off: `status` reports
   Theater (up to 560 px) and Wide Theater (up to 840 x 560).
   The first three are square close-ups that crop the sides of the frame, as
   before. Wide Theater has the 3:2 shape of the 768 x 512 source video and shows
-  the whole frame, uncropped and unstretched. It cannot show anything that is
+  the whole frame, uncropped and unstretched, with square corners so that not
+  even the corner pixels are cut off (the square sizes keep rounded corners). It cannot show anything that is
   not in the source video.
   Every size is limited by the width of the conversation column (the window,
   less an open sidebar, minus margins) and by the window height (40%, 50% and

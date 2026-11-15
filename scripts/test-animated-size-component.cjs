@@ -30,6 +30,7 @@ const label=root=>root.root.findAllByType('Text').find(text=>String(text.props.a
   // Square Theater to Wide Theater: the box becomes 3:2 and the picture is shown whole instead of cropped.
   await press(root,'Expand');
   assert.equal(box(root).width,840);assert.equal(box(root).height,560);assert.equal(video(root).props.style.objectFit,'contain');
+  assert.equal(box(root).borderRadius,0);                                         // square corners: a rounded corner would cut off frame pixels
   assert.equal(label(root),'Animated companion size: Wide Theater');assert.equal(button(root,'Expand').props.disabled,true);
   // The sidebar opens: the column is narrower than the window, and the video follows the column.
   await act(async()=>outer(root).props.onLayout({nativeEvent:{layout:{width:1920-280}}}));
@@ -38,7 +39,7 @@ const label=root=>root.root.findAllByType('Text').find(text=>String(text.props.a
   assert.equal(box(root).width,712);assert.equal(box(root).height,475);
   await act(async()=>outer(root).props.onLayout({nativeEvent:{layout:{width:1920}}}));
   await press(root,'Shrink');
-  assert.equal(box(root).width,560);assert.equal(box(root).height,560);assert.equal(video(root).props.style.objectFit,'cover');
+  assert.equal(box(root).width,560);assert.equal(box(root).height,560);assert.equal(video(root).props.style.objectFit,'cover');assert.equal(box(root).borderRadius,560*0.12);   // the square sizes keep their rounded corners
   await press(root,'Shrink');await press(root,'Shrink');
   assert.equal(box(root).width,260);assert.equal(button(root,'Shrink').props.disabled,true);
   await press(root,'Shrink');                                                      // at the end: nothing happens

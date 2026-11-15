@@ -14,7 +14,8 @@ function rememberSize(size: AnimatedSize) { try { globalThis.localStorage?.setIt
 // connected; everywhere else the existing CompanionPortrait is used unchanged.
 // Changing the size only changes the box around the one video element and how
 // the picture fills it: the element, its stream and the avatar session stay
-// exactly as they are.
+// exactly as they are. The square sizes have rounded corners; the uncropped size
+// has square corners, because a rounded corner would cut off pixels of the frame.
 export function AnimatedCompanion({ session, borderColor, controlColor }: { session: AnimatedCompanionSession; borderColor: string; controlColor: string }) {
   const bind = useCallback((element: HTMLVideoElement | null) => { session.attach(element); }, [session]);
   const { width: windowWidth, height } = useWindowDimensions();
@@ -34,7 +35,7 @@ export function AnimatedCompanion({ session, borderColor, controlColor }: { sess
   );
   return (
     <View onLayout={measure} style={{ alignSelf: 'stretch', alignItems: 'center', maxWidth: '100%' }}>
-      <View accessibilityLabel="Animated companion" style={{ width: box.width, height: box.height, maxWidth: '100%', borderRadius: box.contain ? 14 : box.height * 0.12, overflow: 'hidden', borderWidth: 1, borderColor, backgroundColor: '#000' }}>
+      <View accessibilityLabel="Animated companion" style={{ width: box.width, height: box.height, maxWidth: '100%', borderRadius: box.contain ? 0 : box.height * 0.12, overflow: 'hidden', borderWidth: 1, borderColor, backgroundColor: '#000' }}>
         {createElement('video', { ref: bind, autoPlay: true, playsInline: true, muted: true, style: { width: '100%', height: '100%', objectFit: box.contain ? 'contain' : 'cover' } })}
       </View>
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 14, marginTop: 6 }}>
