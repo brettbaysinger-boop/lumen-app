@@ -175,6 +175,7 @@ verify() {  # $1 = new APK, $2 = the APK it replaces
   unzip -p "$new" assets/index.android.bundle > "$new_bundle" 2>/dev/null || true
   unzip -p "$old" assets/index.android.bundle > "$old_bundle" 2>/dev/null || true
   [ -s "$new_bundle" ] && pass "new APK contains the app bundle" || bad "new APK has no assets/index.android.bundle"
+  grep -qaF 'Open live video in your browser' "$new_bundle" && pass "new APK carries the refreshed JavaScript (the Live video action)" || bad "new APK does not carry the refreshed JavaScript: it is an older bundle"
   for name in $PUBLIC_SETTINGS; do
     value=$(sed -n "s/^$name=//p" "$LIVE_DIR/.env" 2>/dev/null | sed -n '1p' | sed 's/^"\(.*\)"$/\1/')
     if [ -z "$value" ]; then bad "$name is not set in $LIVE_DIR/.env, so the new APK cannot be checked for it"; continue; fi
@@ -215,8 +216,9 @@ build_check() {
     while read -r file; do
       file="$dir/${file#./}"
       if [ -f "$REPO/$file" ] && cmp -s "$REPO/$file" "$BUILD_TREE/$file"; then continue; fi
+      if kept_file "$file"; then info "  kept as it is: $file"; continue; fi
       changes=$((changes + 1))
-      if kept_file "$file"; then info "  kept as it is: $file"; elif ! ever_committed "$file"; then local_edits="$local_edits $file"; fi
+      ever_committed "$file" || local_edits="$local_edits $file"
     done < <(cd "$BUILD_TREE/$dir" && find . -type f | sort)
   done
   for dir in $SOURCE_DIRS; do changes=$((changes + $(cd "$REPO/$dir" && find . -type f | while read -r file; do [ -e "$BUILD_TREE/$dir/$file" ] || echo x; done | wc -l))); done
@@ -224,7 +226,17 @@ build_check() {
   if [ -z "$local_edits" ]; then pass "every file to be replaced is an older committed version: no local edit would be lost"
   else bad "the native project has files that were never committed. Replacing them would lose local edits:"; for file in $local_edits; do info "    $file"; done
        info "  To keep them exactly as they are: ANDROID_REFRESH_KEEP=\"${local_edits# }\""; fi
-  [ "$changes" -gt 0 ] || bad "the native project already has this source: nothing to build"
+  if [ "$changes" = 0 ]; then
+    bad "the native project already has this source: nothing to build"
+    # Usually an earlier build already ran. Say what it left, so its APK can be verified instead of built again.
+    local last; last=$({ ls -1d "$STATE_DIR"/build-* 2>/dev/null || true; } | sort | tail -1)
+    if [ -n "$last" ] && [ -f "$last/record" ]; then
+      info "an earlier build finished: $last"; sed -n '/^\(commit\|sha256\|previous_sha256\)=/s/^/INFO    /p' "$last/record"
+      if [ -s "$OLD_APK" ] && [ "$(sha "$OLD_APK")" = "$(sed -n 's/^sha256=//p' "$last/record")" ]; then info "the project's release APK is that build's APK. Do not build again; with the phone attached run: $0 verify $(ls -1 "$last"/raialume-preview-*.apk 2>/dev/null | sed -n '1p')"
+      else info "the project's release APK is NOT that build's APK: stop and report this"; fi
+    elif [ -n "$last" ]; then info "an earlier build was started but did not finish its checks: $last (see build.log there). Its APK can still be checked with: $0 verify $OLD_APK"
+    else info "no build by this script is recorded under $STATE_DIR: the source was put there some other way"; fi
+  fi
 }
 
 build() {

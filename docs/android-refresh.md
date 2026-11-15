@@ -134,6 +134,6 @@ refuses a rollback, it stops and leaves the app and its data in place.
 
 ## Tests
 
-`node --test tests/*.test.cjs` (105), `scripts/test-android-refresh.sh` (47 checks, stand-ins for
+`node --test tests/*.test.cjs` (105), `scripts/test-android-refresh.sh` (49 checks, stand-ins for
 adb, Gradle and the SDK tools), `scripts/test-animated-size-component.cjs`, `npm run typecheck`, and an
 Android JavaScript export of this commit. No device or APK build was involved.

@@ -14,23 +14,23 @@ apk() {  # apk FILE PACKAGE VERSIONCODE CERT BUNDLE-TEXT
   (cd "$d" && zip -q -r "$1" .); rm -rf "$d"
 }
 apk "$T/old.apk" com.raialume.preview 1 AAAA "old app $SETTINGS"
-apk "$T/new.apk" com.raialume.preview 1 AAAA "new app $SETTINGS"
-apk "$T/other-package.apk" com.raialume.other 1 AAAA "new app $SETTINGS"
-apk "$T/other-key.apk" com.raialume.preview 1 BBBB "new app $SETTINGS"
-apk "$T/unsigned.apk" com.raialume.preview 1 INVALID "new app $SETTINGS"
-apk "$T/no-settings.apk" com.raialume.preview 1 AAAA "new app undefined undefined undefined"
-apk "$T/other-server.apk" com.raialume.preview 1 AAAA "new app https://supabase.fictional.invalid fictional-anon-key https://elsewhere.invalid"
-apk "$T/newer.apk" com.raialume.preview 2 AAAA "new app $SETTINGS"
+apk "$T/new.apk" com.raialume.preview 1 AAAA "new app Open live video in your browser $SETTINGS"
+apk "$T/other-package.apk" com.raialume.other 1 AAAA "new app Open live video in your browser $SETTINGS"
+apk "$T/other-key.apk" com.raialume.preview 1 BBBB "new app Open live video in your browser $SETTINGS"
+apk "$T/unsigned.apk" com.raialume.preview 1 INVALID "new app Open live video in your browser $SETTINGS"
+apk "$T/no-settings.apk" com.raialume.preview 1 AAAA "new app Open live video in your browser undefined undefined undefined"
+apk "$T/other-server.apk" com.raialume.preview 1 AAAA "new app Open live video in your browser https://supabase.fictional.invalid fictional-anon-key https://elsewhere.invalid"
+apk "$T/newer.apk" com.raialume.preview 2 AAAA "new app Open live video in your browser $SETTINGS"
 cp "$T/old.apk" "$R/preview.fictional/android/app/app-release.apk"; touch "$R/preview.fictional/android/app/google-services.json"
 echo 'MYAPP_UPLOAD_STORE_PASSWORD=never-print-this' > "$R/preview.fictional/android/gradle.properties"
 cp "$T/old.apk" "$S/phone.apk"; echo 1 > "$S/devices"
 
 # Like the real tools, these print far more than the one line that is read: a reader that stops early must not break the run.
-printf '#!/usr/bin/env bash\nunzip -p "$3" badging; for i in $(seq 1 40000); do echo "uses-permission: name=fictional.$i"; done\n' > "$B/aapt2"
+printf '#!/usr/bin/env bash\nunzip -p "$3" badging; for i in $(seq 1 20000); do echo "uses-permission: name=fictional.$i"; done\n' > "$B/aapt2"
 cat > "$B/apksigner" <<'STUB'
 #!/usr/bin/env bash
 file="${@: -1}"; cert=$(unzip -p "$file" cert); [ "$cert" != INVALID ] || exit 1
-[ "$2" = --print-certs ] && { echo "Signer #1 certificate SHA-256 digest: $cert"; for i in $(seq 1 40000); do echo "Signer #1 fictional line $i"; done; }; exit 0
+[ "$2" = --print-certs ] && { echo "Signer #1 certificate SHA-256 digest: $cert"; for i in $(seq 1 20000); do echo "Signer #1 fictional line $i"; done; }; exit 0
 STUB
 printf '#!/usr/bin/env bash\ncase "$1" in -u) [ -f "%s/root" ] && echo 0 || echo 1000 ;; *) echo fictional ;; esac\n' "$S" > "$B/id"
 mkdir -p "$H/Android/Sdk/platform-tools"; ADB="$H/Android/Sdk/platform-tools/adb"   # not on PATH: found in the SDK
@@ -138,5 +138,7 @@ BUILT=$(ls -1d "$H"/state/lumen-android-refresh/build-* | sort | tail -1)
 [[ $(sum "$BUILT/previous.apk") == "$OLD" && -s "$BUILT/previous-source.tar" && $(sum "$BUILT/raialume-preview-$HEAD12.apk") == "$(sed -n 's/^sha256=//p' "$BUILT/record")" ]] && ok "build: previous APK and source kept, new APK recorded by hash" || bad "build record wrong"
 grep -q "gradlew assembleRelease NODE_ENV=production" "$S/calls" && ! grep -qE 'prebuild|^adb ' "$S/calls" && ok "build: the project's own release build, no prebuild, no phone" || bad "unexpected build calls: $(cat "$S/calls")"
 [[ $out != *fictional-anon-key* ]] && ! grep -rq fictional-anon-key "$BUILT/record" "$N/.env" 2>/dev/null && ok "build: settings not printed and not written into the project" || bad "build leaked a setting"
+ARGS=(build); if out=$(brun ANDROID_REFRESH_KEEP="lib/social-auth.ts" ANDROID_REFRESH_CONFIRM="build:$HEAD12" 2>&1); then bad "built twice"; else [[ $out == *"nothing to build"*"an earlier build finished: $BUILT"*"Do not build again"*"verify $BUILT/raialume-preview-$HEAD12.apk"* && $(grep -c gradlew "$S/calls") == 3 ]] && ok "build: a second run changes nothing and points at the finished build's APK" || bad "second build: $out"; fi
+apk "$T/stale.apk" com.raialume.preview 1 AAAA "old app $SETTINGS"; cp "$T/new.apk" "$S/phone.apk"; refuse stale.apk "older bundle" "an APK with an older JavaScript bundle"; cp "$T/old.apk" "$S/phone.apk"
 ARGS=(verify "$BUILT/raialume-preview-$HEAD12.apk"); out=$(brun 2>&1) && [[ $out == *"Safe to install"* ]] && ok "the built APK then passes verify against the phone" || bad "verify built: $out"
 [ "$fail" = 0 ] && echo "android refresh: all checks passed" || { echo "android refresh: FAILED"; exit 1; }
