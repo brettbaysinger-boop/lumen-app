@@ -46,7 +46,7 @@ import { CompanionPortrait } from '@/components/CompanionPortrait';
 import { AnimatedCompanion } from '@/components/AnimatedCompanion';
 import { AnimatedCompanionSession, animatedCompanionAvailable, type AnimatedState } from '@/lib/animated-companion';
 import { AutoSpeak } from '@/lib/animated-companion-core';
-import { liveVideoOnWeb, openLiveVideoOnWeb } from '@/lib/live-video-web';
+import { liveVideoPrompt, liveVideoStatus, liveVideoWebUrl, openLiveVideoOnWeb } from '@/lib/live-video-web';
 import { PracticeSavedCard } from '@/components/PracticeSavedCard';
 import { ProviderRequests } from '@/components/ProviderRequests';
 import { DayActionCard } from '@/components/DayActionCard';
@@ -87,8 +87,8 @@ export default function ChatScreen() {
   const [animatedOffered, setAnimatedOffered] = useState(false);
   const [animatedState, setAnimatedState] = useState<AnimatedState>('off');
   const [animatedNote, setAnimatedNote] = useState<string | null>(null);
-  // Phone app only: the address of the web app, while the server offers live video there.
-  const [liveVideoWeb, setLiveVideoWeb] = useState<string | null>(null);
+  // Phone app only: the Live video action is always there. Whether video runs is asked on each tap.
+  const [liveVideoChecking, setLiveVideoChecking] = useState(false);
   const animatedRef = useRef<AnimatedCompanionSession | null>(null);
   // Sound the browser refused to play until the user interacts with the page (autoplay rules).
   const [soundBlocked, setSoundBlocked] = useState(false);
@@ -332,25 +332,26 @@ export default function ChatScreen() {
   useEffect(() => {
     animated.close();
     setAnimatedOffered(false);
-    setLiveVideoWeb(null);
-    if (!companion?.id) return;
+    if (Platform.OS !== 'web' || !companion?.id) return;
     const controller = new AbortController();
-    if (Platform.OS !== 'web') {
-      void liveVideoOnWeb(controller.signal).then(url => { if (!controller.signal.aborted) setLiveVideoWeb(url); });
-      return () => controller.abort();
-    }
     void animatedCompanionAvailable(controller.signal).then(available => { if (!controller.signal.aborted) setAnimatedOffered(available); });
     return () => controller.abort();
   }, [companion?.id, animated]);
-  // The phone app has no video engine of its own. It asks first, then opens the web app in the browser.
-  const openLiveVideo = useCallback(() => {
-    const url = liveVideoWeb;
-    if (!url) return;
-    Alert.alert('Open live video in your browser?', 'Live video and Wide Theater run in the Lumen web app. This opens it in your browser. The browser keeps its own Lumen sign-in, so sign in there the first time. This app stays as it is, with the portrait and voice.', [
-      { text: 'Cancel', style: 'cancel' },
-      { text: 'Open', onPress: () => { void openLiveVideoOnWeb(url).then(opened => { if (!opened && mountedRef.current) setAnimatedNote('Live video could not be opened in a browser. Lumen is using the portrait.'); }); } },
-    ]);
-  }, [liveVideoWeb]);
+  // The phone app has no video engine of its own. It asks the server whether video runs, tells the
+  // person, and only then opens the web app in the browser. Nothing is remembered between taps, so the
+  // action works again as soon as the video service is back, without restarting the app.
+  const openLiveVideo = useCallback(async function check() {
+    const url = liveVideoWebUrl();
+    setLiveVideoChecking(true);
+    const status = url ? await liveVideoStatus() : 'unknown';
+    if (!mountedRef.current) return;
+    setLiveVideoChecking(false);
+    const prompt = liveVideoPrompt(url, status);
+    const open = () => { if (url) void openLiveVideoOnWeb(url).then(opened => { if (!opened && mountedRef.current) setAnimatedNote('Live video could not be opened in a browser. Lumen is using the portrait.'); }); };
+    Alert.alert(prompt.title, prompt.message, prompt.choices.map(choice => choice === 'cancel' ? { text: prompt.choices.length === 1 ? 'OK' : 'Cancel', style: 'cancel' as const }
+      : choice === 'retry' ? { text: 'Check again', onPress: () => { void check(); } }
+      : { text: status === 'available' ? 'Open' : 'Open web app', onPress: open }));
+  }, []);
   const toggleAnimated = useCallback(async () => {
     setAnimatedNote(null);
     if (animated.state !== 'off') { playbackRef.current?.abort(); autoSpeak.cancel(); blockedReplyRef.current = null; setSoundBlocked(false); animated.close(); return; }
@@ -858,8 +859,8 @@ export default function ChatScreen() {
           {animatedOffered && <TouchableOpacity accessibilityRole="switch" accessibilityState={{ checked: animatedState !== 'off', busy: animatedState === 'connecting' }} accessibilityLabel="Animated companion" disabled={animatedState === 'connecting'} onPress={toggleAnimated}>
             <Text style={{color:colors.primary[300],fontSize:12}}>{animatedState === 'ready' ? 'Animated: on' : animatedState === 'connecting' ? 'Connecting…' : 'Animated: off'}</Text>
           </TouchableOpacity>}
-          {Platform.OS !== 'web' && !!liveVideoWeb && <TouchableOpacity accessibilityRole="link" accessibilityLabel="Open live video in your browser" accessibilityHint="Opens the Lumen web app, where the animated companion and Wide Theater run" onPress={openLiveVideo}>
-            <Text style={{color:colors.primary[300],fontSize:12}}>Live video ↗</Text>
+          {Platform.OS !== 'web' && <TouchableOpacity accessibilityRole="link" accessibilityLabel="Open live video in your browser" accessibilityHint="Checks whether video is running, then offers to open the Lumen web app, where the animated companion and Wide Theater run" accessibilityState={{ busy: liveVideoChecking }} disabled={liveVideoChecking} hitSlop={8} onPress={() => { void openLiveVideo(); }}>
+            <Text style={{color:colors.primary[300],fontSize:12}}>{liveVideoChecking ? 'Checking…' : 'Live video ↗'}</Text>
           </TouchableOpacity>}
           <TouchableOpacity accessibilityRole="button" accessibilityLabel="Open your documents" disabled={sending || voiceBusy || documentBusy} onPress={() => router.push('/documents')}>
             <Text style={{color:colors.primary[300],fontSize:12}}>Documents</Text>
@@ -1254,7 +1255,9 @@ function useMemoStyles(c: ExtendedThemeColors, isMobile: boolean) {
       alignItems: 'center',
       justifyContent: 'space-between',
       paddingHorizontal: isMobile ? Spacing.sm + 2 : Spacing.md,
-      paddingVertical: 18,
+      // On a phone the actions get a row of their own under the name, instead of squeezing beside it.
+      flexWrap: isMobile ? 'wrap' : 'nowrap',
+      paddingVertical: isMobile ? 10 : 18,
       borderBottomWidth: 1,
       borderBottomColor: c.neutral[800],
       maxWidth: 800,
@@ -1289,6 +1292,7 @@ function useMemoStyles(c: ExtendedThemeColors, isMobile: boolean) {
       flexDirection: 'row',
       alignItems: 'center',
       gap: Spacing.xs,
+      ...(isMobile ? { width: '100%' as const, justifyContent: 'flex-end' as const, flexWrap: 'wrap' as const, columnGap: Spacing.md, rowGap: 6, marginTop: 6 } : {}),
     },
     statusDot: {
       width: 8,

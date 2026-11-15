@@ -36,19 +36,36 @@ export function liveVideoWebUrl(): string | null {
   return lumenWebUrl(process.env.EXPO_PUBLIC_LUMEN_WEB_URL, process.env.EXPO_PUBLIC_LUMEN_API_URL);
 }
 
+export type LiveVideoStatus = 'available' | 'unavailable' | 'unknown';
+const STATUS_TIMEOUT_MS = 8_000;
+
 /**
- * The web address to offer, or null. Offered only when the address is known and the server says
- * the animated companion is switched on and its avatar service is reachable right now.
+ * Asked each time the action is used, never remembered: the avatar service is stopped and started
+ * while the app is open (for example while its graphics card does other work).
+ * 'unavailable' is the server's own answer; 'unknown' means the server could not be asked.
  */
-export async function liveVideoOnWeb(signal?: AbortSignal): Promise<string | null> {
-  const web = liveVideoWebUrl();
+export async function liveVideoStatus(): Promise<LiveVideoStatus> {
   const api = process.env.EXPO_PUBLIC_LUMEN_API_URL?.trim().replace(/\/+$/, '');
-  if (!web || !api) return null;
+  if (!api) return 'unknown';
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), STATUS_TIMEOUT_MS);
   try {
-    const response = await fetch(`${api}/v0.1/avatar/status`, { headers: await authHeaders(), signal });
-    const body = response.ok ? await response.json() : null;
-    return body?.enabled === true && body?.available === true ? web : null;
-  } catch { return null; }
+    const response = await fetch(`${api}/v0.1/avatar/status`, { headers: await authHeaders(), signal: controller.signal });
+    if (!response.ok) return 'unknown';
+    const body = await response.json();
+    return body?.enabled === true && body?.available === true ? 'available' : 'unavailable';
+  } catch { return 'unknown'; } finally { clearTimeout(timer); }
+}
+
+export type LiveVideoChoice = 'cancel' | 'retry' | 'open';
+const OWN_SIGN_IN = 'The browser keeps its own Lumen sign-in, so sign in there the first time. This app stays as it is, with the portrait and voice.';
+
+/** What to tell the person, and what they may choose, before anything is opened. */
+export function liveVideoPrompt(url: string | null, status: LiveVideoStatus): { title: string; message: string; choices: LiveVideoChoice[] } {
+  if (!url) return { title: 'Live video is not set up in this app', message: 'This build does not know the address of the Lumen web app, so it cannot open live video. Everything else in the app works as before.', choices: ['cancel'] };
+  if (status === 'available') return { title: 'Open live video in your browser?', message: `Live video and Wide Theater run in the Lumen web app. This opens it in your browser. ${OWN_SIGN_IN}`, choices: ['cancel', 'open'] };
+  if (status === 'unavailable') return { title: 'Video currently unavailable', message: `Lumen's video service is not running right now. It is sometimes stopped while its computer does other work. You can check again, or open the web app anyway: it shows the portrait until video is back. ${OWN_SIGN_IN}`, choices: ['cancel', 'retry', 'open'] };
+  return { title: 'Could not check live video', message: `This app could not reach Lumen to ask whether video is running. You can check again, or open the web app anyway. ${OWN_SIGN_IN}`, choices: ['cancel', 'retry', 'open'] };
 }
 
 /** Opens the web app in the phone's browser. Returns false when no browser could open it. */

@@ -37,19 +37,24 @@ push (`push-client.native`, `PushLifecycle.native`), navigation and keyboard han
 
 ## The change in this PR
 
-- **Phone app: "Live video ↗"** in the chat header. Shown only in the native app, only when the
-  web address is known and the server reports the animated companion switched on and reachable.
-  Tapping it asks first, then opens the Lumen web app in the phone's own browser.
+- **Phone app: "Live video ↗"** in the chat header, always shown in the native app. Each tap asks the
+  server whether video is running, says what it found, and opens nothing without a choice:
+  - running: "Open live video in your browser?" with Cancel / Open;
+  - not running: "Video currently unavailable" with Cancel / Check again / Open web app;
+  - server not reachable: "Could not check live video" with the same three choices;
+  - no web address in this build: "Live video is not set up in this app".
+  Nothing is remembered between taps, so when the video service comes back the next tap finds it.
+  No restart of the app is needed.
   - No token, cookie or account detail is passed. The browser keeps its **own** Lumen sign-in,
     separate from the app's: sign in there once, and it stays signed in like any browser tab.
   - Only an `https` address of the Lumen host is ever opened. It comes from
     `EXPO_PUBLIC_LUMEN_WEB_URL` if set at build time; otherwise from the API address when that
-    is the documented private HTTPS layout (API on port 8444 of the web host). Anything else:
-    the action is hidden.
+    is the documented private HTTPS layout (API on port 8444 of the web host).
   - The native app keeps the portrait and Helios voice. There is no native WebRTC, no embedded
-    web view, no new dependency.
-  - When the avatar service is stopped (for example during GPU work), the action is not shown.
-    New scenes (Issue #15) appear on the phone when the web app has them; nothing to rebuild.
+    web view, no new dependency. New scenes (Issue #15) appear when the web app has them.
+- **Phone layout.** The reminder banner now starts below the status bar. On a phone-width screen
+  the chat header's actions (Live video, Documents, Practice, status) sit on their own row under the
+  companion's name, with more space between them. Wider screens are unchanged.
 - **Web: "Full screen"** next to the size controls, for Wide Theater only. It uses the browser's
   own full screen on the same video element, so a phone held sideways shows the whole 3:2 frame.
   The avatar session is not touched. Without it, a sideways phone gets a very small picture,
@@ -121,6 +126,40 @@ again, then runs one `adb install -r`, which keeps app data. `rollback` puts tha
 same way. The script never uninstalls, never clears data and never signs anything. If Android
 refuses a rollback, it stops and leaves the app and its data in place.
 
+## First device test, November 15, and the second build
+
+The first refresh APK (`34fc7de8…`) installed as an update with data kept, but on the phone
+**Live video ↗ was missing**, a reminder banner overlapped the status bar, and the chat header was
+cramped. The first version showed the action only when a one-time check at screen load found the
+video service running, and never asked again. That check fails while the avatar service is stopped
+for GPU work, which is the likely cause; it was not proven. The dialog in the second build names the
+actual case on the device.
+
+Second build, same guarded steps: `git pull`, then `build-check`, `build`, `verify`, `install`.
+`build-check` should list 3 changed files and `34fc7de8…` as the APK it replaces, which is also what
+the phone runs. `verify` requires the new dialog text inside the APK, so the first refresh APK cannot
+be mistaken for the second. Ways back, both keeping app data (`versionCode` stays 1):
+
+```bash
+ANDROID_REFRESH_CONFIRM=rollback scripts/android-refresh.sh rollback     # to the first refresh APK (34fc7de8…)
+ANDROID_REFRESH_CONFIRM=rollback scripts/android-refresh.sh rollback ~/.local/state/lumen-android-refresh/backup-20261115T183606Z/installed.apk   # to the original (e963ef43…)
+```
+
+Device checks for the second build, in addition to the smoke test below:
+
+1. Chat header: name and model on the first row; Live video ↗, Documents, Practice and the status
+   on a second row, none cut off, each easy to tap. Same in a long companion name.
+2. With a due reminder (or the "Reminders are temporarily unavailable" notice) showing: the banner is
+   fully below the clock and battery icons, and there is no empty band between it and the chat header.
+   Check My Day, Gallery and More screens with the banner showing as well.
+3. Live video ↗ with the avatar service **stopped**: "Video currently unavailable". Check again gives
+   the same; Open web app opens the browser; Cancel does nothing.
+4. Start the avatar service, do **not** restart the app, tap Live video ↗: "Open live video in your
+   browser?". Open, sign in once in the browser, Animated on, Wide Theater, sideways, Full screen.
+5. Airplane mode, tap Live video ↗: "Could not check live video" within about 8 seconds.
+6. If it says "Live video is not set up in this app", the build did not get an https API address on
+   port 8444: stop and report it.
+
 ## Smoke test on the phone after the update
 
 1. The app opens already signed in; chat history and an unsent draft are still there.
@@ -128,12 +167,10 @@ refuses a rollback, it stops and leaves the app and its data in place.
 3. More → Memories, Companion, Settings; Android Back closes More; keyboard hides and returns.
 4. A reminder notification arrives; notification settings unchanged.
 5. Sign out and sign in again (email and Google).
-6. **Live video ↗**: Cancel does nothing; Open shows the web app in the browser. Sign in there
-   once, turn Animated on, expand to Wide Theater, turn the phone sideways, Full screen. Back
-   returns to the app, still signed in.
+6. **Live video ↗**: see the device checks above. Back returns to the app, still signed in.
 
 ## Tests
 
-`node --test tests/*.test.cjs` (105), `scripts/test-android-refresh.sh` (49 checks, stand-ins for
+`node --test tests/*.test.cjs` (108), `scripts/test-android-refresh.sh` (51 checks, stand-ins for
 adb, Gradle and the SDK tools), `scripts/test-animated-size-component.cjs`, `npm run typecheck`, and an
 Android JavaScript export of this commit. No device or APK build was involved.

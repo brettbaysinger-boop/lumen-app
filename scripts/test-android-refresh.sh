@@ -14,13 +14,13 @@ apk() {  # apk FILE PACKAGE VERSIONCODE CERT BUNDLE-TEXT
   (cd "$d" && zip -q -r "$1" .); rm -rf "$d"
 }
 apk "$T/old.apk" com.raialume.preview 1 AAAA "old app $SETTINGS"
-apk "$T/new.apk" com.raialume.preview 1 AAAA "new app Open live video in your browser $SETTINGS"
-apk "$T/other-package.apk" com.raialume.other 1 AAAA "new app Open live video in your browser $SETTINGS"
-apk "$T/other-key.apk" com.raialume.preview 1 BBBB "new app Open live video in your browser $SETTINGS"
-apk "$T/unsigned.apk" com.raialume.preview 1 INVALID "new app Open live video in your browser $SETTINGS"
-apk "$T/no-settings.apk" com.raialume.preview 1 AAAA "new app Open live video in your browser undefined undefined undefined"
-apk "$T/other-server.apk" com.raialume.preview 1 AAAA "new app Open live video in your browser https://supabase.fictional.invalid fictional-anon-key https://elsewhere.invalid"
-apk "$T/newer.apk" com.raialume.preview 2 AAAA "new app Open live video in your browser $SETTINGS"
+apk "$T/new.apk" com.raialume.preview 1 AAAA "new app Video currently unavailable $SETTINGS"
+apk "$T/other-package.apk" com.raialume.other 1 AAAA "new app Video currently unavailable $SETTINGS"
+apk "$T/other-key.apk" com.raialume.preview 1 BBBB "new app Video currently unavailable $SETTINGS"
+apk "$T/unsigned.apk" com.raialume.preview 1 INVALID "new app Video currently unavailable $SETTINGS"
+apk "$T/no-settings.apk" com.raialume.preview 1 AAAA "new app Video currently unavailable undefined undefined undefined"
+apk "$T/other-server.apk" com.raialume.preview 1 AAAA "new app Video currently unavailable https://supabase.fictional.invalid fictional-anon-key https://elsewhere.invalid"
+apk "$T/newer.apk" com.raialume.preview 2 AAAA "new app Video currently unavailable $SETTINGS"
 cp "$T/old.apk" "$R/preview.fictional/android/app/app-release.apk"; touch "$R/preview.fictional/android/app/google-services.json"
 echo 'MYAPP_UPLOAD_STORE_PASSWORD=never-print-this' > "$R/preview.fictional/android/gradle.properties"
 cp "$T/old.apk" "$S/phone.apk"; echo 1 > "$S/devices"
@@ -92,6 +92,9 @@ KEPT=$(ls -1d "$H"/state/lumen-android-refresh/backup-* | sort | tail -1)
 ARGS=(rollback); if out=$(run 2>&1); then bad "rollback ran without confirmation"; else ok "rollback: refuses without confirmation"; fi
 out=$(run ANDROID_REFRESH_CONFIRM=rollback 2>&1) && [[ $(phone) == "$OLD" ]] && ok "rollback: the previous APK is installed again" || bad "rollback: $out"
 cp "$T/newer.apk" "$S/phone.apk"; if out=$(run ANDROID_REFRESH_CONFIRM=rollback 2>&1); then bad "rollback claimed success on a downgrade"; else [[ $out == *"Do not uninstall"* && $(phone) == "$(sum "$T/newer.apk")" ]] && ok "rollback: a refused downgrade stops; the app and its data stay" || bad "rollback downgrade: $out"; fi
+cp "$T/new.apk" "$S/phone.apk"; ARGS=(rollback "$T/old.apk"); out=$(run ANDROID_REFRESH_CONFIRM=rollback 2>&1) && [[ $(phone) == "$OLD" ]] && ok "rollback: a named earlier APK of the same app and signer can be put back" || bad "named rollback: $out"
+cp "$T/new.apk" "$S/phone.apk"; ARGS=(rollback "$T/other-key.apk"); if out=$(run ANDROID_REFRESH_CONFIRM=rollback 2>&1); then bad "rollback took a wrong-key APK"; else [[ $(phone) == "$(sum "$T/new.apk")" ]] && ok "rollback: a named APK with another signer is refused" || bad "named rollback touched the phone"; fi
+ARGS=(rollback)
 grep -qE 'uninstall|pm clear|shell am ' "$S/calls" && bad "an uninstall or data wipe was issued" || ok "never uninstalls or clears app data"
 grep -nE '^[^#]*(adb +(shell +)?(pm +)?(uninstall|clear)|apksigner +sign|jarsigner|keytool)' "$SRC/scripts/android-refresh.sh" && bad "the script contains an uninstall, wipe or signing command" || ok "the script has no uninstall, wipe or signing command"
 
@@ -116,7 +119,7 @@ printf "package: name='com.raialume.preview' versionCode='1' versionName='1.0.0'
 rm -f app/build/outputs/apk/release/app-release.apk; (cd "\$d" && zip -q -r "$N/android/app/build/outputs/apk/release/app-release.apk" .)
 STUB
 printf '#!/usr/bin/env bash\necho %s >&2\n' "'openjdk version \"17.0.12\" 2026-01-01'" > "$B/java"; chmod +x "$N/android/gradlew" "$B/java"
-cp "$SRC/scripts/android-refresh.sh" "$C/scripts/"; echo "chat v2 Open live video in your browser" > "$C/app/index.tsx"; echo "new screen" > "$C/app/added.tsx"; g -C "$C" rm -q app/removed.tsx
+cp "$SRC/scripts/android-refresh.sh" "$C/scripts/"; echo "chat v2 Video currently unavailable" > "$C/app/index.tsx"; echo "new screen" > "$C/app/added.tsx"; g -C "$C" rm -q app/removed.tsx
 g -C "$C" add -A; g -C "$C" commit -q -m "refresh"; HEAD12=$(git -C "$C" rev-parse --short=12 HEAD)
 brun() { env PATH="$B:$PATH" HOME="$H" XDG_STATE_HOME="$H/state" LIVE_DIR="$L" BUILD_ROOT="$R" "$@" bash "$C/scripts/android-refresh.sh" "${ARGS[@]}"; }
 native() { (cd "$N" && cat app.json package.json android/app/build.gradle android/app/google-services.json android/app/release.keystore node_modules/fictional-dep/package.json | sha256sum); }

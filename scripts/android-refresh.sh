@@ -10,6 +10,7 @@
 #   scripts/android-refresh.sh verify NEW.apk      read-only: is NEW.apk a safe update of what is installed
 #   ANDROID_REFRESH_CONFIRM=install:<first 12 of NEW.apk's sha256> scripts/android-refresh.sh install NEW.apk
 #   ANDROID_REFRESH_CONFIRM=rollback scripts/android-refresh.sh rollback    the APK that was installed before
+#   ANDROID_REFRESH_CONFIRM=rollback scripts/android-refresh.sh rollback OLDER.apk   an earlier kept APK instead
 #
 # Settings: PACKAGE (default com.raialume.preview), BUILD_ROOT (default /home/brett/lumen-android-builds),
 # BUILD_TREE (default $BUILD_ROOT/preview.ijhcJd, the existing native project),
@@ -37,6 +38,8 @@ BUILD_TREE="${BUILD_TREE:-$BUILD_ROOT/preview.ijhcJd}"
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SOURCE_DIRS="app components lib hooks types"
 STATE_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/lumen-android-refresh"
+# Text that only this refresh's JavaScript contains: proof that an APK carries the new bundle, not an older one.
+JS_MARKER="Video currently unavailable"
 PUBLIC_SETTINGS="EXPO_PUBLIC_SUPABASE_URL EXPO_PUBLIC_SUPABASE_ANON_KEY EXPO_PUBLIC_LUMEN_API_URL"
 problems=0
 pass() { printf 'PASS  %s\n' "$1"; }
@@ -175,7 +178,7 @@ verify() {  # $1 = new APK, $2 = the APK it replaces
   unzip -p "$new" assets/index.android.bundle > "$new_bundle" 2>/dev/null || true
   unzip -p "$old" assets/index.android.bundle > "$old_bundle" 2>/dev/null || true
   [ -s "$new_bundle" ] && pass "new APK contains the app bundle" || bad "new APK has no assets/index.android.bundle"
-  grep -qaF 'Open live video in your browser' "$new_bundle" && pass "new APK carries the refreshed JavaScript (the Live video action)" || bad "new APK does not carry the refreshed JavaScript: it is an older bundle"
+  grep -qaF "$JS_MARKER" "$new_bundle" && pass "new APK carries the refreshed JavaScript (the Live video action)" || bad "new APK does not carry the refreshed JavaScript: it is an older bundle"
   for name in $PUBLIC_SETTINGS; do
     value=$(sed -n "s/^$name=//p" "$LIVE_DIR/.env" 2>/dev/null | sed -n '1p' | sed 's/^"\(.*\)"$/\1/')
     if [ -z "$value" ]; then bad "$name is not set in $LIVE_DIR/.env, so the new APK cannot be checked for it"; continue; fi
@@ -270,7 +273,7 @@ build() {
   verify "$new" "$record/previous.apk"
   unzip -p "$new" assets/index.android.bundle > "$record/bundle.tmp" 2>/dev/null || true
   [ "$(apk_field "$new" versionCode)" = "$(apk_field "$record/previous.apk" versionCode)" ] && pass "versionCode is unchanged, so the previous APK can be put back as a plain update" || bad "versionCode changed: rollback would be refused as a downgrade"
-  grep -qaF 'Open live video in your browser' "$record/bundle.tmp" && pass "the new APK carries this commit's JavaScript" || bad "the new APK does not carry this commit's JavaScript (stale bundle)"
+  grep -qaF "$JS_MARKER" "$record/bundle.tmp" && pass "the new APK carries this commit's JavaScript" || bad "the new APK does not carry this commit's JavaScript (stale bundle)"
   rm -f "$record/bundle.tmp"
   { echo "commit=$target"; echo "sha256=$(sha "$new")"; echo "previous_sha256=$(sha "$record/previous.apk")"; echo "signer=$(apk_cert "$new")"; } > "$record/record"
   [ "$problems" = 0 ] || die "$problems problem(s) with the built APK. Do not install it. It is at $new; the previous one is $record/previous.apk."
@@ -302,12 +305,20 @@ case "$MODE" in
     [ "$(sha "$NEW")" = "$(tmp=$(mktemp -d); pull_installed "$tmp/a.apk"; sha "$tmp/a.apk"; rm -rf "$tmp")" ] && pass "the phone now runs this APK; its data was kept" || bad "the installed APK does not match the one just installed"
     info "To go back: ANDROID_REFRESH_CONFIRM=rollback $0 rollback" ;;
   rollback)
-    device; kept=$(latest_backup)
-    [ -n "$kept" ] && [ -s "$kept/installed.apk" ] || die "No kept APK under $STATE_DIR."
-    [ "${ANDROID_REFRESH_CONFIRM:-}" = rollback ] || die "Set ANDROID_REFRESH_CONFIRM=rollback to put back $kept/installed.apk."
-    [ "$(sha "$kept/installed.apk")" = "$(sed -n 's/^sha256=//p' "$kept/record")" ] || die "The kept APK does not match its record."
-    adb install -r "$kept/installed.apk" || die "Android refused the previous APK (usually a lower versionCode). Nothing was removed and the newer app is still installed. Do not uninstall: that would erase the app's data. Rebuild the previous source with the current versionCode instead."
+    device
+    if [ -n "$NEW" ]; then  # a named earlier APK: it must be this app, signed by the same certificate as what is installed
+      back="$NEW"; [ -s "$back" ] || die "No APK at '$back'."
+      tmp=$(mktemp -d); pull_installed "$tmp/installed.apk"; now_cert=$(apk_cert "$tmp/installed.apk"); rm -rf "$tmp"
+      [ "$(apk_field "$back" name)" = "$PACKAGE" ] && [ -n "$now_cert" ] && [ "$(apk_cert "$back")" = "$now_cert" ] || die "'$back' is not $PACKAGE signed by the installed app's certificate. Nothing was changed."
+    else
+      kept=$(latest_backup); back="$kept/installed.apk"
+      [ -n "$kept" ] && [ -s "$back" ] || die "No kept APK under $STATE_DIR."
+      [ "$(sha "$back")" = "$(sed -n 's/^sha256=//p' "$kept/record")" ] || die "The kept APK does not match its record."
+    fi
+    info "to put back: $back (sha256 $(sha "$back"))"
+    [ "${ANDROID_REFRESH_CONFIRM:-}" = rollback ] || die "Set ANDROID_REFRESH_CONFIRM=rollback to put back $back."
+    adb install -r "$back" || die "Android refused the previous APK (usually a lower versionCode). Nothing was removed and the newer app is still installed. Do not uninstall: that would erase the app's data. Rebuild the previous source with the current versionCode instead."
     pass "the previous APK is installed again; app data was kept" ;;
-  *) sed -n '2,31p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit 2 ;;
+  *) sed -n '2,32p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit 2 ;;
 esac
 [ "$problems" = 0 ] || exit 1
