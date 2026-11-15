@@ -55,15 +55,23 @@ With `AVATAR_URL` blank (the default) the mode is off: `status` reports
   Sending another message, switching conversation, **Stop audio** or turning
   the mode off stops the speech. With the mode off, **Play reply** is manual
   as before.
-- Under the video, **Shrink** and **Expand** step through three sizes:
-  Compact (260 px), Large (420 px, the default on a desktop-width window) and
-  Theater (up to 560 px). The video is always square and is never stretched.
-  The window limits every size (width minus margins; 40%, 50% and 62% of the
-  height), so the page never scrolls sideways and the conversation and message
-  box stay on screen. On a phone-width window the default is Compact, and Large
-  and Theater both fill the width. The choice is remembered in that browser.
-  Changing size only resizes the box around the one video element; the avatar
-  session, its stream and any speech in progress carry on untouched.
+- Under the video, **Shrink** and **Expand** step through four sizes:
+  Compact (260 px), Large (420 px, the default on a desktop-width window),
+  Theater (up to 560 px) and Wide Theater (up to 840 x 560).
+  The first three are square close-ups that crop the sides of the frame, as
+  before. Wide Theater has the 3:2 shape of the 768 x 512 source video and shows
+  the whole frame, uncropped and unstretched, with square corners so that not
+  even the corner pixels are cut off (the square sizes keep rounded corners). It cannot show anything that is
+  not in the source video.
+  Every size is limited by the width of the conversation column (the window,
+  less an open sidebar, minus margins) and by the window height (40%, 50% and
+  62%; Wide Theater also always leaves 250 px), so the page never scrolls
+  sideways and the conversation and message box stay on screen. On a
+  phone-width window the default is Compact. The choice is remembered in that
+  browser.
+  Changing size only resizes the box around the one video element and how the
+  picture fills it; the avatar session, its stream and any speech in progress
+  carry on untouched.
 - If the browser holds back sound until you interact with the page, an
   **Enable sound** control appears. Press it once.
 - If the avatar service is unreachable or drops, the panel disappears and
@@ -174,7 +182,10 @@ scripts/animated-web-update.sh status
 LUMEN_WEB_UPDATE_CONFIRM=rollback scripts/animated-web-update.sh rollback
 ```
 
-`update` builds the web app in the clone with the live settings, swaps it in
+`update` builds the web app in the clone with the live settings, always from a
+cleared bundler cache (`expo export --clear`), and refuses the build if a
+script named by `index.html` is missing or if the bundle carries module paths
+of the live checkout (a stale Metro cache). It then swaps it in
 for the live `dist` (keeping the old build), and fast-forwards the live
 checkout with local edits kept. It restarts nothing and uses no sudo:
 `scripts/serve-web.cjs` reads the build from disk for each request, so a
