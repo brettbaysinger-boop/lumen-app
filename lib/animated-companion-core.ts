@@ -187,14 +187,20 @@ export async function setElementAudible(element: SoundElement, audible: boolean,
 
 // --- Display size ---------------------------------------------------------
 
-export type AnimatedSize = 'compact' | 'large' | 'theater';
-export const ANIMATED_SIZES: readonly AnimatedSize[] = ['compact', 'large', 'theater'];
-export const ANIMATED_SIZE_LABELS: Record<AnimatedSize, string> = { compact: 'Compact', large: 'Large', theater: 'Theater' };
-/** Edge of the square video in pixels, and the share of the window height it may take. */
-const SIZE_LIMITS: Record<AnimatedSize, { edge: number; height: number }> = {
-  compact: { edge: 260, height: 0.4 },
-  large: { edge: 420, height: 0.5 },
-  theater: { edge: 560, height: 0.62 },
+export type AnimatedSize = 'compact' | 'large' | 'theater' | 'wide';
+export const ANIMATED_SIZES: readonly AnimatedSize[] = ['compact', 'large', 'theater', 'wide'];
+export const ANIMATED_SIZE_LABELS: Record<AnimatedSize, string> = { compact: 'Compact', large: 'Large', theater: 'Theater', wide: 'Wide Theater' };
+/**
+ * Height of the video in pixels, the share of the window height it may take, and its shape
+ * (width / height). The first three are square close-ups that crop the sides of the frame;
+ * Wide Theater has the shape of the source video (768 x 512) and shows all of it.
+ */
+const SIZE_LIMITS: Record<AnimatedSize, { edge: number; height: number; aspect: number; reserve?: number }> = {
+  compact: { edge: 260, height: 0.4, aspect: 1 },
+  large: { edge: 420, height: 0.5, aspect: 1 },
+  theater: { edge: 560, height: 0.62, aspect: 1 },
+  // reserve: pixels of window height always left for the header, the conversation and the message box
+  wide: { edge: 560, height: 0.62, aspect: 3 / 2, reserve: 250 },
 };
 const SIDE_MARGIN = 16;   // kept free on each side, so the page never scrolls sideways
 const SMALLEST = 120;
@@ -209,14 +215,23 @@ export function defaultAnimatedSize(windowWidth: number): AnimatedSize {
 }
 
 /**
- * Edge of the square video for a size option in this window. The picture is
- * always square, so it is never stretched; the window only limits how large it
- * gets, leaving room for the conversation and the message box below it.
+ * Width and height of the video for a size option. `availableWidth` is the width of the
+ * column the video sits in (the window, less an open sidebar); the window height limits how
+ * tall it gets, leaving room for the conversation and the message box below it. The shape
+ * is fixed per option, so the picture is never stretched.
  */
-export function animatedDisplayEdge(size: AnimatedSize, windowWidth: number, windowHeight: number): number {
+export function animatedDisplayBox(size: AnimatedSize, availableWidth: number, windowHeight: number): { width: number; height: number; contain: boolean } {
   const limit = SIZE_LIMITS[size];
-  const fits = Math.min(limit.edge, windowWidth - 2 * SIDE_MARGIN, windowHeight * limit.height);
-  return Math.round(Math.max(SMALLEST, Math.min(fits, limit.edge)));
+  const fits = Math.min(limit.edge, (availableWidth - 2 * SIDE_MARGIN) / limit.aspect, windowHeight * limit.height, windowHeight - (limit.reserve ?? 0));
+  const tall = Math.max(SMALLEST / limit.aspect, Math.min(fits, limit.edge));
+  if (limit.aspect === 1) { const edge = Math.round(tall); return { width: edge, height: edge, contain: false }; }
+  const width = Math.floor(tall * limit.aspect);   // rounded down, so it never passes the available width
+  return { width, height: Math.round(width / limit.aspect), contain: true };
+}
+
+/** Edge of the square video for one of the square options. */
+export function animatedDisplayEdge(size: AnimatedSize, windowWidth: number, windowHeight: number): number {
+  return animatedDisplayBox(size, windowWidth, windowHeight).height;
 }
 
 /** The next larger (+1) or smaller (-1) option, or null at either end. */

@@ -15,6 +15,8 @@ const box=root=>root.root.findAllByType('View').find(view=>view.props.accessibil
 const button=(root,label)=>root.root.findAllByType('TouchableOpacity').find(item=>item.props.accessibilityLabel===`${label} animated companion`);
 const press=async(root,label)=>{await act(async()=>button(root,label).props.onPress());};
 const video=root=>root.root.findByType('video');
+const outer=root=>root.root.findAllByType('View').find(view=>view.props.onLayout);
+const label=root=>root.root.findAllByType('Text').find(text=>String(text.props.accessibilityLabel||'').startsWith('Animated companion size')).props.accessibilityLabel;
 (async()=>{
   let root;await act(async()=>{root=render();});
   assert.deepEqual(calls,[['attach',element]]);                                   // attached once, when shown
@@ -24,19 +26,33 @@ const video=root=>root.root.findByType('video');
   assert.equal(video(root).props.style.objectFit,'cover');                        // square box, cropped, never stretched
 
   await press(root,'Expand');
-  assert.equal(box(root).width,560);assert.equal(box(root).height,560);assert.equal(button(root,'Expand').props.disabled,true);
+  assert.equal(box(root).width,560);assert.equal(box(root).height,560);assert.equal(button(root,'Expand').props.disabled,false);
+  // Square Theater to Wide Theater: the box becomes 3:2 and the picture is shown whole instead of cropped.
+  await press(root,'Expand');
+  assert.equal(box(root).width,840);assert.equal(box(root).height,560);assert.equal(video(root).props.style.objectFit,'contain');
+  assert.equal(label(root),'Animated companion size: Wide Theater');assert.equal(button(root,'Expand').props.disabled,true);
+  // The sidebar opens: the column is narrower than the window, and the video follows the column.
+  await act(async()=>outer(root).props.onLayout({nativeEvent:{layout:{width:1920-280}}}));
+  assert.equal(box(root).width,840);
+  await act(async()=>outer(root).props.onLayout({nativeEvent:{layout:{width:744}}}));
+  assert.equal(box(root).width,712);assert.equal(box(root).height,475);
+  await act(async()=>outer(root).props.onLayout({nativeEvent:{layout:{width:1920}}}));
+  await press(root,'Shrink');
+  assert.equal(box(root).width,560);assert.equal(box(root).height,560);assert.equal(video(root).props.style.objectFit,'cover');
   await press(root,'Shrink');await press(root,'Shrink');
   assert.equal(box(root).width,260);assert.equal(button(root,'Shrink').props.disabled,true);
   await press(root,'Shrink');                                                      // at the end: nothing happens
   assert.equal(box(root).width,260);
-  await press(root,'Expand');await press(root,'Expand');
-  assert.equal(box(root).width,560);
+  await press(root,'Expand');await press(root,'Expand');await press(root,'Expand');
+  assert.equal(box(root).width,840);
 
   // The window changes (phone width, then a short window): the box follows, still square.
   windowSize={width:390,height:844};await act(async()=>{root.update(React.createElement(AnimatedCompanion,{session,borderColor:'#111',controlColor:'#222'}));});
-  assert.equal(box(root).width,358);assert.equal(box(root).height,358);
+  await act(async()=>outer(root).props.onLayout({nativeEvent:{layout:{width:390}}}));
+  assert.equal(box(root).width,358);assert.equal(box(root).height,239);
   windowSize={width:1366,height:650};await act(async()=>{root.update(React.createElement(AnimatedCompanion,{session,borderColor:'#111',controlColor:'#222'}));});
-  assert.equal(box(root).width,403);
+  await act(async()=>outer(root).props.onLayout({nativeEvent:{layout:{width:1366}}}));
+  assert.equal(box(root).width,600);assert.equal(box(root).height,400);
 
   // Through all of that: the same video element, and not one further call on the session
   // (no attach, no connect, no close), so the WebRTC session and its stream were never touched.
@@ -46,10 +62,10 @@ const video=root=>root.root.findByType('video');
   // The choice is remembered for the next time the panel appears; the session is released once.
   await act(async()=>root.unmount());
   assert.deepEqual(calls,[['attach',element],['attach',null]]);
-  assert.equal(stored.get('lumen.animated.size'),'theater');
+  assert.equal(stored.get('lumen.animated.size'),'wide');
   calls.length=0;windowSize={width:1920,height:1000};
   await act(async()=>{root=render();});
-  assert.equal(box(root).width,560);assert.deepEqual(calls,[['attach',element]]);
+  assert.equal(box(root).width,840);assert.deepEqual(calls,[['attach',element]]);
   await act(async()=>root.unmount());
 
   // Storage that throws or holds something else falls back to the default.

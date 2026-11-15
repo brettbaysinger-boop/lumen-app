@@ -37,6 +37,18 @@ local_edits() { live status --porcelain --untracked-files=no | cut -c4-; }
 web_is_static() { systemctl cat lumen-web.service 2>/dev/null | grep -q 'serve-web.cjs'; }
 web_code() { curl -sS -m 5 -o /dev/null -w '%{http_code}' "$WEB_URL/" 2>/dev/null || true; }
 
+export_problem() {  # prints why an exported build must not be served; succeeds when it is sound
+  local dist="$1" page="$1/index.html" script found=0
+  [ -s "$page" ] || { echo "no index.html"; return 1; }
+  while read -r script; do
+    found=1
+    [ -s "$dist/${script#/}" ] || { echo "index.html names $script, which is missing or empty"; return 1; }
+    # A bundle built from this clone must not carry module paths of any other checkout.
+    if grep -qF "$(realpath "$LIVE_DIR")/" "$dist/${script#/}"; then echo "$script contains paths of the live checkout (stale bundler cache)"; return 1; fi
+  done < <(grep -o 'src="[^"]*\.js"' "$page" | sed 's/^src="//; s/"$//')
+  [ "$found" = 1 ] || { echo "index.html names no script"; return 1; }
+}
+
 check() {
   local target previous
   target=$(git -C "$REPO" rev-parse HEAD)
@@ -74,7 +86,7 @@ undo() {  # $1 = record directory
   local record="$1" previous; previous=$(cat "$record/previous-commit")
   if [ -d "$record/dist.previous" ]; then
     rm -rf "$LIVE_DIR/dist.incoming"
-    [ ! -d "$LIVE_DIR/dist" ] || mv "$LIVE_DIR/dist" "$record/dist.updated"
+    [ ! -d "$LIVE_DIR/dist" ] || { rm -rf "$record/dist.updated"; mv "$LIVE_DIR/dist" "$record/dist.updated"; }
     mv "$record/dist.previous" "$LIVE_DIR/dist"
   fi
   if [ "$(live rev-parse HEAD)" != "$previous" ]; then
@@ -101,14 +113,16 @@ update)
   [ "${LUMEN_WEB_UPDATE_CONFIRM:-}" = "update:${target:0:7}" ] || die "Owner confirmation missing. After reviewing 'check', run: LUMEN_WEB_UPDATE_CONFIRM=update:${target:0:7} $0 update"
   check > /dev/null; [ "$problems" = 0 ] || die "check reports $problems problem(s). Nothing was changed. Run: $0 check"
   previous=$(live rev-parse HEAD)
-  record="$STATE_DIR/$(date +%Y%m%d-%H%M%S)"; mkdir -p "$record"; chmod 700 "$STATE_DIR" "$record"
+  mkdir -p "$STATE_DIR"; chmod 700 "$STATE_DIR"
+  record=$(mktemp -d "$STATE_DIR/$(date +%Y%m%d-%H%M%S)-XXXXXX")   # one directory per attempt, never reused
   echo "$previous" > "$record/previous-commit"; echo "$target" > "$record/target-commit"
   echo "Building the web app in $REPO ..."   # first, and here, so a failed build changes nothing that is live
   [ -e "$REPO/.env" ] || ln -s "$LIVE_DIR/.env" "$REPO/.env"
   [ "$(realpath "$REPO/.env")" = "$(realpath "$LIVE_DIR/.env")" ] || die "$REPO/.env is not the live .env; the build must use the live settings. Nothing was changed."
-  (cd "$REPO" && rm -rf dist && env -u EXPO_PUBLIC_LUMEN_API_URL EXPO_NO_TELEMETRY=1 npx expo export --platform web > "$record/build.log" 2>&1) \
+  # --clear: Metro's cache can hold absolute module paths from another checkout; a clean export never reuses them.
+  (cd "$REPO" && rm -rf dist && env -u EXPO_PUBLIC_LUMEN_API_URL EXPO_NO_TELEMETRY=1 npx expo export --platform web --clear > "$record/build.log" 2>&1) \
     || die "the web build failed (see $record/build.log). Nothing was changed."
-  [ -f "$REPO/dist/index.html" ] || die "the web build produced no index.html. Nothing was changed."
+  problem=$(export_problem "$REPO/dist") || die "the web build is not usable: $problem (see $record/build.log). Nothing was changed."
   rm -rf "$LIVE_DIR/dist.incoming"; cp -a "$REPO/dist" "$LIVE_DIR/dist.incoming"
   echo "$record" > "$STATE_DIR/current"
   trap 'echo "Update failed; going back." >&2; trap - ERR; undo "$record"; exit 1' ERR

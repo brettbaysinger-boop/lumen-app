@@ -35,7 +35,11 @@ STUB
 cat > "$B/npx" <<STUB
 #!/usr/bin/env bash
 [[ -f "$S/build_fails" ]] && exit 1
-mkdir -p dist; echo "new \$(cat components/AnimatedCompanion.tsx) \$(cat .env)" > dist/index.html
+echo "npx \$*" >> "$S/calls"
+mkdir -p dist/_expo/static/js/web
+echo "new \$(cat components/AnimatedCompanion.tsx) \$(cat .env) <script src=\"/_expo/static/js/web/entry-abc.js\" defer></script>" > dist/index.html
+if [[ -f "$S/stale_cache" ]]; then echo "require('$L/components/AnimatedCompanion.tsx')" > dist/_expo/static/js/web/entry-abc.js
+elif [[ ! -f "$S/no_bundle" ]]; then echo "bundle" > dist/_expo/static/js/web/entry-abc.js; fi
 STUB
 chmod +x "$B"/*
 run() { env PATH="$B:$PATH" HOME="$H" XDG_STATE_HOME="$H/state" LIVE_DIR="$L" "$@" bash "$C/scripts/animated-web-update.sh" "${MODE[@]}" 2>&1; }
@@ -47,6 +51,11 @@ MODE=(check); out=$(run env) && grep -q '^READY' <<<"$out" && unchanged && ok "c
 MODE=(update); out=$(run env) || true; grep -q 'Owner confirmation missing' <<<"$out" && unchanged && ok "update refuses without confirmation" || bad "confirmation"
 touch "$S/build_fails"; out=$(run env $CONFIRM) || true; rm "$S/build_fails"
 grep -q 'web build failed' <<<"$out" && unchanged && ok "a failed build changes nothing live" || { bad "build failure"; echo "$out"; }
+touch "$S/stale_cache"; out=$(run env $CONFIRM) || true; rm "$S/stale_cache"
+grep -q 'stale bundler cache' <<<"$out" && unchanged && ok "a build carrying another checkout's module paths is refused" || { bad "stale cache"; echo "$out"; }
+touch "$S/no_bundle"; out=$(run env $CONFIRM) || true; rm "$S/no_bundle"
+grep -q 'missing or empty' <<<"$out" && unchanged && ok "a build whose script is missing is refused" || { bad "missing bundle"; echo "$out"; }
+grep -q 'npx expo export --platform web --clear' "$S/calls" && ok "the export always starts from a cleared bundler cache" || bad "clear"
 touch "$S/web_broken"; out=$(run env $CONFIRM) || true; rm "$S/web_broken"
 grep -q 'going back' <<<"$out" && unchanged && ok "a web app that does not answer after the swap is put back by itself" || { bad "auto undo"; echo "$out"; }
 touch "$S/expo"; out=$(run env $CONFIRM) || true; rm "$S/expo"
@@ -54,7 +63,7 @@ grep -q 'Nothing was changed' <<<"$out" && unchanged && ok "refuses when lumen-w
 
 out=$(run env $CONFIRM) || { bad "update run"; echo "$out"; }
 [[ $(git -C "$L" rev-parse HEAD) == "$TARGET" && $(edits) == "$EDITS" ]] && ok "update: live checkout fast-forwarded, local edits intact" || bad "update code"
-[[ $(cat "$L/dist/index.html") == "new large EXPO_PUBLIC_X=fictional" ]] && ok "update: new build made with the live settings is served" || bad "update web"
+[[ $(cat "$L/dist/index.html") == "new large EXPO_PUBLIC_X=fictional "* && -s "$L/dist/_expo/static/js/web/entry-abc.js" ]] && ok "update: new build made with the live settings is served" || bad "update web"
 quiet && ok "update: no service restarted, no sudo used" || { bad "quiet"; cat "$S/calls"; }
 MODE=(status); out=$(run env); grep -q "rollback returns to ${PREV:0:12}" <<<"$out" && ok "status" || { bad "status"; echo "$out"; }
 MODE=(check); out=$(run env) || true; grep -q 'nothing to update' <<<"$out" && ok "check after the update: nothing to do" || bad "repeat check"
