@@ -55,6 +55,15 @@ With `AVATAR_URL` blank (the default) the mode is off: `status` reports
   Sending another message, switching conversation, **Stop audio** or turning
   the mode off stops the speech. With the mode off, **Play reply** is manual
   as before.
+- Under the video, **Shrink** and **Expand** step through three sizes:
+  Compact (260 px), Large (420 px, the default on a desktop-width window) and
+  Theater (up to 560 px). The video is always square and is never stretched.
+  The window limits every size (width minus margins; 40%, 50% and 62% of the
+  height), so the page never scrolls sideways and the conversation and message
+  box stay on screen. On a phone-width window the default is Compact, and Large
+  and Theater both fill the width. The choice is remembered in that browser.
+  Changing size only resizes the box around the one video element; the avatar
+  session, its stream and any speech in progress carry on untouched.
 - If the browser holds back sound until you interact with the page, an
   **Enable sound** control appears. Press it once.
 - If the avatar service is unreachable or drops, the panel disappears and
@@ -151,11 +160,37 @@ configured, Animated is off until the user turns it on.
 disable, enable and rollback against two generated checkouts with stand-ins for
 systemctl, sudo, curl and the web build.
 
+## Frontend-only updates after the cutover
+
+The cutover (`scripts/animated-deploy.sh`) is done once and not run again. A
+later change that touches only the web app, such as the display size, goes in
+with `scripts/animated-web-update.sh`, run from the reviewed clone as the
+lumen-api user:
+
+```bash
+scripts/animated-web-update.sh check       # read-only; ends with READY or NOT READY
+LUMEN_WEB_UPDATE_CONFIRM=update:<commit> scripts/animated-web-update.sh update
+scripts/animated-web-update.sh status
+LUMEN_WEB_UPDATE_CONFIRM=rollback scripts/animated-web-update.sh rollback
+```
+
+`update` builds the web app in the clone with the live settings, swaps it in
+for the live `dist` (keeping the old build), and fast-forwards the live
+checkout with local edits kept. It restarts nothing and uses no sudo:
+`scripts/serve-web.cjs` reads the build from disk for each request, so a
+browser reload shows the new version. It refuses a commit that changes anything
+outside the web app's source, tests, docs and these scripts, and it never
+reads or changes lumen-api, its drop-ins, RMC, the database or the avatar
+bridge. If the web app does not answer after the swap it puts the old build
+back by itself. `scripts/test-animated-web-update.sh` exercises all of this
+offline.
+
 ## Tests
 
 ```bash
 cd backend && python -m pytest -q          # includes tests/test_avatar.py, tests/test_animated_preview_memory.py and the voice tests
-node --test tests/*.test.cjs               # includes tests/animated-companion.test.cjs
+node --test tests/*.test.cjs               # includes tests/animated-companion.test.cjs and tests/animated-display-size.test.cjs
+node scripts/test-animated-size-component.cjs   # optional: needs react-test-renderer@19.1.0
 npm run typecheck
 ```
 
