@@ -1,6 +1,6 @@
 import { ChatText } from '@/components/ChatText';
 import { useKeyboardVisible } from '@/hooks/useKeyboardVisible';
-import { playReply } from '@/lib/reply-audio';
+import { playReply, SOUND_BLOCKED_MESSAGE } from '@/lib/reply-audio';
 import { ChatHandoff, HandoffCard } from '@/components/ChatHandoff';
 import { CollectionManager } from '@/components/CollectionManager';
 import { ChatManagement, type ChatChange } from '@/components/ChatManagement';
@@ -42,6 +42,9 @@ import {
 } from 'lucide-react-native';
 import { CameraCapture } from '@/components/CameraCapture';
 import { CompanionPortrait } from '@/components/CompanionPortrait';
+import { AnimatedCompanion } from '@/components/AnimatedCompanion';
+import { AnimatedCompanionSession, animatedCompanionAvailable, type AnimatedState } from '@/lib/animated-companion';
+import { AutoSpeak } from '@/lib/animated-companion-core';
 import { PracticeSavedCard } from '@/components/PracticeSavedCard';
 import { ProviderRequests } from '@/components/ProviderRequests';
 import { DayActionCard } from '@/components/DayActionCard';
@@ -78,6 +81,21 @@ export default function ChatScreen() {
   const isMobile = screenWidth < 600;
   const [showCamera, setShowCamera] = useState(false);
   const [speakingId, setSpeakingId] = useState<string | null>(null);
+  // Optional Animated Companion mode (web only). Off unless the server offers it and the user turns it on.
+  const [animatedOffered, setAnimatedOffered] = useState(false);
+  const [animatedState, setAnimatedState] = useState<AnimatedState>('off');
+  const [animatedNote, setAnimatedNote] = useState<string | null>(null);
+  const animatedRef = useRef<AnimatedCompanionSession | null>(null);
+  // Sound the browser refused to play until the user interacts with the page (autoplay rules).
+  const [soundBlocked, setSoundBlocked] = useState(false);
+  if (!animatedRef.current) animatedRef.current = new AnimatedCompanionSession(state => setAnimatedState(state), blocked => setSoundBlocked(blocked));
+  const animated = animatedRef.current;
+  // With the animated companion on, the reply to a message sent from this screen is spoken once, without Play reply.
+  const autoSpeakRef = useRef<AutoSpeak | null>(null);
+  if (!autoSpeakRef.current) autoSpeakRef.current = new AutoSpeak();
+  const autoSpeak = autoSpeakRef.current;
+  const [pendingSpeak, setPendingSpeak] = useState<Message | null>(null);
+  const blockedReplyRef = useRef<Message | null>(null);
 
   const [companion, setCompanion] = useState<Companion | null>(null);
   const { state: companionState } = useCompanionState(companion?.id);
@@ -174,10 +192,11 @@ export default function ChatScreen() {
       recordingRef.current?.cancel();
       voiceRequestRef.current?.abort();
       playbackRef.current?.abort();
+      animatedRef.current?.close();
     };
   }, []);
 
-  useEffect(() => { playbackRef.current?.abort(); }, [activeConversation?.id]);
+  useEffect(() => { playbackRef.current?.abort(); autoSpeak.moved(activeConversation?.id ?? null); blockedReplyRef.current = null; }, [activeConversation?.id, autoSpeak]);
   const cancelVoice = useCallback(() => {
     recordingRef.current?.cancel(); recordingRef.current = null;
     voiceRequestRef.current?.abort(); voiceRequestRef.current = null;
@@ -265,27 +284,63 @@ export default function ChatScreen() {
     }
   }, [sending, changeVoicePhase]);
 
-  const togglePlayback = useCallback(async (message: Message) => {
-    const stopping = playingId === message.id;
+  // `automatic` is true when Lumen starts the reply itself rather than the user pressing Play reply.
+  const startPlayback = useCallback(async (message: Message, automatic: boolean) => {
     playbackRef.current?.abort();
-    if (stopping) { setPlayingId(null); setSpeakingId(null); return; }
+    blockedReplyRef.current = null;
     if (voicePhaseRef.current !== 'idle') return;
     const controller = new AbortController();
     playbackRef.current = controller;
     setPlayingId(message.id);
-    setError(null);
+    if (!automatic) setError(null);
     const finished = () => {
       if (mountedRef.current && playbackRef.current === controller) { setPlayingId(null); setSpeakingId(null); }
     };
     try {
-      await playReply(message.content, controller.signal, finished, { companionId: companion?.id, onError: err => { if (mountedRef.current && !controller.signal.aborted) setError(err.message); }, onStart: () => { if (mountedRef.current && !controller.signal.aborted) setSpeakingId(message.id); } });
+      await playReply(message.content, controller.signal, finished, { companionId: companion?.id, player: animated.state === 'ready' ? animated.player : undefined, onError: err => { if (mountedRef.current && !controller.signal.aborted) setError(err.message); }, onStart: () => { if (mountedRef.current && !controller.signal.aborted) setSpeakingId(message.id); } });
     } catch (err) {
       if (mountedRef.current && !controller.signal.aborted) {
-        setError(err instanceof Error ? err.message : 'Playback failed.');
+        // Started without a click, the browser may refuse sound: offer Enable sound instead of an error.
+        if (automatic && err instanceof Error && err.message === SOUND_BLOCKED_MESSAGE) { blockedReplyRef.current = message; setSoundBlocked(true); }
+        else setError(err instanceof Error ? err.message : 'Playback failed.');
         finished();
       }
     }
-  }, [playingId, companion?.id]);
+  }, [companion?.id, animated]);
+  const togglePlayback = useCallback(async (message: Message) => {
+    if (playingId === message.id) { playbackRef.current?.abort(); setPlayingId(null); setSpeakingId(null); return; }
+    await startPlayback(message, false);
+  }, [playingId, startPlayback]);
+  useEffect(() => {
+    if (!pendingSpeak) return;
+    setPendingSpeak(null);
+    // Not if the user has moved on or the avatar has gone meanwhile; Play reply still works by hand.
+    if (activeIdRef.current === pendingSpeak.conversation_id && animated.state === 'ready') void startPlayback(pendingSpeak, true);
+  }, [pendingSpeak, startPlayback, animated]);
+  const enableSound = useCallback(() => {
+    // This runs inside the user's click, which is what the browser waits for.
+    animated.enableSound();
+    setSoundBlocked(false);
+    const reply = blockedReplyRef.current;
+    if (reply && activeIdRef.current === reply.conversation_id) void startPlayback(reply, false);
+  }, [animated, startPlayback]);
+
+  useEffect(() => {
+    animated.close();
+    setAnimatedOffered(false);
+    if (Platform.OS !== 'web' || !companion?.id) return;
+    const controller = new AbortController();
+    void animatedCompanionAvailable(controller.signal).then(available => { if (!controller.signal.aborted) setAnimatedOffered(available); });
+    return () => controller.abort();
+  }, [companion?.id, animated]);
+  const toggleAnimated = useCallback(async () => {
+    setAnimatedNote(null);
+    if (animated.state !== 'off') { playbackRef.current?.abort(); autoSpeak.cancel(); blockedReplyRef.current = null; setSoundBlocked(false); animated.close(); return; }
+    if (!companion?.id) return;
+    if (!await animated.connect(companion.id) && mountedRef.current) {
+      setAnimatedNote('The animated companion is not available right now. Lumen is using the portrait.');
+    }
+  }, [animated, companion?.id]);
 
   const loadConversations = useCallback(async (companionId: string, userId: string) => {
     if (managementBusyRef.current) return;
@@ -339,15 +394,15 @@ export default function ChatScreen() {
     } finally { if (accountRef.current === userId) setLoading(false); }
   }, [loadConversations]);
 
-  const loadMessages = useCallback(async (conversationId: string) => {
-    if (managementBusyRef.current) return;
+  const loadMessages = useCallback(async (conversationId: string): Promise<Message[] | null> => {
+    if (managementBusyRef.current) return null;
     const userId = accountRef.current;
     const version = ++requestVersion.current;
     try {
       const { data, error: err } = await chatRead(signal => supabase.from('messages').select('*')
         .eq('conversation_id', conversationId).order('created_at', { ascending: true }).abortSignal(signal));
       if (accountRef.current !== userId || version !== requestVersion.current ||
-          activeIdRef.current !== conversationId) return;
+          activeIdRef.current !== conversationId) return null;
       if (err) throw err;
       const rows = (data || []) as Message[];
       setMessages(rows);
@@ -356,11 +411,13 @@ export default function ChatScreen() {
         persistCache();
       }
       setSyncStatus('current');
+      return rows;
     } catch (err) {
       if (accountRef.current === userId && version === requestVersion.current) {
         setSyncStatus('cached');
         setError(err instanceof Error ? err.message : 'Could not refresh messages.');
       }
+      return null;
     }
   }, [persistCache]);
 
@@ -539,6 +596,7 @@ export default function ChatScreen() {
       voicePhaseRef.current !== 'idle'
     ) return;
     playbackRef.current?.abort();
+    const speakTurn = autoSpeak.begin(activeConversation?.id ?? null, messages.map(message => message.id));
 
     sendBusyRef.current = true;
     memoryWindowRef.current = new Date().toISOString();
@@ -618,7 +676,9 @@ export default function ChatScreen() {
         const conversation = data?.find((item) => item.id === response.conversation_id);
         if (conversation) setActiveConversation(conversation as Conversation);
       }
-      await loadMessages(response.conversation_id);
+      const loaded = await loadMessages(response.conversation_id);
+      const newReply = autoSpeak.claim(speakTurn, response.conversation_id, loaded ?? [], animated.state === 'ready');
+      if (newReply) setPendingSpeak(newReply);
       if (cacheRef.current) {
         cacheRef.current = { ...cacheRef.current, drafts: { ...cacheRef.current.drafts, [draftKey]: '' } };
         persistCache();
@@ -626,6 +686,7 @@ export default function ChatScreen() {
       setInputTextState('');
       turnKey.current = null;
     } catch (err) {
+      autoSpeak.cancel();
       if (!handedToServer) await removeStoredFiles('chat-media', uploaded);
       setError(err instanceof Error ? err.message : 'Lumen could not respond.');
       setInputText(text);
@@ -638,7 +699,7 @@ export default function ChatScreen() {
       setActivity('');
       setCreatingImage(false);
     }
-  }, [inputText, pendingImages, pendingDocument, documentBusy, companion, session?.user.id, sending, activeConversation, loadMessages, messages]);
+  }, [inputText, pendingImages, pendingDocument, documentBusy, companion, session?.user.id, sending, activeConversation, loadMessages, messages, autoSpeak, animated]);
 
   const renderMessage = useCallback(
     ({ item }: { item: Message }) => (
@@ -776,6 +837,9 @@ export default function ChatScreen() {
           </View>
         </View>
         <View style={styles.headerStatus}>
+          {animatedOffered && <TouchableOpacity accessibilityRole="switch" accessibilityState={{ checked: animatedState !== 'off', busy: animatedState === 'connecting' }} accessibilityLabel="Animated companion" disabled={animatedState === 'connecting'} onPress={toggleAnimated}>
+            <Text style={{color:colors.primary[300],fontSize:12}}>{animatedState === 'ready' ? 'Animated: on' : animatedState === 'connecting' ? 'Connecting…' : 'Animated: off'}</Text>
+          </TouchableOpacity>}
           <TouchableOpacity accessibilityRole="button" accessibilityLabel="Open your documents" disabled={sending || voiceBusy || documentBusy} onPress={() => router.push('/documents')}>
             <Text style={{color:colors.primary[300],fontSize:12}}>Documents</Text>
           </TouchableOpacity>
@@ -917,6 +981,10 @@ export default function ChatScreen() {
         chat={activeConversation} chats={conversations}
         disabled={sending || voiceBusy || managementBusy || documentBusy}
         onOpen={chat => setActiveConversation(chat)} />}
+      {animatedState === 'ready' && <View style={{ alignItems: 'center', paddingVertical: 8 }}>
+        <AnimatedCompanion session={animated} size={isMobile ? 180 : 260} borderColor={colors.primary[400]} />
+      </View>}
+      {soundBlocked && <View style={styles.errorBanner}><Text accessibilityRole="alert" style={styles.errorBannerText}>Your browser is holding back sound until you allow it.</Text><TouchableOpacity onPress={enableSound} accessibilityRole="button" accessibilityLabel="Enable sound"><Text style={styles.errorBannerText}>Enable sound</Text></TouchableOpacity></View>}
       <ConversationList
         ref={flatListRef}
         data={messages}
@@ -983,6 +1051,7 @@ export default function ChatScreen() {
           </Text>
         </View>
       )}
+      {!!animatedNote && <View style={styles.errorBanner}><Text accessibilityRole="alert" style={styles.errorBannerText}>{animatedNote}</Text><TouchableOpacity onPress={() => setAnimatedNote(null)} accessibilityLabel="Dismiss animated companion notice"><Text style={styles.errorBannerText}>Dismiss</Text></TouchableOpacity></View>}
       {!!voiceError && <View style={styles.errorBanner}><Text accessibilityRole="alert" selectable style={styles.errorBannerText}>{voiceError}</Text><TouchableOpacity onPress={() => setVoiceError(null)} accessibilityLabel="Dismiss voice error"><Text style={styles.errorBannerText}>Dismiss</Text></TouchableOpacity></View>}
       {voiceBusy && (
         <View style={styles.errorBanner}>

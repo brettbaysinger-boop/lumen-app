@@ -1,1 +1,1 @@
-export { playReply } from './voice';
+export { playReply, SOUND_BLOCKED_MESSAGE } from './voice';

@@ -65,6 +65,14 @@ class Settings(BaseSettings):
     rmc_host_key_file: str = ""
     rmc_timeout_seconds: float = Field(default=10.0, ge=1.0, le=60.0)
 
+    # Optional Animated Companion mode. Empty avatar_url (the default) keeps
+    # the mode off and every /v0.1/avatar route reports it as unavailable.
+    # avatar_url is the Lumen avatar bridge in front of OpenAvatarChat on the
+    # GPU host; the secret is shared with that bridge and never sent to a client.
+    avatar_url: str = ""
+    avatar_shared_secret: str = ""
+    avatar_tls_verify: bool = True
+
     lumen_cors_origins: str = "http://localhost:8081,http://localhost:19006"
 
     @property
