@@ -36,7 +36,7 @@ a slim bar (‹ Chat, Live video, Browser ↗) and the Lumen web app below it.
   out on phones; "Thinking…", "Refreshing…" and "Saved on device" still show.
 - Reminder banner starts below the status bar (top safe-area inset).
 - Around the composer: the two effort helper lines and the tagline are not shown on phones, and the
-  effort choices disappear entirely while the model offers no choice. This returns roughly 70 pixels
+  effort choices disappear entirely while the model offers no choice. This returns about 40 pixels
   of height to the conversation at 360 px width.
 - Bottom tab bar already sits above the system navigation bar (bottom inset) and hides while the
   keyboard is open; unchanged.
