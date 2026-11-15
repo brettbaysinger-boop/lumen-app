@@ -43,6 +43,7 @@ import {
 import { CameraCapture } from '@/components/CameraCapture';
 import { CompanionPortrait } from '@/components/CompanionPortrait';
 import { AnimatedCompanion } from '@/components/AnimatedCompanion';
+import { AnimatedScenes } from '@/components/AnimatedScenes';
 import { AnimatedCompanionSession, animatedCompanionAvailable, type AnimatedState } from '@/lib/animated-companion';
 import { AutoSpeak } from '@/lib/animated-companion-core';
 import { PracticeSavedCard } from '@/components/PracticeSavedCard';
@@ -984,6 +985,8 @@ export default function ChatScreen() {
       {animatedState === 'ready' && <View style={{ alignItems: 'center', paddingVertical: 8 }}>
         <AnimatedCompanion session={animated} borderColor={colors.primary[400]} controlColor={colors.primary[300]} />
       </View>}
+      {animatedOffered && !!companion?.id && <AnimatedScenes session={animated} companionId={companion.id} shown={animatedState === 'ready'}
+        busy={sending || voiceBusy || speakingId !== null} color={colors.primary[300]} onNote={setAnimatedNote} />}
       {soundBlocked && <View style={styles.errorBanner}><Text accessibilityRole="alert" style={styles.errorBannerText}>Your browser is holding back sound until you allow it.</Text><TouchableOpacity onPress={enableSound} accessibilityRole="button" accessibilityLabel="Enable sound"><Text style={styles.errorBannerText}>Enable sound</Text></TouchableOpacity></View>}
       <ConversationList
         ref={flatListRef}
