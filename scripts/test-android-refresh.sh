@@ -25,11 +25,12 @@ cp "$T/old.apk" "$R/preview.fictional/android/app/app-release.apk"; touch "$R/pr
 echo 'MYAPP_UPLOAD_STORE_PASSWORD=never-print-this' > "$R/preview.fictional/android/gradle.properties"
 cp "$T/old.apk" "$S/phone.apk"; echo 1 > "$S/devices"
 
-printf '#!/usr/bin/env bash\nunzip -p "$3" badging\n' > "$B/aapt2"
+# Like the real tools, these print far more than the one line that is read: a reader that stops early must not break the run.
+printf '#!/usr/bin/env bash\nunzip -p "$3" badging; for i in $(seq 1 40000); do echo "uses-permission: name=fictional.$i"; done\n' > "$B/aapt2"
 cat > "$B/apksigner" <<'STUB'
 #!/usr/bin/env bash
 file="${@: -1}"; cert=$(unzip -p "$file" cert); [ "$cert" != INVALID ] || exit 1
-[ "$2" = --print-certs ] && echo "Signer #1 certificate SHA-256 digest: $cert"; exit 0
+[ "$2" = --print-certs ] && { echo "Signer #1 certificate SHA-256 digest: $cert"; for i in $(seq 1 40000); do echo "Signer #1 fictional line $i"; done; }; exit 0
 STUB
 printf '#!/usr/bin/env bash\ncase "$1" in -u) [ -f "%s/root" ] && echo 0 || echo 1000 ;; *) echo fictional ;; esac\n' "$S" > "$B/id"
 mkdir -p "$H/Android/Sdk/platform-tools"; ADB="$H/Android/Sdk/platform-tools/adb"   # not on PATH: found in the SDK
@@ -54,6 +55,8 @@ changed() { grep -cE '^adb (install|uninstall|shell pm (clear|uninstall)|shell a
 OLD=$(phone); CONFIRM="install:$(sum "$T/new.apk" | cut -c1-12)"
 
 ARGS=(inventory); out=$(run 2>&1) && ok "inventory runs" || bad "inventory: $out"
+[[ $(tail -1 <<< "$out") == "RESULT inventory: OK" ]] && ok "inventory: ends with its RESULT line" || bad "no RESULT line"
+out2=$(set -o pipefail; run 2>&1 | tail -n 12) && ok "inventory: exits 0 when piped under pipefail" || bad "inventory piped: nonzero exit"
 [[ $out == *"SM-S901U"* && $out == *"$OLD"* && $out == *"google-services.json: present (not read)"* && $out == *"MYAPP_UPLOAD_STORE_PASSWORD"* ]] && ok "inventory: phone, installed APK hash, build tree and signing property names reported" || bad "inventory content: $out"
 [[ $out != *never-print-this* && $out != *fictional-anon-key* && $out != *lumen.fictional.invalid* ]] && ok "inventory: no setting value or password printed" || bad "inventory printed a value"
 [[ $(changed) == 0 && $(phone) == "$OLD" ]] && ok "inventory: read-only on the phone" || bad "inventory changed the phone"
@@ -65,7 +68,7 @@ echo 0 > "$S/devices"; out=$(run 2>&1) && ok "inventory: works without a phone a
 
 ARGS=(verify "$T/new.apk"); out=$(run 2>&1) && [[ $out == *"Safe to install"*"$CONFIRM"* ]] && ok "verify: a same-package, same-key, same-settings APK passes" || bad "verify good: $out"
 [[ $out != *fictional-anon-key* ]] && ok "verify: settings compared, not printed" || bad "verify printed a value"
-refuse() { ARGS=(verify "$T/$1"); if out=$(run 2>&1); then bad "verify accepted $1"; elif [[ $out == *"$2"* ]]; then ok "verify refuses: $3"; else bad "verify $1: $out"; fi; }
+refuse() { ARGS=(verify "$T/$1"); if out=$(run 2>&1); then bad "verify accepted $1"; elif [[ $out == *"$2"*"RESULT verify: FAILED"* ]]; then ok "verify refuses: $3"; else bad "verify $1: $out"; fi; }
 refuse other-package.apk "different app" "another package id"
 refuse other-key.apk "certificate differs" "another signing key"
 refuse unsigned.apk "signature does not verify" "an invalid signature"

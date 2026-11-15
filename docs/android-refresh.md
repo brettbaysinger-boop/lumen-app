@@ -69,7 +69,18 @@ push (`push-client.native`, `PushLifecycle.native`), navigation and keyboard han
 
 ## Steps (owner, on the build host, from a full clone of this branch)
 
-Each step stops by itself if something is off. Steps 1, 2 and 4 are read-only.
+Each step stops by itself if something is off. Steps 1, 2 and 4 are read-only. Run one step per
+command, not piped through `tail` or `head`, and not chained in a wrapper: every step ends with a line
+`RESULT <step>: OK` or `RESULT <step>: FAILED`. Go on only after `OK`.
+
+Known from the owner's device inventory: Galaxy S22 SM-S901U, Android 16, installed APK
+`e963ef43…55acc6`, which is the project's current release APK, `versionCode` 1, signer `fac61745…033b9c`.
+
+```bash
+export PATH="$HOME/Android/Sdk/platform-tools:$PATH" ANDROID_HOME="$HOME/Android/Sdk"   # optional: adb is found there anyway
+# 0. Keep a copy of the installed APK now (the phone is not changed). Check the sha256 it prints is e963ef43…
+scripts/android-refresh.sh backup
+```
 
 ```bash
 # 1. The phone: selected device, installed version, hash and signer of the installed APK.
@@ -123,6 +134,6 @@ refuses a rollback, it stops and leaves the app and its data in place.
 
 ## Tests
 
-`node --test tests/*.test.cjs` (105), `scripts/test-android-refresh.sh` (52 checks, stand-ins for
+`node --test tests/*.test.cjs` (105), `scripts/test-android-refresh.sh` (47 checks, stand-ins for
 adb, Gradle and the SDK tools), `scripts/test-animated-size-component.cjs`, `npm run typecheck`, and an
 Android JavaScript export of this commit. No device or APK build was involved.

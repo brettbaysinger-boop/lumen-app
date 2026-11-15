@@ -44,6 +44,9 @@ bad()  { printf 'FAIL  %s\n' "$1"; problems=$((problems + 1)); }
 info() { printf 'INFO  %s\n' "$1"; }
 die()  { printf 'STOP  %s\n' "$1" >&2; exit 1; }
 [ "$(id -u)" != 0 ] || die "Run as the normal user, not root."
+# Every run ends with one RESULT line. No RESULT line, or RESULT ... FAILED, means the step did not finish:
+# do not go on to the next step. Do not pipe a step through `tail` or `head`, which hides this line or the exit code.
+trap 'code=$?; case "$MODE" in inventory|phone|backup|build-check|build|verify|install|rollback) [ "$code" = 0 ] && echo "RESULT $MODE: OK" || echo "RESULT $MODE: FAILED (exit $code)" ;; esac' EXIT
 
 sdk_tool() {  # the tool on PATH, or the newest one in the Android SDK's build-tools
   local name="$1" root found
@@ -64,10 +67,10 @@ adb() { "$ADB" "$@"; }
 NO_ADB="adb was not found on PATH or in the Android SDK's platform-tools. Install it (sdkmanager \"platform-tools\", or the distribution's adb package) and run this again."
 AAPT=$(sdk_tool aapt2 || sdk_tool aapt || true); APKSIGNER=$(sdk_tool apksigner || true)
 sha() { sha256sum "$1" | cut -d' ' -f1; }
-badging() { [ -n "$AAPT" ] && "$AAPT" dump badging "$1" 2>/dev/null | head -1; }
+badging() { [ -n "$AAPT" ] && "$AAPT" dump badging "$1" 2>/dev/null | sed -n '1p'; }
 apk_field() { badging "$1" | sed -n "s/.*[ :]$2='\([^']*\)'.*/\1/p"; }
 # The signing certificate's SHA-256 digest: public, identifies the signer, not a secret.
-apk_cert() { [ -n "$APKSIGNER" ] && "$APKSIGNER" verify --print-certs "$1" 2>/dev/null | sed -n 's/^Signer #1 certificate SHA-256 digest: //p' | head -1; }
+apk_cert() { [ -n "$APKSIGNER" ] && "$APKSIGNER" verify --print-certs "$1" 2>/dev/null | sed -n 's/^Signer #1 certificate SHA-256 digest: //p' | sed -n '1p'; }
 describe_apk() { info "  $1"; info "    sha256 $(sha "$1")  package $(apk_field "$1" name)  versionCode $(apk_field "$1" versionCode)  versionName $(apk_field "$1" versionName)  signer ${2:-$(apk_cert "$1")}"; }
 
 device() {  # one authorised device, or stop
@@ -77,8 +80,8 @@ device() {  # one authorised device, or stop
   if [ -n "${ANDROID_SERIAL:-}" ]; then adb get-state >/dev/null 2>&1 || die "Device $ANDROID_SERIAL is not attached and authorised."
   elif [ "$count" != 1 ]; then die "Expected one attached, authorised device and found $count. Attach the phone, accept the USB debugging prompt, or set ANDROID_SERIAL."; fi
 }
-installed_field() { adb shell dumpsys package "$PACKAGE" 2>/dev/null | tr -d '\r' | sed -n "s/^ *$1=\([^ ]*\).*/\1/p" | head -1; }
-installed_path() { adb shell pm path "$PACKAGE" 2>/dev/null | tr -d '\r' | sed -n 's/^package://p' | { grep '/base\.apk$' || true; } | head -1; }
+installed_field() { adb shell dumpsys package "$PACKAGE" 2>/dev/null | tr -d '\r' | sed -n "s/^ *$1=\([^ ]*\).*/\1/p" | sed -n '1p'; }
+installed_path() { adb shell pm path "$PACKAGE" 2>/dev/null | tr -d '\r' | sed -n 's/^package://p' | { grep '/base\.apk$' || true; } | sed -n '1p'; }
 pull_installed() {  # copies the installed APK to $1; reading it does not change the phone
   local remote; remote=$(installed_path)
   [ -n "$remote" ] || die "$PACKAGE is not installed on the attached device. Nothing to update; this script does not do first installs."
@@ -91,25 +94,25 @@ inventory() {
   local tool
   info "adb: ${ADB:-not found}"
   for tool in java node npx; do command -v "$tool" >/dev/null && info "$tool: $(command -v "$tool")" || info "$tool: not on PATH"; done
-  command -v java >/dev/null && info "java version: $(java -version 2>&1 | head -1)"
+  command -v java >/dev/null && info "java version: $(java -version 2>&1 | sed -n '1p')"
   info "aapt: ${AAPT:-not found}"; info "apksigner: ${APKSIGNER:-not found}"
   info "ANDROID_HOME=${ANDROID_HOME:-unset} ANDROID_SDK_ROOT=${ANDROID_SDK_ROOT:-unset}"
   if [ -d "$LIVE_DIR/.git" ]; then
     info "live checkout: $LIVE_DIR @ $(git -C "$LIVE_DIR" rev-parse --short=12 HEAD) ($(git -C "$LIVE_DIR" rev-parse --abbrev-ref HEAD))"
     for tool in $PUBLIC_SETTINGS EXPO_PUBLIC_LUMEN_WEB_URL; do grep -q "^$tool=." "$LIVE_DIR/.env" 2>/dev/null && info "  .env has $tool (value not shown)" || info "  .env has no $tool"; done
     # Only the shape of the API address is reported, not the address.
-    sed -n 's/^EXPO_PUBLIC_LUMEN_API_URL=//p' "$LIVE_DIR/.env" 2>/dev/null | head -1 | grep -qE '^"?https://[^/:@]+:8444/?"?$' && info "  API address is https on port 8444: the app can work out the web address for Live video by itself" || info "  API address is not https on port 8444: Live video needs EXPO_PUBLIC_LUMEN_WEB_URL at build time, or stays hidden"
+    sed -n 's/^EXPO_PUBLIC_LUMEN_API_URL=//p' "$LIVE_DIR/.env" 2>/dev/null | sed -n '1p' | grep -qE '^"?https://[^/:@]+:8444/?"?$' && info "  API address is https on port 8444: the app can work out the web address for Live video by itself" || info "  API address is not https on port 8444: Live video needs EXPO_PUBLIC_LUMEN_WEB_URL at build time, or stays hidden"
   else info "live checkout: $LIVE_DIR not found"; fi
   if [ -d "$BUILD_ROOT" ]; then
     info "build root $BUILD_ROOT, newest first:"
-    { ls -1dt "$BUILD_ROOT"/* 2>/dev/null || true; } | head -20 | while read -r tree; do
+    { ls -1dt "$BUILD_ROOT"/* 2>/dev/null || true; } | sed -n '1,20p' | while read -r tree; do
       info "  $(date -u -r "$tree" +%Y-%m-%d) $tree$([ -d "$tree/android" ] && echo '  [native project]')$([ -d "$tree/.git" ] && echo "  [git $(git -C "$tree" rev-parse --short=12 HEAD 2>/dev/null)]")"
     done
-    local tree; tree=$({ ls -1dt "$BUILD_ROOT"/*/android 2>/dev/null || true; } | head -1); tree=${tree%/android}
+    local tree; tree=$({ ls -1dt "$BUILD_ROOT"/*/android 2>/dev/null || true; } | sed -n '1p'); tree=${tree%/android}
     if [ -n "$tree" ]; then
       info "newest native project: $tree"
       [ -d "$tree/.git" ] && info "  uncommitted files there: $(git -C "$tree" status --porcelain 2>/dev/null | wc -l)"
-      info "  applicationId: $(sed -n "s/.*applicationId[ =]*['\"]\([^'\"]*\)['\"].*/\1/p" "$tree/android/app/build.gradle" 2>/dev/null | head -1)"
+      info "  applicationId: $(sed -n "s/.*applicationId[ =]*['\"]\([^'\"]*\)['\"].*/\1/p" "$tree/android/app/build.gradle" 2>/dev/null | sed -n '1p')"
       info "  versionCode/versionName: $(grep -E '^\s*version(Code|Name)\b' "$tree/android/app/build.gradle" 2>/dev/null | tr -s ' ' | tr '\n' ';')"
       info "  app.json scheme/package: $(grep -E '"(scheme|package)"' "$tree/app.json" 2>/dev/null | tr -s ' ' | tr '\n' ' ')"
       [ -f "$tree/android/app/google-services.json" ] && info "  google-services.json: present (not read)" || info "  google-services.json: NOT in android/app"
@@ -118,11 +121,11 @@ inventory() {
       for tool in $PUBLIC_SETTINGS; do grep -q "^$tool=." "$tree/.env" 2>/dev/null && info "  build tree .env has $tool (value not shown)" || info "  build tree .env has no $tool"; done
       info "  source that differs from this clone (app components lib hooks types app.json package.json):"
       local repo; repo="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-      diff -rq "$repo/app" "$tree/app" 2>/dev/null | head -40 | sed 's/^/INFO      /' || true
-      for tool in components lib hooks types app.json package.json; do diff -rq "$repo/$tool" "$tree/$tool" 2>/dev/null | head -40 | sed 's/^/INFO      /' || true; done
+      diff -rq "$repo/app" "$tree/app" 2>/dev/null | sed -n '1,40p' | sed 's/^/INFO      /' || true
+      for tool in components lib hooks types app.json package.json; do diff -rq "$repo/$tool" "$tree/$tool" 2>/dev/null | sed -n '1,40p' | sed 's/^/INFO      /' || true; done
     fi
     info "APKs under the build root, newest first:"
-    find "$BUILD_ROOT" -maxdepth 8 -name '*.apk' -not -path '*/intermediates/*' -printf '%T@ %p\n' 2>/dev/null | sort -rn | head -12 | cut -d' ' -f2- | { while read -r apk; do describe_apk "$apk"; done; } || true
+    find "$BUILD_ROOT" -maxdepth 8 -name '*.apk' -not -path '*/intermediates/*' -printf '%T@ %p\n' 2>/dev/null | sort -rn | sed -n '1,12p' | cut -d' ' -f2- | { while read -r apk; do describe_apk "$apk"; done; } || true
   else info "build root: $BUILD_ROOT not found"; fi
   phone_report
 }
@@ -173,7 +176,7 @@ verify() {  # $1 = new APK, $2 = the APK it replaces
   unzip -p "$old" assets/index.android.bundle > "$old_bundle" 2>/dev/null || true
   [ -s "$new_bundle" ] && pass "new APK contains the app bundle" || bad "new APK has no assets/index.android.bundle"
   for name in $PUBLIC_SETTINGS; do
-    value=$(sed -n "s/^$name=//p" "$LIVE_DIR/.env" 2>/dev/null | head -1 | sed 's/^"\(.*\)"$/\1/')
+    value=$(sed -n "s/^$name=//p" "$LIVE_DIR/.env" 2>/dev/null | sed -n '1p' | sed 's/^"\(.*\)"$/\1/')
     if [ -z "$value" ]; then bad "$name is not set in $LIVE_DIR/.env, so the new APK cannot be checked for it"; continue; fi
     grep -qaF -- "$value" "$new_bundle" && pass "new APK carries $name" || bad "new APK does not carry $name: it would fail at startup"
     grep -qaF -- "$value" "$old_bundle" && pass "installed APK carries the same $name" || bad "installed APK carries a different $name than $LIVE_DIR/.env: the new APK would point somewhere else"
@@ -182,7 +185,7 @@ verify() {  # $1 = new APK, $2 = the APK it replaces
 }
 
 # --- build -------------------------------------------------------------------------------------------
-setting() { sed -n "s/^$1=//p" "$LIVE_DIR/.env" 2>/dev/null | head -1 | sed 's/^"\(.*\)"$/\1/; s/^'"'"'\(.*\)'"'"'$/\1/'; }
+setting() { sed -n "s/^$1=//p" "$LIVE_DIR/.env" 2>/dev/null | sed -n '1p' | sed 's/^"\(.*\)"$/\1/; s/^'"'"'\(.*\)'"'"'$/\1/'; }
 kept_file() { local item; for item in ${ANDROID_REFRESH_KEEP:-}; do [ "$item" = "$1" ] && return 0; done; return 1; }
 # Was this exact content ever committed at this path? If not, it is an edit made only in the build tree.
 ever_committed() { local blobs; blobs=$(git -C "$REPO" log --all --format= --raw --no-abbrev -- "$1" 2>/dev/null | awk '{print $4}'); grep -qx "$(git -C "$REPO" hash-object "$BUILD_TREE/$1")" <<< "$blobs"; }
@@ -196,10 +199,10 @@ build_check() {
   [ -x "$BUILD_TREE/android/gradlew" ] && [ -d "$BUILD_TREE/node_modules" ] || { bad "$BUILD_TREE is not the built native project (android/gradlew or node_modules missing)"; return; }
   case "$(realpath "$BUILD_TREE")/" in "$(realpath "$LIVE_DIR" 2>/dev/null)/"*|"$(realpath "$REPO")/"*) bad "the native project must be separate from the live checkout and from this clone"; return ;; esac
   pass "native project is separate from the live checkout and this clone"
-  [ "$(sed -n "s/.*applicationId[ =]*['\"]\([^'\"]*\)['\"].*/\1/p" "$BUILD_TREE/android/app/build.gradle" | head -1)" = "$PACKAGE" ] && pass "its applicationId is $PACKAGE" || bad "its applicationId is not $PACKAGE"
+  [ "$(sed -n "s/.*applicationId[ =]*['\"]\([^'\"]*\)['\"].*/\1/p" "$BUILD_TREE/android/app/build.gradle" | sed -n '1p')" = "$PACKAGE" ] && pass "its applicationId is $PACKAGE" || bad "its applicationId is not $PACKAGE"
   [ -f "$BUILD_TREE/android/app/google-services.json" ] && pass "google-services.json is in place (not read)" || bad "google-services.json is missing from android/app: notifications would break"
   grep -q '"raialume-preview"' "$BUILD_TREE/app.json" 2>/dev/null && pass "its app.json has the raialume-preview sign-in scheme" || bad "its app.json lacks the raialume-preview scheme: Google sign-in would not return to the app"
-  command -v java >/dev/null && java -version 2>&1 | head -1 | grep -q '"17\.' && pass "JDK 17" || bad "java is not JDK 17"
+  command -v java >/dev/null && java -version 2>&1 | sed -n '1p' | grep -q '"17\.' && pass "JDK 17" || bad "java is not JDK 17"
   [ -n "$AAPT" ] && [ -n "$APKSIGNER" ] && command -v unzip >/dev/null && pass "aapt, apksigner and unzip found" || bad "aapt, apksigner or unzip not found"
   OLD_APK="$BUILD_TREE/android/app/build/outputs/apk/release/app-release.apk"
   if [ -s "$OLD_APK" ]; then pass "the project's current release APK is there to compare against"; describe_apk "$OLD_APK"; else bad "no current release APK in the project to compare the new one against"; fi
@@ -253,7 +256,10 @@ build() {
   if [ "$status" != 0 ] || [ ! -s "$OLD_APK" ]; then restore; die "The build failed (see $record/build.log). The project's previous source and APK were put back."; fi
   new="$record/raialume-preview-${target:0:12}.apk"; cp -p "$OLD_APK" "$new"
   verify "$new" "$record/previous.apk"
-  unzip -p "$new" assets/index.android.bundle 2>/dev/null | grep -qaF 'Open live video in your browser' && pass "the new APK carries this commit's JavaScript" || bad "the new APK does not carry this commit's JavaScript (stale bundle)"
+  unzip -p "$new" assets/index.android.bundle > "$record/bundle.tmp" 2>/dev/null || true
+  [ "$(apk_field "$new" versionCode)" = "$(apk_field "$record/previous.apk" versionCode)" ] && pass "versionCode is unchanged, so the previous APK can be put back as a plain update" || bad "versionCode changed: rollback would be refused as a downgrade"
+  grep -qaF 'Open live video in your browser' "$record/bundle.tmp" && pass "the new APK carries this commit's JavaScript" || bad "the new APK does not carry this commit's JavaScript (stale bundle)"
+  rm -f "$record/bundle.tmp"
   { echo "commit=$target"; echo "sha256=$(sha "$new")"; echo "previous_sha256=$(sha "$record/previous.apk")"; echo "signer=$(apk_cert "$new")"; } > "$record/record"
   [ "$problems" = 0 ] || die "$problems problem(s) with the built APK. Do not install it. It is at $new; the previous one is $record/previous.apk."
   pass "built and checked: $new"; describe_apk "$new"
@@ -261,14 +267,15 @@ build() {
 }
 
 case "$MODE" in
-  inventory) inventory ;;
-  phone) phone_report ;;
+  # Reports only: a probe that fails is shown as an empty value, it does not end the report.
+  inventory) set +e +o pipefail; inventory; exit 0 ;;
+  phone) set +e +o pipefail; phone_report; exit 0 ;;
   build-check) build_check; [ "$problems" != 0 ] || info "Ready. To build: ANDROID_REFRESH_CONFIRM=build:$(git -C "$REPO" rev-parse --short=12 HEAD) $0 build" ;;
   build) build ;;
   backup) backup ;;
   verify)
-    device; tmp=$(mktemp -d); trap 'rm -rf "$tmp"' EXIT; pull_installed "$tmp/installed.apk"
-    verify "$NEW" "$tmp/installed.apk"
+    device; tmp=$(mktemp -d); pull_installed "$tmp/installed.apk"
+    verify "$NEW" "$tmp/installed.apk"; rm -rf "$tmp"
     [ "$problems" = 0 ] || die "$problems problem(s). Do not install this APK."
     info "Safe to install. To install: ANDROID_REFRESH_CONFIRM=install:$(sha "$NEW" | cut -c1-12) $0 install $NEW" ;;
   install)
