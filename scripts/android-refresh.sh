@@ -1,25 +1,41 @@
 #!/usr/bin/env bash
 # Update of the existing Raialume Preview app on the owner's phone over ADB, and its way back.
-# Run on the Android build host, as the normal user, without sudo. It builds nothing.
+# Run on the Android build host, from the reviewed clone, as the normal user, without sudo.
 #
 #   scripts/android-refresh.sh inventory           read-only: tools, build trees, known APKs, the phone, the installed app
+#   scripts/android-refresh.sh phone               read-only: the attached phone and the installed app only
+#   scripts/android-refresh.sh build-check         read-only: would `build` run, and what would it replace
+#   ANDROID_REFRESH_CONFIRM=build:<first 12 of this clone's commit> scripts/android-refresh.sh build
 #   scripts/android-refresh.sh backup              copies the installed APK off the phone (the phone is not changed)
 #   scripts/android-refresh.sh verify NEW.apk      read-only: is NEW.apk a safe update of what is installed
 #   ANDROID_REFRESH_CONFIRM=install:<first 12 of NEW.apk's sha256> scripts/android-refresh.sh install NEW.apk
 #   ANDROID_REFRESH_CONFIRM=rollback scripts/android-refresh.sh rollback    the APK that was installed before
 #
 # Settings: PACKAGE (default com.raialume.preview), BUILD_ROOT (default /home/brett/lumen-android-builds),
-# LIVE_DIR (default /home/brett/lumen-push; only its .env is read, to check the new APK's public settings),
-# ANDROID_SERIAL when more than one device is attached.
+# BUILD_TREE (default $BUILD_ROOT/preview.ijhcJd, the existing native project),
+# LIVE_DIR (default /home/brett/lumen-push; only its .env is read, for the app's public settings),
+# ANDROID_SERIAL when more than one device is attached, ANDROID_REFRESH_KEEP (see `build`).
+#
+# `build` works only in the existing native project. It keeps a copy of that project's JavaScript source and
+# its current release APK, replaces only app/ components/ lib/ hooks/ types/ with this clone's, and runs the
+# project's own Gradle release build with the public settings taken from the live .env. It never touches
+# android/, app.json, package.json, node_modules, google-services.json or signing files, never runs
+# `expo prebuild`, and never needs the phone. A file in the project that was never committed to this
+# repository is a local edit: `build` stops and names it. To keep such files exactly as they are, list them
+# in ANDROID_REFRESH_KEEP (space separated). If the build fails, the previous source is put back.
 #
 # The only command that changes the phone is `adb install -r`, which replaces the app and keeps its data.
 # This script never uninstalls, never clears app data, never signs or re-signs an APK, and never prints a
-# setting's value, a key or a password. It touches no Lumen service.
+# setting's value, a key or a password. It touches no Lumen service and reads nothing from the live checkout
+# but its .env.
 set -euo pipefail
 MODE="${1:-}"; NEW="${2:-}"
 PACKAGE="${PACKAGE:-com.raialume.preview}"
 BUILD_ROOT="${BUILD_ROOT:-/home/brett/lumen-android-builds}"
 LIVE_DIR="${LIVE_DIR:-/home/brett/lumen-push}"
+BUILD_TREE="${BUILD_TREE:-$BUILD_ROOT/preview.ijhcJd}"
+REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+SOURCE_DIRS="app components lib hooks types"
 STATE_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/lumen-android-refresh"
 PUBLIC_SETTINGS="EXPO_PUBLIC_SUPABASE_URL EXPO_PUBLIC_SUPABASE_ANON_KEY EXPO_PUBLIC_LUMEN_API_URL"
 problems=0
@@ -39,6 +55,13 @@ sdk_tool() {  # the tool on PATH, or the newest one in the Android SDK's build-t
   done
   return 1
 }
+# adb: on PATH, or in the Android SDK's platform-tools.
+ADB=$(command -v adb 2>/dev/null || true)
+for root in "${ANDROID_HOME:-}" "${ANDROID_SDK_ROOT:-}" "$HOME/Android/Sdk" "$HOME/android-sdk"; do
+  [ -z "$ADB" ] && [ -n "$root" ] && [ -x "$root/platform-tools/adb" ] && ADB="$root/platform-tools/adb"
+done
+adb() { "$ADB" "$@"; }
+NO_ADB="adb was not found on PATH or in the Android SDK's platform-tools. Install it (sdkmanager \"platform-tools\", or the distribution's adb package) and run this again."
 AAPT=$(sdk_tool aapt2 || sdk_tool aapt || true); APKSIGNER=$(sdk_tool apksigner || true)
 sha() { sha256sum "$1" | cut -d' ' -f1; }
 badging() { [ -n "$AAPT" ] && "$AAPT" dump badging "$1" 2>/dev/null | head -1; }
@@ -48,7 +71,7 @@ apk_cert() { [ -n "$APKSIGNER" ] && "$APKSIGNER" verify --print-certs "$1" 2>/de
 describe_apk() { info "  $1"; info "    sha256 $(sha "$1")  package $(apk_field "$1" name)  versionCode $(apk_field "$1" versionCode)  versionName $(apk_field "$1" versionName)  signer ${2:-$(apk_cert "$1")}"; }
 
 device() {  # one authorised device, or stop
-  command -v adb >/dev/null || die "adb is not installed or not on PATH."
+  [ -n "$ADB" ] || die "$NO_ADB"
   local count
   count=$(adb devices | awk 'NR>1 && $2=="device"' | wc -l)
   if [ -n "${ANDROID_SERIAL:-}" ]; then adb get-state >/dev/null 2>&1 || die "Device $ANDROID_SERIAL is not attached and authorised."
@@ -66,7 +89,8 @@ latest_backup() { { ls -1d "$STATE_DIR"/backup-* 2>/dev/null || true; } | sort |
 inventory() {
   info "host $(hostname), user $(id -un), $(date -u +%Y-%m-%dT%H:%M:%SZ)"
   local tool
-  for tool in java adb node npx; do command -v "$tool" >/dev/null && info "$tool: $(command -v "$tool")" || info "$tool: not on PATH"; done
+  info "adb: ${ADB:-not found}"
+  for tool in java node npx; do command -v "$tool" >/dev/null && info "$tool: $(command -v "$tool")" || info "$tool: not on PATH"; done
   command -v java >/dev/null && info "java version: $(java -version 2>&1 | head -1)"
   info "aapt: ${AAPT:-not found}"; info "apksigner: ${APKSIGNER:-not found}"
   info "ANDROID_HOME=${ANDROID_HOME:-unset} ANDROID_SDK_ROOT=${ANDROID_SDK_ROOT:-unset}"
@@ -100,15 +124,21 @@ inventory() {
     info "APKs under the build root, newest first:"
     find "$BUILD_ROOT" -maxdepth 8 -name '*.apk' -not -path '*/intermediates/*' -printf '%T@ %p\n' 2>/dev/null | sort -rn | head -12 | cut -d' ' -f2- | { while read -r apk; do describe_apk "$apk"; done; } || true
   else info "build root: $BUILD_ROOT not found"; fi
-  command -v adb >/dev/null || { info "adb missing: the phone was not inspected"; return 0; }
+  phone_report
+}
+
+phone_report() {
+  [ -n "$ADB" ] || { info "$NO_ADB"; info "The phone was not inspected."; return 0; }
+  info "adb: $ADB"
   adb devices -l | sed 's/^/INFO  /'
   [ "$(adb devices | awk 'NR>1 && $2=="device"' | wc -l)" = 1 ] || [ -n "${ANDROID_SERIAL:-}" ] || { info "no single authorised device: the installed app was not inspected"; return 0; }
+  info "selected device: ${ANDROID_SERIAL:-$(adb devices | awk 'NR>1 && $2=="device" {print $1}')}"
   info "phone: $(adb shell getprop ro.product.model | tr -d '\r'), Android $(adb shell getprop ro.build.version.release | tr -d '\r')"
   if [ -z "$(installed_path)" ]; then info "$PACKAGE is not installed on this device"; return 0; fi
   info "installed $PACKAGE: versionName $(installed_field versionName) versionCode $(installed_field versionCode) firstInstall $(installed_field firstInstallTime) lastUpdate $(installed_field lastUpdateTime)"
   local tmp; tmp=$(mktemp -d); pull_installed "$tmp/installed.apk"
   info "installed APK (copied to read it, then removed):"; describe_apk "$tmp/installed.apk"
-  info "  Compare its sha256 with the accepted APKs in docs/android-preview.md to see which build the phone runs."
+  info "  Compare its sha256 with the APKs listed above and in docs/android-preview.md to see which build the phone runs."
   rm -rf "$tmp"
 }
 
@@ -134,8 +164,8 @@ verify() {  # $1 = new APK, $2 = the APK it replaces
   [ -n "$new_cert" ] && [ "$new_cert" = "$old_cert" ] && pass "signed by the same certificate as the installed app" || bad "signing certificate differs from the installed app's: Android would refuse the update"
   local new_code old_code; new_code=$(apk_field "$new" versionCode); old_code=$(apk_field "$old" versionCode)
   [ -n "$new_code" ] && [ -n "$old_code" ] && [ "$new_code" -ge "$old_code" ] && pass "versionCode $new_code is not below the installed $old_code" || bad "versionCode '$new_code' is below the installed '$old_code': Android would refuse it as a downgrade"
-  [ "$new_code" = "$old_code" ] && info "same versionCode: the previous APK can be put back with a plain update install" || info "versionCode rises: after this update Android refuses the previous APK as a downgrade unless the app is removed, which loses its data. Keep versionCode $old_code to keep rollback simple."
-  [ "$(sha "$new")" != "$(sha "$old")" ] && pass "differs from the installed APK" || bad "this is the APK that is already installed"
+  [ "$new_code" = "$old_code" ] && info "same versionCode: the previous APK can be put back with a plain update install" || [ "${new_code:-0}" -lt "${old_code:-0}" ] || info "versionCode rises: after this update Android refuses the previous APK as a downgrade unless the app is removed, which loses its data. Keep versionCode $old_code to keep rollback simple."
+  [ "$(sha "$new")" != "$(sha "$old")" ] && pass "differs from the APK it replaces" || bad "this is the APK that is already installed"
   # The crash of October 11: an APK built without the public settings. Each must be in the new bundle,
   # with the value the installed app carries. Values are compared, never printed.
   local new_bundle old_bundle; new_bundle=$(mktemp); old_bundle=$(mktemp)
@@ -151,8 +181,90 @@ verify() {  # $1 = new APK, $2 = the APK it replaces
   rm -f "$new_bundle" "$old_bundle"
 }
 
+# --- build -------------------------------------------------------------------------------------------
+setting() { sed -n "s/^$1=//p" "$LIVE_DIR/.env" 2>/dev/null | head -1 | sed 's/^"\(.*\)"$/\1/; s/^'"'"'\(.*\)'"'"'$/\1/'; }
+kept_file() { local item; for item in ${ANDROID_REFRESH_KEEP:-}; do [ "$item" = "$1" ] && return 0; done; return 1; }
+# Was this exact content ever committed at this path? If not, it is an edit made only in the build tree.
+ever_committed() { local blobs; blobs=$(git -C "$REPO" log --all --format= --raw --no-abbrev -- "$1" 2>/dev/null | awk '{print $4}'); grep -qx "$(git -C "$REPO" hash-object "$BUILD_TREE/$1")" <<< "$blobs"; }
+
+build_check() {
+  local target dir file name missing="" local_edits="" changes=0
+  target=$(git -C "$REPO" rev-parse HEAD)
+  info "source: $REPO @ ${target:0:12}"; info "native project: $BUILD_TREE"
+  [ -z "$(git -C "$REPO" status --porcelain --untracked-files=no)" ] && pass "this clone has no uncommitted changes" || bad "this clone has uncommitted changes; build a reviewed commit only"
+  [ "$(git -C "$REPO" rev-parse --is-shallow-repository)" = false ] && pass "this clone has the full history, so local edits in the native project can be told apart" || bad "this clone is shallow; local edits in the native project cannot be told from old committed files. Use a full clone."
+  [ -x "$BUILD_TREE/android/gradlew" ] && [ -d "$BUILD_TREE/node_modules" ] || { bad "$BUILD_TREE is not the built native project (android/gradlew or node_modules missing)"; return; }
+  case "$(realpath "$BUILD_TREE")/" in "$(realpath "$LIVE_DIR" 2>/dev/null)/"*|"$(realpath "$REPO")/"*) bad "the native project must be separate from the live checkout and from this clone"; return ;; esac
+  pass "native project is separate from the live checkout and this clone"
+  [ "$(sed -n "s/.*applicationId[ =]*['\"]\([^'\"]*\)['\"].*/\1/p" "$BUILD_TREE/android/app/build.gradle" | head -1)" = "$PACKAGE" ] && pass "its applicationId is $PACKAGE" || bad "its applicationId is not $PACKAGE"
+  [ -f "$BUILD_TREE/android/app/google-services.json" ] && pass "google-services.json is in place (not read)" || bad "google-services.json is missing from android/app: notifications would break"
+  grep -q '"raialume-preview"' "$BUILD_TREE/app.json" 2>/dev/null && pass "its app.json has the raialume-preview sign-in scheme" || bad "its app.json lacks the raialume-preview scheme: Google sign-in would not return to the app"
+  command -v java >/dev/null && java -version 2>&1 | head -1 | grep -q '"17\.' && pass "JDK 17" || bad "java is not JDK 17"
+  [ -n "$AAPT" ] && [ -n "$APKSIGNER" ] && command -v unzip >/dev/null && pass "aapt, apksigner and unzip found" || bad "aapt, apksigner or unzip not found"
+  OLD_APK="$BUILD_TREE/android/app/build/outputs/apk/release/app-release.apk"
+  if [ -s "$OLD_APK" ]; then pass "the project's current release APK is there to compare against"; describe_apk "$OLD_APK"; else bad "no current release APK in the project to compare the new one against"; fi
+  for name in $PUBLIC_SETTINGS; do [ -n "$(setting "$name")" ] && pass "$name is set in $LIVE_DIR/.env (value not shown)" || bad "$name is not set in $LIVE_DIR/.env"; done
+  # Every package the new source imports must already be installed in the project: nothing is installed here.
+  missing=$(cd "$REPO" && node -e 'const fs=require("fs"),tree=process.argv[1];for(const name of Object.keys(require("./package.json").dependencies))if(!fs.existsSync(`${tree}/node_modules/${name}/package.json`))console.log(name)' "$BUILD_TREE" 2>/dev/null | tr '\n' ' ') || missing="(could not be checked)"
+  [ -z "$missing" ] && pass "every package the source needs is already installed in the project" || bad "packages missing from the project's node_modules: $missing"
+  for dir in $SOURCE_DIRS; do
+    [ -d "$BUILD_TREE/$dir" ] || continue
+    while read -r file; do
+      file="$dir/${file#./}"
+      if [ -f "$REPO/$file" ] && cmp -s "$REPO/$file" "$BUILD_TREE/$file"; then continue; fi
+      changes=$((changes + 1))
+      if kept_file "$file"; then info "  kept as it is: $file"; elif ! ever_committed "$file"; then local_edits="$local_edits $file"; fi
+    done < <(cd "$BUILD_TREE/$dir" && find . -type f | sort)
+  done
+  for dir in $SOURCE_DIRS; do changes=$((changes + $(cd "$REPO/$dir" && find . -type f | while read -r file; do [ -e "$BUILD_TREE/$dir/$file" ] || echo x; done | wc -l))); done
+  info "files of $SOURCE_DIRS that would change: $changes"
+  if [ -z "$local_edits" ]; then pass "every file to be replaced is an older committed version: no local edit would be lost"
+  else bad "the native project has files that were never committed. Replacing them would lose local edits:"; for file in $local_edits; do info "    $file"; done
+       info "  To keep them exactly as they are: ANDROID_REFRESH_KEEP=\"${local_edits# }\""; fi
+  [ "$changes" -gt 0 ] || bad "the native project already has this source: nothing to build"
+}
+
+build() {
+  local target record dir name fresh new status=0
+  target=$(git -C "$REPO" rev-parse HEAD)
+  build_check
+  [ "$problems" = 0 ] || die "$problems problem(s). Nothing was changed."
+  [ "${ANDROID_REFRESH_CONFIRM:-}" = "build:${target:0:12}" ] || die "Checks passed. Set ANDROID_REFRESH_CONFIRM=build:${target:0:12} to build this commit."
+  mkdir -p "$STATE_DIR"; chmod 700 "$STATE_DIR"
+  record=$(mktemp -d "$STATE_DIR/build-$(date -u +%Y%m%dT%H%M%SZ)-${target:0:12}.XXXX")
+  cp -p "$OLD_APK" "$record/previous.apk"
+  tar -C "$BUILD_TREE" -cf "$record/previous-source.tar" $(cd "$BUILD_TREE" && ls -d $SOURCE_DIRS 2>/dev/null)
+  pass "kept the project's previous source and APK in $record"
+  restore() { for dir in $SOURCE_DIRS; do rm -rf "${BUILD_TREE:?}/$dir"; done; tar -C "$BUILD_TREE" -xf "$record/previous-source.tar"; cp -p "$record/previous.apk" "$OLD_APK"; }
+  # Files to keep are set aside, the source directories are replaced whole, then the kept files go back.
+  mkdir "$record/kept"
+  for name in ${ANDROID_REFRESH_KEEP:-}; do [ -f "$BUILD_TREE/$name" ] && { mkdir -p "$record/kept/$(dirname "$name")"; cp -p "$BUILD_TREE/$name" "$record/kept/$name"; }; done
+  for dir in $SOURCE_DIRS; do rm -rf "${BUILD_TREE:?}/$dir"; cp -a "$REPO/$dir" "$BUILD_TREE/$dir"; done
+  cp -a "$record/kept/." "$BUILD_TREE/"
+  pass "source of ${target:0:12} is in the project (android/, app.json, package.json, node_modules untouched)"
+  # A fresh bundler cache and no earlier bundle, so the JavaScript is bundled again with these settings.
+  fresh=$(mktemp -d)
+  find "$BUILD_TREE/android/app/build" -name 'index.android.bundle' -delete 2>/dev/null || true
+  info "building; the log is $record/build.log"
+  ( cd "$BUILD_TREE/android"
+    for name in $PUBLIC_SETTINGS EXPO_PUBLIC_LUMEN_WEB_URL; do value=$(setting "$name"); [ -n "$value" ] && export "$name=$value"; done
+    NODE_ENV=production EXPO_NO_TELEMETRY=1 TMPDIR="$fresh" ./gradlew assembleRelease > "$record/build.log" 2>&1 ) || status=$?
+  rm -rf "$fresh"
+  if [ "$status" != 0 ] || [ ! -s "$OLD_APK" ]; then restore; die "The build failed (see $record/build.log). The project's previous source and APK were put back."; fi
+  new="$record/raialume-preview-${target:0:12}.apk"; cp -p "$OLD_APK" "$new"
+  verify "$new" "$record/previous.apk"
+  unzip -p "$new" assets/index.android.bundle 2>/dev/null | grep -qaF 'Open live video in your browser' && pass "the new APK carries this commit's JavaScript" || bad "the new APK does not carry this commit's JavaScript (stale bundle)"
+  { echo "commit=$target"; echo "sha256=$(sha "$new")"; echo "previous_sha256=$(sha "$record/previous.apk")"; echo "signer=$(apk_cert "$new")"; } > "$record/record"
+  [ "$problems" = 0 ] || die "$problems problem(s) with the built APK. Do not install it. It is at $new; the previous one is $record/previous.apk."
+  pass "built and checked: $new"; describe_apk "$new"
+  info "Nothing was installed. Next, with the phone attached: $0 verify $new"
+}
+
 case "$MODE" in
   inventory) inventory ;;
+  phone) phone_report ;;
+  build-check) build_check; [ "$problems" != 0 ] || info "Ready. To build: ANDROID_REFRESH_CONFIRM=build:$(git -C "$REPO" rev-parse --short=12 HEAD) $0 build" ;;
+  build) build ;;
   backup) backup ;;
   verify)
     device; tmp=$(mktemp -d); trap 'rm -rf "$tmp"' EXIT; pull_installed "$tmp/installed.apk"
@@ -177,6 +289,6 @@ case "$MODE" in
     [ "$(sha "$kept/installed.apk")" = "$(sed -n 's/^sha256=//p' "$kept/record")" ] || die "The kept APK does not match its record."
     adb install -r "$kept/installed.apk" || die "Android refused the previous APK (usually a lower versionCode). Nothing was removed and the newer app is still installed. Do not uninstall: that would erase the app's data. Rebuild the previous source with the current versionCode instead."
     pass "the previous APK is installed again; app data was kept" ;;
-  *) sed -n '2,17p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit 2 ;;
+  *) sed -n '2,31p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit 2 ;;
 esac
 [ "$problems" = 0 ] || exit 1

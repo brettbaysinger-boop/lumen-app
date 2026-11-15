@@ -6,8 +6,8 @@ to the live animated companion and Wide Theater. Nothing here was built, install
 
 ## Inventory from the repository
 
-The build host and the phone were not inspected from here. `scripts/android-refresh.sh inventory`
-(read-only) does that; its output decides the exact build commands below.
+The build host was inspected by the owner with `scripts/android-refresh.sh inventory` (see below).
+The phone has not been inspected yet.
 
 - Last Android build recorded as accepted: the chat-collections build of October 11, source
   `9c30b33`, APK SHA256 `8678e74c…e63291` (`docs/android-preview.md`). Whether the phone still
@@ -55,26 +55,53 @@ push (`push-client.native`, `PushLifecycle.native`), navigation and keyboard han
   The avatar session is not touched. Without it, a sideways phone gets a very small picture,
   because the page keeps room for the header and message box.
 
-## Build (owner, on the build host)
+## Owner inventory, November 15 (aiLumen-llm-video)
 
-Outline, as established on October 11. The exact commands are fixed after the inventory output.
+- JDK 17 and build-tools 36.0.0 (`aapt2`, `apksigner`) under `~/Android/Sdk`. `adb` was not on PATH and
+  the phone was **not** inspected. The script now also looks in `~/Android/Sdk/platform-tools`.
+- Native project `/home/brett/lumen-android-builds/preview.ijhcJd`: `com.raialume.preview`,
+  `versionCode` 1, scheme `raialume-preview`, `google-services.json` present, signing outside Git.
+  Its `app.json` and `package.json` differ from Git on purpose and are never replaced.
+- Its current release APK is `e963ef43…55acc6`; the archived collections APK is `8678e74c…e63291`. Both
+  are signed by certificate `fac61745…033b9c`. Which one the phone runs is unknown until ADB says.
+- The three public settings are in the live `.env` only; the API is https on port 8444, so the app
+  works out the web address for Live video by itself.
 
-1. Work in the existing isolated native project, never in `/home/brett/lumen-push`. Copy the
-   previous working APK and the tree's current JavaScript source aside first, as before.
-2. Bring only `app/ components/ lib/ hooks/ types/` from the reviewed commit into that tree.
-   Leave `android/`, its `app.json`, `google-services.json` and signing files as they are.
-   Keep `versionCode` unchanged, so the previous APK can be put back as a plain update.
-3. Build the release APK with the three public settings supplied explicitly from the live
-   checkout's `.env`, `NODE_ENV=production`, and a forced JavaScript rebundle.
+## Steps (owner, on the build host, from a full clone of this branch)
 
-## Update and rollback (owner)
+Each step stops by itself if something is off. Steps 1, 2 and 4 are read-only.
 
 ```bash
-scripts/android-refresh.sh inventory                 # read-only
-scripts/android-refresh.sh verify /path/to/app-release.apk   # read-only; prints the install line
-ANDROID_REFRESH_CONFIRM=install:<12 characters printed by verify> scripts/android-refresh.sh install /path/to/app-release.apk
+# 1. The phone: selected device, installed version, hash and signer of the installed APK.
+#    If adb is not found, install platform-tools first (sdkmanager "platform-tools"), then rerun.
+scripts/android-refresh.sh phone
+
+# 2. Would the build run, and what would it replace? Prints the build line.
+scripts/android-refresh.sh build-check
+
+# 3. Build in the existing native project. No phone needed, nothing installed.
+ANDROID_REFRESH_CONFIRM=build:<12 characters printed by step 2> scripts/android-refresh.sh build
+
+# 4. Check the built APK against what is on the phone. Prints the install line.
+scripts/android-refresh.sh verify <APK path printed by step 3>
+
+# 5. Update the phone. Copies the installed APK off the phone first, then one `adb install -r`.
+ANDROID_REFRESH_CONFIRM=install:<12 characters printed by step 4> scripts/android-refresh.sh install <APK path>
+
+# Back to the APK that was on the phone before step 5:
 ANDROID_REFRESH_CONFIRM=rollback scripts/android-refresh.sh rollback
 ```
+
+`build` keeps the project's previous JavaScript source and release APK under
+`~/.local/state/lumen-android-refresh/build-*`, replaces only `app/ components/ lib/ hooks/ types/`,
+and runs the project's own `./gradlew assembleRelease` with the three public settings from the live
+`.env` (in the build's environment only; never printed or written to the project), `NODE_ENV=production`
+and a fresh bundler cache. It never touches `android/`, `app.json`, `package.json`, `node_modules`,
+`google-services.json` or signing, and never runs `expo prebuild`. If step 2 names files that were
+never committed to Git, those are edits made only on the host: decide per file, and list the ones to
+keep in `ANDROID_REFRESH_KEEP`. A failed build puts the previous source and APK back. The built APK is
+then checked against the previous one: same package, same certificate, same `versionCode`, the public
+settings present, and this commit's JavaScript inside.
 
 `verify` refuses an APK with another package id, another signing certificate, an invalid
 signature, a lower `versionCode`, or without the three public settings the installed app carries
@@ -96,6 +123,6 @@ refuses a rollback, it stops and leaves the app and its data in place.
 
 ## Tests
 
-`node --test tests/*.test.cjs` (105), `scripts/test-android-refresh.sh` (30 checks, stand-ins for
-adb and the SDK tools), `scripts/test-animated-size-component.cjs`, `npm run typecheck`, and an
+`node --test tests/*.test.cjs` (105), `scripts/test-android-refresh.sh` (52 checks, stand-ins for
+adb, Gradle and the SDK tools), `scripts/test-animated-size-component.cjs`, `npm run typecheck`, and an
 Android JavaScript export of this commit. No device or APK build was involved.

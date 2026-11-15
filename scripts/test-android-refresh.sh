@@ -32,7 +32,8 @@ file="${@: -1}"; cert=$(unzip -p "$file" cert); [ "$cert" != INVALID ] || exit 1
 [ "$2" = --print-certs ] && echo "Signer #1 certificate SHA-256 digest: $cert"; exit 0
 STUB
 printf '#!/usr/bin/env bash\ncase "$1" in -u) [ -f "%s/root" ] && echo 0 || echo 1000 ;; *) echo fictional ;; esac\n' "$S" > "$B/id"
-cat > "$B/adb" <<STUB
+mkdir -p "$H/Android/Sdk/platform-tools"; ADB="$H/Android/Sdk/platform-tools/adb"   # not on PATH: found in the SDK
+cat > "$ADB" <<STUB
 #!/usr/bin/env bash
 echo "adb \$*" >> "$S/calls"
 code() { unzip -p "\$1" badging | sed "s/.*versionCode='\([0-9]*\)'.*/\1/"; }
@@ -46,7 +47,7 @@ case "\$*" in
   *) echo "unexpected adb call: \$*" >&2; exit 9 ;;
 esac
 STUB
-chmod +x "$B"/*
+chmod +x "$B"/* "$ADB"
 run() { env PATH="$B:$PATH" HOME="$H" XDG_STATE_HOME="$H/state" LIVE_DIR="$L" BUILD_ROOT="$R" "$@" bash "$SRC/scripts/android-refresh.sh" "${ARGS[@]}"; }
 phone() { sha256sum "$S/phone.apk" | cut -d' ' -f1; }; sum() { sha256sum "$1" | cut -d' ' -f1; }
 changed() { grep -cE '^adb (install|uninstall|shell pm (clear|uninstall)|shell am|push|root|reboot)' "$S/calls" || true; }
@@ -56,6 +57,10 @@ ARGS=(inventory); out=$(run 2>&1) && ok "inventory runs" || bad "inventory: $out
 [[ $out == *"SM-S901U"* && $out == *"$OLD"* && $out == *"google-services.json: present (not read)"* && $out == *"MYAPP_UPLOAD_STORE_PASSWORD"* ]] && ok "inventory: phone, installed APK hash, build tree and signing property names reported" || bad "inventory content: $out"
 [[ $out != *never-print-this* && $out != *fictional-anon-key* && $out != *lumen.fictional.invalid* ]] && ok "inventory: no setting value or password printed" || bad "inventory printed a value"
 [[ $(changed) == 0 && $(phone) == "$OLD" ]] && ok "inventory: read-only on the phone" || bad "inventory changed the phone"
+[[ $out == *"adb: $ADB"* && $out == *"selected device: FICTIONAL1"* ]] && ok "inventory: adb found in the SDK's platform-tools, selected device named" || bad "adb discovery: $out"
+ARGS=(phone); out=$(run 2>&1) && [[ $out == *"$OLD"* && $out != *"build root"* && $(changed) == 0 ]] && ok "phone: device and installed APK only, read-only" || bad "phone: $out"
+mv "$ADB" "$ADB.off"; out=$(run 2>&1) && [[ $out == *"adb was not found"* ]] && ok "phone: says so when adb is not installed" || bad "phone without adb: $out"; mv "$ADB.off" "$ADB"
+ARGS=(inventory)
 echo 0 > "$S/devices"; out=$(run 2>&1) && ok "inventory: works without a phone attached" || bad "inventory without phone: $out"; echo 1 > "$S/devices"
 
 ARGS=(verify "$T/new.apk"); out=$(run 2>&1) && [[ $out == *"Safe to install"*"$CONFIRM"* ]] && ok "verify: a same-package, same-key, same-settings APK passes" || bad "verify good: $out"
@@ -86,4 +91,49 @@ out=$(run ANDROID_REFRESH_CONFIRM=rollback 2>&1) && [[ $(phone) == "$OLD" ]] && 
 cp "$T/newer.apk" "$S/phone.apk"; if out=$(run ANDROID_REFRESH_CONFIRM=rollback 2>&1); then bad "rollback claimed success on a downgrade"; else [[ $out == *"Do not uninstall"* && $(phone) == "$(sum "$T/newer.apk")" ]] && ok "rollback: a refused downgrade stops; the app and its data stay" || bad "rollback downgrade: $out"; fi
 grep -qE 'uninstall|pm clear|shell am ' "$S/calls" && bad "an uninstall or data wipe was issued" || ok "never uninstalls or clears app data"
 grep -nE '^[^#]*(adb +(shell +)?(pm +)?(uninstall|clear)|apksigner +sign|jarsigner|keytool)' "$SRC/scripts/android-refresh.sh" && bad "the script contains an uninstall, wipe or signing command" || ok "the script has no uninstall, wipe or signing command"
+
+# --- build: a fictional repository with history, a fictional native project, a stand-in for Gradle ---
+g() { git -c user.name=t -c user.email=t@example.invalid -c commit.gpgsign=false "$@"; }
+C=$T/clone; N=$R/preview.ijhcJd; mkdir -p "$C/scripts" "$C/app" "$C/components" "$C/lib" "$C/hooks" "$C/types"
+echo '{"dependencies":{"fictional-dep":"1.0.0"}}' > "$C/package.json"; echo '{"expo":{"scheme":"myapp"}}' > "$C/app.json"
+echo "chat v1" > "$C/app/index.tsx"; echo "old screen" > "$C/app/removed.tsx"; echo "auth v1" > "$C/lib/social-auth.ts"; echo x > "$C/components/a.tsx"; echo x > "$C/hooks/h.ts"; echo x > "$C/types/t.ts"
+g -C "$C" init -q; g -C "$C" add -A; g -C "$C" commit -q -m "accepted in October"
+mkdir -p "$N/android/app/build/outputs/apk/release" "$N/node_modules/fictional-dep"; echo '{}' > "$N/node_modules/fictional-dep/package.json"
+for d in app components lib hooks types; do cp -r "$C/$d" "$N/$d"; done
+echo '{"expo":{"scheme":"raialume-preview","android":{"package":"com.raialume.preview"}}}' > "$N/app.json"; echo '{"native":"project"}' > "$N/package.json"
+echo "applicationId 'com.raialume.preview'" > "$N/android/app/build.gradle"; echo '{"fictional":"firebase"}' > "$N/android/app/google-services.json"; echo fictional-keystore > "$N/android/app/release.keystore"
+cp "$T/old.apk" "$N/android/app/build/outputs/apk/release/app-release.apk"
+cat > "$N/android/gradlew" <<STUB
+#!/usr/bin/env bash
+echo "gradlew \$* NODE_ENV=\$NODE_ENV" >> "$S/calls"
+[ -f "$S/gradle-fail" ] && { echo "BUILD FAILED"; exit 1; }
+d=\$(mktemp -d -p "$T"); mkdir -p "\$d/assets"
+{ cat ../app/* ../lib/*; [ -f "$S/no-env" ] || echo "\$EXPO_PUBLIC_SUPABASE_URL \$EXPO_PUBLIC_SUPABASE_ANON_KEY \$EXPO_PUBLIC_LUMEN_API_URL"; } > "\$d/assets/index.android.bundle"
+printf "package: name='com.raialume.preview' versionCode='1' versionName='1.0.0'\n" > "\$d/badging"; echo AAAA > "\$d/cert"
+rm -f app/build/outputs/apk/release/app-release.apk; (cd "\$d" && zip -q -r "$N/android/app/build/outputs/apk/release/app-release.apk" .)
+STUB
+printf '#!/usr/bin/env bash\necho %s >&2\n' "'openjdk version \"17.0.12\" 2026-01-01'" > "$B/java"; chmod +x "$N/android/gradlew" "$B/java"
+cp "$SRC/scripts/android-refresh.sh" "$C/scripts/"; echo "chat v2 Open live video in your browser" > "$C/app/index.tsx"; echo "new screen" > "$C/app/added.tsx"; g -C "$C" rm -q app/removed.tsx
+g -C "$C" add -A; g -C "$C" commit -q -m "refresh"; HEAD12=$(git -C "$C" rev-parse --short=12 HEAD)
+brun() { env PATH="$B:$PATH" HOME="$H" XDG_STATE_HOME="$H/state" LIVE_DIR="$L" BUILD_ROOT="$R" "$@" bash "$C/scripts/android-refresh.sh" "${ARGS[@]}"; }
+native() { (cd "$N" && cat app.json package.json android/app/build.gradle android/app/google-services.json android/app/release.keystore node_modules/fictional-dep/package.json | sha256sum); }
+tree() { (cd "$N" && find app components lib hooks types -type f | sort | xargs sha256sum | sha256sum); }
+NATIVE=$(native); TREE=$(tree); : > "$S/calls"; cp "$T/old.apk" "$S/phone.apk"
+
+ARGS=(build-check); out=$(brun 2>&1) && [[ $out == *"files of app components lib hooks types that would change: 3"*"build:$HEAD12"* && $(tree) == "$TREE" ]] && ok "build-check: passes, counts the changes, changes nothing" || bad "build-check: $out"
+[[ $out != *fictional-anon-key* && $out != *fictional-keystore* ]] && ok "build-check: no setting value or key printed" || bad "build-check printed a value"
+ARGS=(build); if out=$(brun 2>&1); then bad "build ran without confirmation"; else [[ $(tree) == "$TREE" ]] && ! grep -q gradlew "$S/calls" && ok "build: refuses without the confirmation for this commit" || bad "unconfirmed build changed the project"; fi
+echo "auth v1 with a host-only fix" > "$N/lib/social-auth.ts"; TREE=$(tree)
+if out=$(brun ANDROID_REFRESH_CONFIRM="build:$HEAD12" 2>&1); then bad "build overwrote a local edit"; else [[ $out == *"never committed"*"lib/social-auth.ts"* && $(tree) == "$TREE" ]] && ok "build: stops at a file that was only ever edited in the native project" || bad "local edit: $out"; fi
+touch "$S/gradle-fail"; if out=$(brun ANDROID_REFRESH_KEEP="lib/social-auth.ts" ANDROID_REFRESH_CONFIRM="build:$HEAD12" 2>&1); then bad "failed build reported success"; else [[ $(tree) == "$TREE" && $(sum "$N/android/app/build/outputs/apk/release/app-release.apk") == "$OLD" ]] && ok "build: a failed build puts the previous source and APK back" || bad "failed build left changes: $out"; fi; rm "$S/gradle-fail"
+touch "$S/no-env"; if out=$(brun ANDROID_REFRESH_KEEP="lib/social-auth.ts" ANDROID_REFRESH_CONFIRM="build:$HEAD12" 2>&1); then bad "build accepted an APK without settings"; else [[ $out == *"would fail at startup"*"Do not install"* ]] && ok "build: an APK without the public settings is rejected" || bad "no-env build: $out"; fi; rm "$S/no-env"
+tar -C "$N" -xf "$(ls -1d "$H"/state/lumen-android-refresh/build-* | sort | tail -1)/previous-source.tar" && rm -f "$N/app/added.tsx" && cp "$T/old.apk" "$N/android/app/build/outputs/apk/release/app-release.apk"
+out=$(brun ANDROID_REFRESH_KEEP="lib/social-auth.ts" ANDROID_REFRESH_CONFIRM="build:$HEAD12" 2>&1) && [[ $out == *"built and checked"*"Nothing was installed"* ]] && ok "build: builds the confirmed commit and checks the APK" || bad "build: $out"
+BUILT=$(ls -1d "$H"/state/lumen-android-refresh/build-* | sort | tail -1)
+[[ $(cat "$N/app/index.tsx") == "chat v2"* && -f "$N/app/added.tsx" && ! -e "$N/app/removed.tsx" && $(cat "$N/lib/social-auth.ts") == *"host-only fix" ]] && ok "build: source replaced, removed files removed, the kept local edit untouched" || bad "source sync wrong"
+[[ $(native) == "$NATIVE" ]] && ok "build: app.json, package.json, android/, google-services.json, keystore and node_modules untouched" || bad "native project files changed"
+[[ $(sum "$BUILT/previous.apk") == "$OLD" && -s "$BUILT/previous-source.tar" && $(sum "$BUILT/raialume-preview-$HEAD12.apk") == "$(sed -n 's/^sha256=//p' "$BUILT/record")" ]] && ok "build: previous APK and source kept, new APK recorded by hash" || bad "build record wrong"
+grep -q "gradlew assembleRelease NODE_ENV=production" "$S/calls" && ! grep -qE 'prebuild|^adb ' "$S/calls" && ok "build: the project's own release build, no prebuild, no phone" || bad "unexpected build calls: $(cat "$S/calls")"
+[[ $out != *fictional-anon-key* ]] && ! grep -rq fictional-anon-key "$BUILT/record" "$N/.env" 2>/dev/null && ok "build: settings not printed and not written into the project" || bad "build leaked a setting"
+ARGS=(verify "$BUILT/raialume-preview-$HEAD12.apk"); out=$(brun 2>&1) && [[ $out == *"Safe to install"* ]] && ok "the built APK then passes verify against the phone" || bad "verify built: $out"
 [ "$fail" = 0 ] && echo "android refresh: all checks passed" || { echo "android refresh: FAILED"; exit 1; }
