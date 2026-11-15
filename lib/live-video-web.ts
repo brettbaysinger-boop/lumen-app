@@ -1,0 +1,58 @@
+// Live video from the phone app: a doorway to the web app, not a second video engine.
+//
+// The animated companion (and Wide Theater) run in the browser over WebRTC. The native
+// app has no such engine, so it keeps the portrait and Helios voice, and offers a clearly
+// labelled action that opens the signed-in web app in the phone's own browser.
+// Nothing is handed over: no token, cookie or account detail is put in the address. The
+// browser keeps its own Lumen sign-in, separate from the app's.
+import { Linking } from 'react-native';
+import { authHeaders } from './auth';
+
+/**
+ * Address of the Lumen web app, or null when it is not known for certain.
+ * `explicit` (EXPO_PUBLIC_LUMEN_WEB_URL) wins. Without it, the address is taken from the API
+ * address only in the documented private HTTPS layout, where the API is the web host on port 8444.
+ * Only a plain https origin is accepted: no sign-in details, no path, query or fragment.
+ */
+export function lumenWebUrl(explicit: string | undefined, apiUrl: string | undefined): string | null {
+  const origin = (value: string | undefined): URL | null => {
+    const text = value?.trim();
+    if (!text) return null;
+    try {
+      const url = new URL(text);
+      if (url.protocol !== 'https:' || !url.hostname || url.username || url.password || url.search || url.hash) return null;
+      return url;
+    } catch { return null; }
+  };
+  if (explicit?.trim()) {
+    const url = origin(explicit);
+    return url && (url.pathname === '/' || url.pathname === '') ? `https://${url.host}/` : null;
+  }
+  const api = origin(apiUrl);
+  return api && api.port === '8444' ? `https://${api.hostname}/` : null;
+}
+
+export function liveVideoWebUrl(): string | null {
+  return lumenWebUrl(process.env.EXPO_PUBLIC_LUMEN_WEB_URL, process.env.EXPO_PUBLIC_LUMEN_API_URL);
+}
+
+/**
+ * The web address to offer, or null. Offered only when the address is known and the server says
+ * the animated companion is switched on and its avatar service is reachable right now.
+ */
+export async function liveVideoOnWeb(signal?: AbortSignal): Promise<string | null> {
+  const web = liveVideoWebUrl();
+  const api = process.env.EXPO_PUBLIC_LUMEN_API_URL?.trim().replace(/\/+$/, '');
+  if (!web || !api) return null;
+  try {
+    const response = await fetch(`${api}/v0.1/avatar/status`, { headers: await authHeaders(), signal });
+    const body = response.ok ? await response.json() : null;
+    return body?.enabled === true && body?.available === true ? web : null;
+  } catch { return null; }
+}
+
+/** Opens the web app in the phone's browser. Returns false when no browser could open it. */
+export async function openLiveVideoOnWeb(url: string): Promise<boolean> {
+  if (lumenWebUrl(url, undefined) !== url) return false;
+  try { await Linking.openURL(url); return true; } catch { return false; }
+}

@@ -24,7 +24,7 @@ REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 LIVE_DIR="${LIVE_DIR:-/home/brett/lumen-push}"
 WEB_URL="${WEB_URL:-http://127.0.0.1:8081}"
 STATE_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/lumen-animated/web-updates"
-FRONTEND_ONLY='^(app/|components/|lib/|hooks/|types/|tests/|docs/|scripts/(test-)?animated[-_][A-Za-z0-9_.-]+$)'
+FRONTEND_ONLY='^(app/|components/|lib/|hooks/|types/|tests/|docs/|scripts/(test-)?(animated[-_][A-Za-z0-9_.-]+|android-refresh\.sh)$)'
 problems=0
 pass() { printf 'PASS  %s\n' "$1"; }
 bad()  { printf 'FAIL  %s\n' "$1"; problems=$((problems + 1)); }

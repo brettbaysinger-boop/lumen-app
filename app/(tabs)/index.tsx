@@ -22,6 +22,7 @@ import {
   Platform,
   StyleSheet,
   ActivityIndicator,
+  Alert,
   AppState,
   Keyboard,
   useWindowDimensions,
@@ -45,6 +46,7 @@ import { CompanionPortrait } from '@/components/CompanionPortrait';
 import { AnimatedCompanion } from '@/components/AnimatedCompanion';
 import { AnimatedCompanionSession, animatedCompanionAvailable, type AnimatedState } from '@/lib/animated-companion';
 import { AutoSpeak } from '@/lib/animated-companion-core';
+import { liveVideoOnWeb, openLiveVideoOnWeb } from '@/lib/live-video-web';
 import { PracticeSavedCard } from '@/components/PracticeSavedCard';
 import { ProviderRequests } from '@/components/ProviderRequests';
 import { DayActionCard } from '@/components/DayActionCard';
@@ -85,6 +87,8 @@ export default function ChatScreen() {
   const [animatedOffered, setAnimatedOffered] = useState(false);
   const [animatedState, setAnimatedState] = useState<AnimatedState>('off');
   const [animatedNote, setAnimatedNote] = useState<string | null>(null);
+  // Phone app only: the address of the web app, while the server offers live video there.
+  const [liveVideoWeb, setLiveVideoWeb] = useState<string | null>(null);
   const animatedRef = useRef<AnimatedCompanionSession | null>(null);
   // Sound the browser refused to play until the user interacts with the page (autoplay rules).
   const [soundBlocked, setSoundBlocked] = useState(false);
@@ -328,11 +332,25 @@ export default function ChatScreen() {
   useEffect(() => {
     animated.close();
     setAnimatedOffered(false);
-    if (Platform.OS !== 'web' || !companion?.id) return;
+    setLiveVideoWeb(null);
+    if (!companion?.id) return;
     const controller = new AbortController();
+    if (Platform.OS !== 'web') {
+      void liveVideoOnWeb(controller.signal).then(url => { if (!controller.signal.aborted) setLiveVideoWeb(url); });
+      return () => controller.abort();
+    }
     void animatedCompanionAvailable(controller.signal).then(available => { if (!controller.signal.aborted) setAnimatedOffered(available); });
     return () => controller.abort();
   }, [companion?.id, animated]);
+  // The phone app has no video engine of its own. It asks first, then opens the web app in the browser.
+  const openLiveVideo = useCallback(() => {
+    const url = liveVideoWeb;
+    if (!url) return;
+    Alert.alert('Open live video in your browser?', 'Live video and Wide Theater run in the Lumen web app. This opens it in your browser. The browser keeps its own Lumen sign-in, so sign in there the first time. This app stays as it is, with the portrait and voice.', [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Open', onPress: () => { void openLiveVideoOnWeb(url).then(opened => { if (!opened && mountedRef.current) setAnimatedNote('Live video could not be opened in a browser. Lumen is using the portrait.'); }); } },
+    ]);
+  }, [liveVideoWeb]);
   const toggleAnimated = useCallback(async () => {
     setAnimatedNote(null);
     if (animated.state !== 'off') { playbackRef.current?.abort(); autoSpeak.cancel(); blockedReplyRef.current = null; setSoundBlocked(false); animated.close(); return; }
@@ -839,6 +857,9 @@ export default function ChatScreen() {
         <View style={styles.headerStatus}>
           {animatedOffered && <TouchableOpacity accessibilityRole="switch" accessibilityState={{ checked: animatedState !== 'off', busy: animatedState === 'connecting' }} accessibilityLabel="Animated companion" disabled={animatedState === 'connecting'} onPress={toggleAnimated}>
             <Text style={{color:colors.primary[300],fontSize:12}}>{animatedState === 'ready' ? 'Animated: on' : animatedState === 'connecting' ? 'Connecting…' : 'Animated: off'}</Text>
+          </TouchableOpacity>}
+          {Platform.OS !== 'web' && !!liveVideoWeb && <TouchableOpacity accessibilityRole="link" accessibilityLabel="Open live video in your browser" accessibilityHint="Opens the Lumen web app, where the animated companion and Wide Theater run" onPress={openLiveVideo}>
+            <Text style={{color:colors.primary[300],fontSize:12}}>Live video ↗</Text>
           </TouchableOpacity>}
           <TouchableOpacity accessibilityRole="button" accessibilityLabel="Open your documents" disabled={sending || voiceBusy || documentBusy} onPress={() => router.push('/documents')}>
             <Text style={{color:colors.primary[300],fontSize:12}}>Documents</Text>

@@ -1,4 +1,4 @@
-import { createElement, useCallback, useState } from 'react';
+import { createElement, useCallback, useRef, useState } from 'react';
 import { Platform, Text, TouchableOpacity, View, useWindowDimensions, type LayoutChangeEvent } from 'react-native';
 import type { AnimatedCompanionSession } from '@/lib/animated-companion';
 import { ANIMATED_SIZE_LABELS, animatedDisplayBox, defaultAnimatedSize, isAnimatedSize, stepAnimatedSize, type AnimatedSize } from '@/lib/animated-companion-core';
@@ -17,7 +17,13 @@ function rememberSize(size: AnimatedSize) { try { globalThis.localStorage?.setIt
 // exactly as they are. The square sizes have rounded corners; the uncropped size
 // has square corners, because a rounded corner would cut off pixels of the frame.
 export function AnimatedCompanion({ session, borderColor, controlColor }: { session: AnimatedCompanionSession; borderColor: string; controlColor: string }) {
-  const bind = useCallback((element: HTMLVideoElement | null) => { session.attach(element); }, [session]);
+  const video = useRef<HTMLVideoElement | null>(null);
+  const bind = useCallback((element: HTMLVideoElement | null) => { video.current = element; session.attach(element); }, [session]);
+  // The browser's own full screen, for a phone held sideways. It shows the same element, so the
+  // stream and the avatar session are untouched. Offered for the uncropped size only, and only
+  // where the browser can do it.
+  const fullScreen = useCallback(() => { try { void video.current?.requestFullscreen?.()?.catch?.(() => {}); } catch {} }, []);
+  const canFullScreen = typeof document !== 'undefined' && document.fullscreenEnabled === true;
   const { width: windowWidth, height } = useWindowDimensions();
   const [chosen, setChosen] = useState<AnimatedSize | null>(rememberedSize);
   // The width of the column this sits in: narrower than the window while the sidebar is open.
@@ -42,6 +48,9 @@ export function AnimatedCompanion({ session, borderColor, controlColor }: { sess
         {control('Shrink', smaller)}
         <Text accessibilityLabel={`Animated companion size: ${ANIMATED_SIZE_LABELS[size]}`} style={{ color: controlColor, fontSize: 12, opacity: 0.6 }}>{ANIMATED_SIZE_LABELS[size]}</Text>
         {control('Expand', larger)}
+        {box.contain && canFullScreen && <TouchableOpacity accessibilityRole="button" accessibilityLabel="Show animated companion full screen" onPress={fullScreen} hitSlop={8}>
+          <Text style={{ color: controlColor, fontSize: 12 }}>Full screen</Text>
+        </TouchableOpacity>}
       </View>
     </View>
   );

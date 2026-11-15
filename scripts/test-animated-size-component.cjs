@@ -75,5 +75,18 @@ const label=root=>root.root.findAllByType('Text').find(text=>String(text.props.a
   await act(async()=>root.unmount());
   windowSize={width:390,height:844};await act(async()=>{root=render();});assert.equal(box(root).width,260);  // Compact by default on a phone
   await act(async()=>root.unmount());
+  // Full screen: offered for the uncropped size only, and only where the browser can do it. It asks the
+  // browser to show the same element; the session is not touched. A phone held sideways gets the whole frame.
+  const full=root=>root.root.findAllByType('TouchableOpacity').find(item=>item.props.accessibilityLabel==='Show animated companion full screen');
+  windowSize={width:780,height:360};globalThis.localStorage={getItem:()=>'wide',setItem(){}};
+  await act(async()=>{root=render();});assert.equal(full(root),undefined);          // a browser without full screen: no control
+  assert.equal(video(root).props.style.objectFit,'contain');assert.ok(box(root).width<=780-32&&box(root).height<=360);
+  await act(async()=>root.unmount());
+  globalThis.document={fullscreenEnabled:true};let asked=0;element.requestFullscreen=()=>{asked++;return Promise.reject(new Error('refused'));};
+  calls.length=0;await act(async()=>{root=render();});
+  await act(async()=>full(root).props.onPress());assert.equal(asked,1);              // a refusal by the browser is swallowed
+  assert.deepEqual(calls,[['attach',element]]);
+  await press(root,'Shrink');assert.equal(full(root),undefined);                     // square, cropped sizes: not offered
+  await act(async()=>root.unmount());delete globalThis.document;
   console.log('animated size component: all checks passed');
 })().catch(error=>{console.error(error);process.exit(1);});
