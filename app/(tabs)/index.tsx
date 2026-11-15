@@ -46,7 +46,7 @@ import { CompanionPortrait } from '@/components/CompanionPortrait';
 import { AnimatedCompanion } from '@/components/AnimatedCompanion';
 import { AnimatedCompanionSession, animatedCompanionAvailable, type AnimatedState } from '@/lib/animated-companion';
 import { AutoSpeak } from '@/lib/animated-companion-core';
-import { liveVideoPrompt, liveVideoStatus, liveVideoWebUrl, openLiveVideoOnWeb } from '@/lib/live-video-web';
+import { inAppVideoSupported, liveVideoPrompt, liveVideoStatus, liveVideoWebUrl, openLiveVideoOnWeb } from '@/lib/live-video-web';
 import { PracticeSavedCard } from '@/components/PracticeSavedCard';
 import { ProviderRequests } from '@/components/ProviderRequests';
 import { DayActionCard } from '@/components/DayActionCard';
@@ -346,11 +346,12 @@ export default function ChatScreen() {
     const status = url ? await liveVideoStatus() : 'unknown';
     if (!mountedRef.current) return;
     setLiveVideoChecking(false);
-    const prompt = liveVideoPrompt(url, status);
+    const prompt = liveVideoPrompt(url, status, inAppVideoSupported());
     const open = () => { if (url) void openLiveVideoOnWeb(url).then(opened => { if (!opened && mountedRef.current) setAnimatedNote('Live video could not be opened in a browser. Lumen is using the portrait.'); }); };
     Alert.alert(prompt.title, prompt.message, prompt.choices.map(choice => choice === 'cancel' ? { text: prompt.choices.length === 1 ? 'OK' : 'Cancel', style: 'cancel' as const }
       : choice === 'retry' ? { text: 'Check again', onPress: () => { void check(); } }
-      : { text: status === 'available' ? 'Open' : 'Open web app', onPress: open }));
+      : choice === 'inapp' ? { text: 'Watch here', onPress: () => { router.push('/live-video'); } }
+      : { text: prompt.choices.includes('inapp') ? 'Browser' : status === 'available' ? 'Open' : 'Open web app', onPress: open }));
   }, []);
   const toggleAnimated = useCallback(async () => {
     setAnimatedNote(null);
@@ -866,9 +867,10 @@ export default function ChatScreen() {
             <Text style={{color:colors.primary[300],fontSize:12}}>Documents</Text>
           </TouchableOpacity>
           <TouchableOpacity accessibilityRole="button" accessibilityLabel="Open goals and practice" disabled={sending || voiceBusy || managementBusy} onPress={()=>router.push({pathname:'/goals',params:{goal:activeConversation?.goal_item_id||''}})}><Text style={{color:colors.primary[300],fontSize:12}}>Practice</Text></TouchableOpacity>
-          <Text style={styles.statusText}>
+          {/* On a phone the resting word "Conversation" is left out: the row is for actions and for news. */}
+          {!(isMobile && !sending && syncStatus === 'current') && <Text style={styles.statusText}>
             {sending ? 'Thinking…' : syncStatus === 'current' ? 'Conversation' : syncStatus === 'refreshing' ? 'Refreshing…' : 'Saved on device'}
-          </Text>
+          </Text>}
         </View>
       </View>
 
@@ -1135,7 +1137,7 @@ export default function ChatScreen() {
             </View>
           </View>}
         </View>
-        {companion && <EffortControl companionId={companion.id} model={companion.conversation_model} value={effort} onChange={setEffort} disabled={sending} />}
+        {companion && <EffortControl companionId={companion.id} model={companion.conversation_model} value={effort} onChange={setEffort} disabled={sending} compact={isMobile} />}
         {!!pendingDocument && <TouchableOpacity disabled={sending} accessibilityRole="button" onPress={() => setInputText('Work harder: improve this bid into a clear professional proposal. Preserve the original scope, prices, exclusions and warranty terms. Flag missing details.')}><Text style={{ color: colors.primary[300], padding: 8 }}>Work harder · improve this document</Text></TouchableOpacity>}
         {Platform.OS !== 'web' && <View style={{ flexDirection: 'row', gap: 8, paddingHorizontal: 12 }}>
           <TouchableOpacity style={{ width: 44, height: 44, alignItems: 'center', justifyContent: 'center' }} accessibilityLabel="Search the web" disabled={sending || voiceBusy || documentBusy || !!pendingDocument} onPress={() => setInputText(text => /^search (?:the )?web:/i.test(text) ? text : `Search the web: ${text}`)}>
@@ -1218,7 +1220,7 @@ export default function ChatScreen() {
             )}
           </TouchableOpacity>
         </View>
-        {!keyboardVisible && <Text style={styles.composerHint}>A conversation that stays with you.</Text>}
+        {!keyboardVisible && !isMobile && <Text style={styles.composerHint}>A conversation that stays with you.</Text>}
       </View>
       </KeyboardAvoidingView>
       {showCamera && <CameraCapture onClose={() => setShowCamera(false)} onCapture={image => setPendingImages(previous => [...previous, image].slice(0, 4))} />}
