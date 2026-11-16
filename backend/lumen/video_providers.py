@@ -571,6 +571,7 @@ class FramePackStudioProvider(FramePackProvider):
 
     name = "framepack-studio"
     stage = "contract"  # contract, current_job, upload, start_queue, monitor, download
+    job_id: str | None = None
     states: list[int] = []
 
     async def _info(self, client: httpx.AsyncClient) -> tuple[str, dict[str, Any]]:
@@ -659,6 +660,7 @@ class FramePackStudioProvider(FramePackProvider):
                 self.stage = "start_queue"
                 data = with_state_slots(data, self.states)
                 job_id = studio_job_id(await self._last(client, root, STUDIO_START, data, deadline))
+                self.job_id = job_id
                 if not job_id:
                     raise ImageProviderError("FramePack-Studio did not return a job id.")
                 await on_progress(5, "Animating…")
@@ -679,25 +681,38 @@ class FramePackStudioProvider(FramePackProvider):
     async def _follow_job(self, client, root: str, job_id: str, seconds: float, on_progress: Progress,
                           deadline: float) -> str:
         video = None
+        last_desc, last_progress = "", None
         async for event, values in self._events(client, root, STUDIO_MONITOR, [job_id], deadline):
             if event not in ("generating", "complete"):
                 continue
             video = studio_video_for(values, job_id) or video
             desc = studio_desc(values)
             if desc.startswith("Switching to current job"):
-                raise ImageProviderError("FramePack-Studio switched to another job before this one finished.")
+                raise ImageProviderError(f"FramePack-Studio switched to another job before job {job_id} finished.")
             if desc.startswith("Error"):
-                raise ImageProviderError("FramePack-Studio could not finish the video.")
+                raise ImageProviderError(f"FramePack-Studio could not finish job {job_id}: {_short(desc)}")
             if desc in ("Job cancelled", "No job ID provided"):
-                raise ImageProviderError("FramePack-Studio stopped this job.")
+                raise ImageProviderError(f"FramePack-Studio stopped job {job_id} ({desc}).")
             if desc == "Completed":
                 if not video:
-                    raise ImageProviderError("FramePack-Studio finished without this job's video.")
+                    # FP-Studio's worker reports a generation exception as ('error', ...), which its queue
+                    # loop ignores, then ('end', None): the job is marked Completed with no result file.
+                    raise ImageProviderError(
+                        f"FramePack-Studio marked job {job_id} Completed without a video for it "
+                        f"(last progress: {_short(last_desc) or 'none'}). FP-Studio does this when generation "
+                        "raised an error; its console shows 'Error during generation' with the traceback.")
                 return video
+            if desc:
+                last_desc = desc
             percent = framepack_progress(values if isinstance(values, list) else [], seconds)
-            if percent is not None:
+            if percent is not None and percent != last_progress:  # only changes, not every 50 ms poll
+                last_progress = percent
                 await on_progress(percent, "Animating…")
-        raise ImageProviderError("FramePack-Studio stopped reporting before the video was finished.")
+        raise ImageProviderError(f"FramePack-Studio stopped reporting before job {job_id} finished.")
+
+
+def _short(text: str) -> str:
+    return _PATHS.sub("<path>", re.sub(r"<[^>]+>|\s+", " ", text or "")).strip()[:160]
 
 
 def framepack_provider(settings) -> FramePackProvider:

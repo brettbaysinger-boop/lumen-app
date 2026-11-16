@@ -59,14 +59,18 @@ async def run(args) -> int:
     image = Path(args.image).read_bytes()
     mime = "image/png" if image[:8] == b"\x89PNG\r\n\x1a\n" else "image/jpeg"
 
+    last = [None]
+
     async def progress(percent, stage):
-        print(f"progress {percent}% {stage}", file=sys.stderr)
+        if (percent, stage) != last[0]:  # print changes only
+            last[0] = (percent, stage)
+            print(f"progress {percent}% {stage}", file=sys.stderr)
 
     try:
         result = await provider.generate(image, mime, args.prompt, seconds=args.seconds,
                                          negative=args.negative, on_progress=progress)
     except Exception as exc:  # noqa: BLE001 - one stable JSON line at every stage, never a traceback
-        print(json.dumps({"result": "FAIL", "stage": provider.stage,
+        print(json.dumps({"result": "FAIL", "stage": provider.stage, "fp_studio_job_id": provider.job_id,
                           "gpu_work": "none" if provider.stage in ("contract", "current_job", "upload")
                           else "possible: check FramePack-Studio's queue before retrying",
                           "reason": f"{type(exc).__name__}: {str(exc)[:400]}"}))

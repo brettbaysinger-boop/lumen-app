@@ -293,6 +293,32 @@ class StudioRunTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(provider.stage, "start_queue")
         self.assertFalse(any("monitor_job" in p for _, p in fake.calls))
 
+    async def test_regression_hardware_completed_without_result(self):
+        """2026-11-16 hardware run: thousands of repeated 10%/37% monitor updates, then Completed with no
+        video. In FP-Studio a worker exception is pushed as ('error', ...), ignored by the queue loop, then
+        ('end', None) marks the job Completed with job.result None."""
+        progress_html = ["<div class='progress'>10%</div>", "<div class='progress'>37%</div>"]
+        updates = [(None, "Sampling 1/25 (section 1)", progress_html[i % 2]) for i in range(2000)]
+        fake = FakeStudio(monitor=[*updates, (None, "Completed", "<div>100%</div>")])
+        with self.assertRaisesRegex(ImageProviderError,
+                                    f"marked job {JOB} Completed without a video.*last progress: Sampling 1/25"):
+            await self.run_studio(fake)
+        self.assertFalse(any(p.startswith("/gradio_api/file=") for _, p in fake.calls))
+
+    async def test_identical_progress_is_reported_once_per_change(self):
+        same = [(None, "Sampling", "<div>10%</div>")] * 500 + [(None, "Sampling", "<div>37%</div>")] * 500
+        fake = FakeStudio(monitor=[*same, (video(f"/fps/outputs/{JOB}_37.mp4"), "Completed", "")])
+        _, progress = await self.run_studio(fake)
+        self.assertEqual(progress, [5, 10, 37, 97])  # start, the two changes, saving
+
+    async def test_full_gradio_video_payload_shape_is_accepted(self):
+        payload = {"video": {"path": f"/tmp/gradio/3f9c/{JOB}_37.mp4", "url": f"http://127.0.0.1:7863/gradio_api/file=/tmp/gradio/3f9c/{JOB}_37.mp4",
+                             "size": 812345, "orig_name": f"{JOB}_37.mp4", "mime_type": None, "is_stream": False,
+                             "meta": {"_type": "gradio.FileData"}}, "subtitles": None}
+        fake = FakeStudio(monitor=[(payload, "Completed", "")])
+        result, _ = await self.run_studio(fake)
+        self.assertEqual(result["bytes"], f"MP4:/tmp/gradio/3f9c/{JOB}_37.mp4".encode())
+
     async def test_busy_studio_is_refused_before_upload(self):
         fake = FakeStudio(current=OTHER)
         with self.assertRaisesRegex(ImageProviderError, "busy"):
@@ -310,7 +336,7 @@ class StudioRunTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_another_jobs_video_is_never_returned(self):
         fake = FakeStudio(monitor=[(video(f"/fps/outputs/{OTHER}_37.mp4"), "Completed", "")])
-        with self.assertRaisesRegex(ImageProviderError, "without this job's video"):
+        with self.assertRaisesRegex(ImageProviderError, "Completed without a video"):
             await self.run_studio(fake)
         self.assertFalse(any(p.startswith("/gradio_api/file=") for _, p in fake.calls))
 
