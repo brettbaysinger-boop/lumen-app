@@ -52,7 +52,8 @@ export function useRoomMode(): RoomMode { return useSyncExternalStore(watchRoomM
 // --- Words between the page and the phone app ---------------------------------------------------
 // ready/gone: the room's own header is (not) on screen, so the app hides (shows) its bar.
 // chat/theater: the view now showing. close/browser: the person tapped that control in the room.
-export const ROOM_EVENTS = ['ready', 'gone', 'chat', 'theater', 'close', 'browser'] as const;
+// restored: the page's own full screen has just ended.
+export const ROOM_EVENTS = ['ready', 'gone', 'chat', 'theater', 'close', 'browser', 'restored'] as const;
 export type RoomEvent = typeof ROOM_EVENTS[number];
 
 /** True when the page is running inside the phone app's own view. */
@@ -79,6 +80,26 @@ export function readRoomEvent(data: unknown): RoomEvent | null {
 // A fixed line with no data in it. The page answers by returning to Video Chat.
 export const ROOM_BACK_EVENT = 'lumenroomback';
 export const ROOM_BACK_SCRIPT = `window.dispatchEvent(new Event('${ROOM_BACK_EVENT}'));true;`;
+
+// Two more fixed lines from the app: the phone is now held
+// sideways, or upright again. Decided by the app, never by the page: a portrait window with the
+// keyboard open is also wider than it is tall, and that must not count as turning the phone.
+export const ROOM_LANDSCAPE_EVENT = 'lumenroomlandscape';
+export const ROOM_PORTRAIT_EVENT = 'lumenroomportrait';
+export const ROOM_LANDSCAPE_SCRIPT = `window.dispatchEvent(new Event('${ROOM_LANDSCAPE_EVENT}'));true;`;
+export const ROOM_PORTRAIT_SCRIPT = `window.dispatchEvent(new Event('${ROOM_PORTRAIT_EVENT}'));true;`;
+
+export type RoomView = { mode: RoomMode; messages: boolean };
+/**
+ * Turning the phone sideways shows Theater by itself; turning it upright puts back exactly what was
+ * showing before. `saved` is that earlier view while the phone is sideways, else null.
+ * Without live video there is no Theater, so nothing changes until the video is ready.
+ */
+export function turnRoom(sideways: boolean, videoReady: boolean, now: RoomView, saved: RoomView | null): { now: RoomView; saved: RoomView | null } {
+  if (sideways && videoReady && !saved) return { now: { mode: 'theater', messages: false }, saved: now };
+  if (!sideways && saved) return { now: saved, saved: null };
+  return { now, saved };
+}
 
 // --- Size of the video in the room: always the whole 3:2 frame, never cropped or stretched ---------
 export const ROOM_ASPECT = 3 / 2;

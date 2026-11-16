@@ -154,17 +154,37 @@ const oneSession=(m,what)=>{assert.equal(m.tag,'first',`${what}: still the very 
     // And again by the on-screen control, several times: still one session.
     for(let round=0;round<3;round++){await page.getByRole('button',{name:'Switch to Companion Theater'}).click();await page.getByRole('button',{name:'Leave Companion Theater and return to Video Chat'}).click();}
     await page.waitForTimeout(200);oneSession(await measure(page),`${at} after repeated switching`);
+    // The phone app says the phone was turned sideways: Theater by itself, and upright puts back what was there.
+    const turn=word=>page.evaluate(name=>window.dispatchEvent(new Event(name)),word);
+    await turn('lumenroomlandscape');await page.getByRole('button',{name:'Leave Companion Theater and return to Video Chat'}).waitFor();
+    await page.setViewportSize({width:height,height:width});await page.waitForTimeout(300);
+    m=await measure(page);whole32(m,`${at} turned`);oneSession(m,`${at} turned sideways`);assert.equal(m.composer,null,`${at} turned: the picture alone`);
+    assert.ok(m.video.height>=m.height-2,`${at} turned: the frame is as tall as the screen`);
+    await page.setViewportSize({width,height});await turn('lumenroomportrait');await page.getByRole('button',{name:'Switch to Companion Theater'}).waitFor();await page.waitForTimeout(300);
+    m=await measure(page);oneSession(m,`${at} upright again`);inside(m.composer,m,`${at} upright again: message box`);
+    // From Theater with its messages open: sideways closes the panel, upright opens it again, still Theater.
+    await page.getByRole('button',{name:'Switch to Companion Theater'}).click();await page.getByRole('button',{name:'Show the conversation'}).click();
+    await turn('lumenroomlandscape');await page.getByRole('button',{name:'Show the conversation'}).waitFor();
+    await turn('lumenroomportrait');await page.getByRole('button',{name:'Hide the conversation'}).waitFor();
+    // The keyboard makes a portrait window wider than tall. That alone is not "sideways": nothing switches.
+    await page.getByRole('button',{name:'Hide the conversation'}).click();await page.getByRole('button',{name:'Leave Companion Theater and return to Video Chat'}).click();
+    await page.setViewportSize({width,height:Math.round(width*0.8)});await page.waitForTimeout(300);
+    assert.equal(await page.getByRole('button',{name:'Close live video and return to the chat'}).count(),1,`${at}: a short window does not start Theater`);
+    await page.setViewportSize({width,height});await page.waitForTimeout(200);oneSession(await measure(page),`${at} after turning`);
     // Sending a message does not disturb the video.
     await page.getByPlaceholder('Message Lumen…').fill('Still here?');assert.equal(await page.getByPlaceholder('Message Lumen…').inputValue(),'Still here?');
     // The menu holds the rest: conversations, the browser, the model.
     await page.getByRole('button',{name:'More actions'}).click();await page.getByRole('button',{name:'Conversations',exact:true}).waitFor();
     await page.getByRole('button',{name:'Open in browser ↗',exact:true}).click();
     await page.getByRole('button',{name:'Close live video and return to the chat'}).click();
-    assert.deepEqual(await page.evaluate(()=>window.__posted),['chat','ready','theater','chat','theater','chat','theater','chat','theater','chat','theater','chat','browser','close'],`${at}: only the fixed words reach the phone app`);
+    assert.equal((await page.evaluate(()=>window.__posted)).filter(word=>word==='restored').length,2,`${at}: the phone app is told each time full screen ends`);
+    assert.deepEqual((await page.evaluate(()=>window.__posted)).filter(word=>word!=='restored').filter((word,index,all)=>word!==all[index-1]),['chat','ready',...Array(7).fill(['theater','chat']).flat(),'browser','close'],`${at}: only the fixed words reach the phone app`);
     // Live off is a real, distinct state; Theater is then unavailable.
     await page.getByRole('switch',{name:'Live video'}).click();await page.getByText('Live · Off',{exact:true}).waitFor();
     m=await measure(page);assert.equal(m.video,null);assert.equal(m.rtc.closed,1);inside(m.composer,m,`${at} live off: message box`);
     assert.equal(await page.getByRole('button',{name:'Companion Theater opens once live video is on'}).isDisabled(),true);
+    await turn('lumenroomlandscape');await page.waitForTimeout(200);                    // sideways without live video: there is no Theater to show
+    assert.equal(await page.getByRole('button',{name:'Close live video and return to the chat'}).count(),1);assert.equal((await measure(page)).rtc.created,1);
     assert.deepEqual(errors,[],`${at}: no page errors`);await page.close();
   }
   // Outside the room the website is as it was: its tabs, its header, its size choices.
@@ -174,5 +194,5 @@ const oneSession=(m,what)=>{assert.equal(m.tag,'first',`${what}: still the very 
   await page.getByRole('switch',{name:'Animated companion'}).click();await page.getByText('Animated: on',{exact:true}).waitFor();
   await page.getByRole('button',{name:'Expand animated companion'}).waitFor();assert.equal(offers,1);
   assert.deepEqual(errors,[]);await page.close();
-  console.log('Live Room: Video Chat, keyboard, Theater, messages panel, sideways full screen and Back passed at 320, 360, 390 and 412 px with one video element and one connection; the ordinary website is unchanged.');
+  console.log('Live Room: Video Chat, keyboard, Theater, messages panel, sideways full screen, turning the phone and Back passed at 320, 360, 390 and 412 px with one video element and one connection; the ordinary website is unchanged.');
 }finally{await browser.close();await new Promise(resolve=>server.close(resolve));}})().catch(error=>{console.error(error);process.exit(1);});
