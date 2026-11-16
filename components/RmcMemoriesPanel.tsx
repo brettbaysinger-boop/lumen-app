@@ -105,6 +105,9 @@ export function RmcMemoriesPanel({ companion }: { companion: { id: string; name:
     setReceiptsError('');
     setPendingSave(null);
     setSaveNotice('');
+    setSearchBusy(false);
+    setReceiptsBusy(false);
+    setSaveBusy(false);
     return () => {
       for (const controller of controllers.current) controller.abort();
       controllers.current.clear();
@@ -170,8 +173,11 @@ export function RmcMemoriesPanel({ companion }: { companion: { id: string; name:
   }, [companion?.id, receiptsBusy, request, userId]);
 
   useEffect(() => {
-    if (userId && companion?.id) void loadReceipts();
-    // Load only on account/companion change; manual refresh is available below.
+    if (userId && companion?.id) {
+      void loadReceipts();
+      void search();
+    }
+    // Initial relevance query and activity load only once per account/companion.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [userId, companion?.id]);
 
