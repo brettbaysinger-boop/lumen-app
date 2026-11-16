@@ -7,7 +7,7 @@
 #   backend  3 files, 0b370fb -> a4c06b0 (main.py, runtime.py, tests/test_media_generation.py), applied
 #            to the live WORKING FILES only if they still equal the video backend (0b370fb) byte for byte.
 #            Restarts lumen-api only. The worker, .env, HEAD, ComfyUI/FP-Studio routes are not touched.
-#   web      release/video-frontend-20261116 @ 672cfba (frontend only, fast-forward from 9ed4737) through the
+#   web      release/video-frontend-20261116 @ 49b4a36 (frontend only, fast-forward from 9ed4737) through the
 #            unchanged scripts/animated-web-update.sh. This script only checks it; it never moves HEAD.
 #
 #   scripts/video-routing-hotfix.sh check            read-only: live files, tests on a patched copy, patch id
@@ -29,7 +29,7 @@ PYTHON="${VIDEO_RELEASE_PYTHON:-$LIVE_DIR/backend/.venv/bin/python}"
 FROM="${VIDEO_HOTFIX_FROM:-0b370fb92884c82227ceb61202007c8f8f5884a6}"   # video backend, live since stage 3
 TO="${VIDEO_HOTFIX_TO:-a4c06b0d3c3877da328ea5fa51f2f4206b0b0a29}"       # + the routing hotfix
 WEB_FROM="${VIDEO_HOTFIX_WEB_FROM:-9ed47374874068c9ccd61f0c61ab0701bfb0b26e}"
-WEB_TO="${VIDEO_HOTFIX_WEB_TO:-672cfba17a2496feb1433c771a57634c65697dab}"
+WEB_TO="${VIDEO_HOTFIX_WEB_TO:-49b4a36e9cfecd3de44489ce1523ba5850c0c7f4}"
 problems=0
 pass() { printf 'PASS  %s\n' "$1"; }
 bad()  { printf 'FAIL  %s\n' "$1"; problems=$((problems + 1)); }

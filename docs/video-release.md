@@ -188,7 +188,7 @@ runtime and its video planner were never called. Practice or document context wa
 endpoint does not look at them. The server's own `video_request` matches this message, and its
 `image_request` excludes it.
 
-**Fix (PR #51 `a4c06b0`, frontend copy `672cfba`).**
+**Fix (PR #51 `a4c06b0`; frontend-only copy `49b4a36`).**
 * Web: a video request (the same pattern as the server's) never takes the image shortcut. It goes to chat.
   A "yes" to a video offer is never turned into an image prompt.
 * Server, `/v0.2/images/generate`: refuses a video request with 409 before any image work. An app that is
@@ -217,28 +217,37 @@ from messages m join conversations c on c.id = m.conversation_id
 where m.created_at > '2026-11-16 19:45+00' order by m.created_at desc limit 6;
 ```
 
-**Apply (owner, two parts, each with its own way back).** Video can stay on: the misroute made a still,
-nothing unsafe, and the worker is not changed.
-1. Backend, from a clean clone of `feat/local-media-generation-20261116`:
-   ```
-   scripts/video-routing-hotfix.sh check
-   VIDEO_HOTFIX_CONFIRM=hotfix:<patch id> scripts/video-routing-hotfix.sh apply
-   ```
-   * `check` STOPs unless the 3 target files (`lumen/main.py`, `lumen/runtime.py`,
-     `tests/test_media_generation.py`) still equal the live video backend `0b370fb` byte for byte. It also
-     runs the backend tests on a patched copy and prints the patch id.
-   * `apply` backs them up, patches the working files and restarts lumen-api only. It leaves HEAD, `.env`
-     and the worker alone, and restores the backup automatically on any failure.
-   * Way back: `VIDEO_HOTFIX_CONFIRM=hotfix-rollback scripts/video-routing-hotfix.sh rollback`.
-     `video-release.sh backend-rollback` refuses while the hotfix is applied.
-2. Web, from a clean clone of `release/video-frontend-20261116` (now `672cfba`, one frontend-only
-   fast-forward from the live `9ed4737`, 4 files under `lib/` and `tests/`):
-   ```
-   scripts/animated-web-update.sh check
-   LUMEN_WEB_UPDATE_CONFIRM=update:672cfba scripts/animated-web-update.sh update
-   ```
-   Way back: `LUMEN_WEB_UPDATE_CONFIRM=rollback scripts/animated-web-update.sh rollback`. Reload the app
-   (desktop and S22) afterwards so the browser loads the new code.
+**Apply (owner): the web part only.** It alone fixes the live failure. No backend, migration, worker or
+service change, and video stays on. The owner asked not to redeploy the backend.
+
+From a clean clone of `release/video-frontend-20261116` (also `hotfix/video-routing-frontend-20261116`), at
+`49b4a36`:
+* one frontend-only fast-forward from the live `9ed4737`;
+* 5 files: `lib/cognition.ts`, `lib/image-followup.ts`, 2 node tests and the media browser check;
+* 157 node tests pass;
+* the browser check types the exact live message in Private Chat and sees it sent to `/respond`. A plain
+  picture request still goes to `/v0.2/images/generate`. On `9ed4737` the same check fails: the message is
+  sent to `/v0.2/images/generate`.
+```
+npm ci
+scripts/animated-web-update.sh check
+LUMEN_WEB_UPDATE_CONFIRM=update:49b4a36 scripts/animated-web-update.sh update
+```
+Way back: `LUMEN_WEB_UPDATE_CONFIRM=rollback scripts/animated-web-update.sh rollback`. Afterwards, reload the
+app on desktop and on the S22, so each browser loads the new code.
+
+**Optional later, not needed for this fix: the backend guard.** `/v0.2/images/generate` would refuse a video
+request (409), even from an app that has not been reloaded. Practice and document turns would say why no video.
+```
+scripts/video-routing-hotfix.sh check
+VIDEO_HOTFIX_CONFIRM=hotfix:e707ac6b49c6 scripts/video-routing-hotfix.sh apply
+```
+Run these from a clean clone of `feat/local-media-generation-20261116`.
+* It changes 3 files (`lumen/main.py`, `lumen/runtime.py`, `tests/test_media_generation.py`), and only if
+  they still equal `0b370fb` byte for byte.
+* It runs the tests on a patched copy first and restarts lumen-api only. It restores the backup automatically
+  on any failure.
+* Way back: `VIDEO_HOTFIX_CONFIRM=hotfix-rollback scripts/video-routing-hotfix.sh rollback`.
 
 Offline test: `scripts/test-video-routing-hotfix.sh`, 11 checks, with and without pytest.
 * Check READY, with backend tests on the patched copy.
