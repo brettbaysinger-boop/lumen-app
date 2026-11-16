@@ -27,6 +27,28 @@ from lumen.auth import AuthUser, require_user
 _registry_instance: Optional[ProjectRegistry] = None
 
 
+async def require_steward_owner(
+    user: AuthUser = Depends(require_user),
+    settings: ProjectStewardSettings = Depends(get_steward_settings),
+) -> AuthUser:
+    """Require the existing verified Lumen session and explicitly configured owner ID.
+
+    Never trust a client-supplied user ID or accept a missing owner setting.
+    The existing lumen.auth.require_user verifies the bearer token with Supabase.
+    """
+    if not settings.owner_user_id or not settings.owner_user_id.strip():
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Project Steward owner identity is not configured.",
+        )
+    if user.id != settings.owner_user_id.strip():
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Project Steward is restricted to the workspace owner.",
+        )
+    return user
+
+
 def get_registry(
     settings: ProjectStewardSettings = Depends(get_steward_settings),
 ) -> ProjectRegistry:
