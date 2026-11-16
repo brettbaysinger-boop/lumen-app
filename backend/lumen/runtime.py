@@ -80,15 +80,17 @@ class CognitionRuntime:
                     "Which nicknames and shared names have the user and companion explicitly agreed to use?"
                 )
                 if continuity_status == "ok":
-                    seen = {m.get("id") or m.get("content") for m in memories}
-                    for item in continuity:
+                    # Favor verified shared continuity over generic initial
+                    # matches when the prompt has only 12 memory slots.
+                    combined, seen = [], set()
+                    for item in [*continuity, *memories]:
                         key = item.get("id") or item.get("content")
-                        if key not in seen:
-                            memories.append(item)
+                        if key and key not in seen:
+                            combined.append(item)
                             seen.add(key)
-                        if len(memories) >= 12:
+                        if len(combined) >= 12:
                             break
-                    memories = memories[:12]
+                    memories = combined
         else:
             memories = await self.db.get_relevant_memories(
                 companion_id,
