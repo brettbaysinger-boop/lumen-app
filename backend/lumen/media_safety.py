@@ -17,9 +17,9 @@ work, for every generation path, and refuse only these combinations:
 Everything else, including explicit content, is passed through unchanged. Keyword rules are a
 backstop and can misfire; a refusal names the rule so it can be rephrased.
 
-The one remaining transformation is a negative prompt (see ADULT_NEGATIVE and the
-COMFYUI_NEGATIVE_PROMPT default): child-related terms are added to the NEGATIVE side so the model
-does not drift toward young-looking bodies. The user's own (positive) prompt is never changed.
+The user's prompt is never changed. The only remaining modification is the negative prompt: every
+still and video uses COMFYUI_NEGATIVE_PROMPT verbatim. Its default (config.py) ends with child-related
+terms; an owner-set value replaces it entirely and an empty value sends none.
 """
 from __future__ import annotations
 
@@ -61,10 +61,6 @@ _NON_CONSENT = re.compile(
     r"against\s+(?:her|his|their)\s+will|forced\s+(?:sex|to|into)|coerc\w*|drugged|unconscious|"
     r"incapacitated|blackmail\w*|hidden\s+camera|spy\s*cam|upskirt|voyeur\w*|revenge\s+porn)\b",
     re.IGNORECASE,
-)
-
-ADULT_NEGATIVE = (
-    "child, minor, underage, teen, young-looking, childlike body, school uniform"
 )
 
 

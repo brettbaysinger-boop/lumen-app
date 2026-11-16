@@ -399,6 +399,23 @@ class DeliveryTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(gallery[0]["metadata"]["message_id"], "msg-1")
         self.assertEqual(db.job_updates()[-1]["status"], "completed")
 
+    async def test_video_prompt_unchanged_and_owner_negative_used_verbatim(self):
+        for owner_negative in ("blurry, watermark", ""):
+            db = DeliveryDb()
+            framepack = SimpleNamespace(generate=AsyncMock(return_value={
+                "bytes": b"MP4", "mime_type": "video/mp4", "provider": "framepack", "model": "f", "latency_ms": 1}))
+            plan = self.plan("i2v", source_path=f"{USER_ID}/p.png", source_mime="image/png")
+            plan = mj.VideoJobPlan(**{**plan.__dict__, "prompt": "she slowly undresses, nude, explicit",
+                                      "explicit": True})
+            with patch.object(mj, "_service_db", return_value=db), \
+                    patch.object(mj, "download_storage", AsyncMock(return_value=b"PNG")), \
+                    patch.object(mj, "framepack_provider", return_value=framepack), \
+                    patch.object(mj, "free_comfy_memory", AsyncMock()):
+                await mj.run_video_job(video_settings(comfyui_negative_prompt=owner_negative), plan, "msg-1")
+            args, kwargs = framepack.generate.await_args
+            self.assertEqual(args[2], "she slowly undresses, nude, explicit")
+            self.assertEqual(kwargs["negative"], owner_negative)
+
     async def test_failure_is_recorded_without_claiming_success(self):
         db = DeliveryDb()
         framepack = SimpleNamespace(generate=AsyncMock(side_effect=ImageProviderError("FramePack is not reachable.")))

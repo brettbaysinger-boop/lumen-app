@@ -37,7 +37,7 @@ from .auth import AuthUser, require_user
 from .config import get_settings
 from .db import SupabaseRepository
 from .images import ImageProviderError, ImageProviderNotConfigured, compose_image_prompt, create_image_provider
-from .media_safety import ADULT_NEGATIVE, check_media_prompt, refusal_text
+from .media_safety import check_media_prompt, refusal_text
 from .video_providers import framepack_provider, free_comfy_memory, run_comfy_video_workflow, video_mime
 
 log = logging.getLogger(__name__)
@@ -324,7 +324,8 @@ async def run_video_job(settings, plan: VideoJobPlan, message_id: str) -> None:
         await reporter.update(status="running", message_id=message_id, started_at=_now(),
                               stage="Starting…", progress=1)
         await update_message(db, plan, message_id, job={"status": "running"})
-        negative = ADULT_NEGATIVE if plan.explicit else ""
+        # The same owner-controlled negative prompt as stills, used verbatim (empty = none).
+        negative = getattr(settings, "comfyui_negative_prompt", "") or ""
         try:
             source: tuple[bytes, str] | None = None
             if plan.mode == "t2i2v":

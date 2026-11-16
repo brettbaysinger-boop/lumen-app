@@ -71,10 +71,11 @@ plain "elementary", "N years" without "old" (anniversaries), "sleeping"/"asleep"
 bare "forced" (e.g. forced perspective).
 
 **Transformations that remain** (only on the negative side; the positive prompt is untouched):
-* Stills: `COMFYUI_NEGATIVE_PROMPT` fills `{{LUMEN_NEGATIVE}}`. Its default is quality terms plus
-  "child, minor, underage, teen, childlike body". An owner-set value replaces the whole string.
-* Video: when the request is sexual/nude, "child, minor, underage, teen, young-looking, childlike body,
-  school uniform" is sent as the negative prompt (`ADULT_NEGATIVE`).
+* Stills and video: `COMFYUI_NEGATIVE_PROMPT` is the only negative prompt Lumen sends (ComfyUI
+  `{{LUMEN_NEGATIVE}}`, FramePack's Negative Prompt). **The default still modifies it:** quality terms
+  plus "child, minor, underage, teen, childlike body". An owner-set value takes precedence and is used
+  verbatim with nothing appended; an empty value sends no negative prompt. (The separate automatic
+  video negative `ADULT_NEGATIVE` was removed.)
 * Companion images: the companion's own visual identity is added to the prompt when the request is
   about the companion (an existing feature, not a safety rule).
 

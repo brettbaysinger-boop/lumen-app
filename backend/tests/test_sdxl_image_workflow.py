@@ -59,6 +59,18 @@ class ProviderTests(unittest.IsolatedAsyncioTestCase):
         self.assertIsInstance(next(n for n in graph.values() if n["class_type"] == "KSampler")["inputs"]["seed"], int)
         self.assertEqual(provider.model_name, CHECKPOINT)
 
+    def test_positive_prompt_is_passed_unchanged(self):
+        prompt = "an explicit erotic scene between two consenting adults, nude, photographic"
+        graph = ComfyUIProvider(settings())._load_workflow(prompt)
+        texts = [n["inputs"]["text"] for n in graph.values() if n["class_type"] == "CLIPTextEncode"]
+        self.assertIn(prompt, texts)  # byte-identical: nothing appended or removed
+
+    def test_owner_negative_prompt_is_used_verbatim_with_nothing_appended(self):
+        for owner_value in ("blurry, watermark", ""):
+            graph = ComfyUIProvider(settings(comfyui_negative_prompt=owner_value))._load_workflow("a fox")
+            texts = sorted(n["inputs"]["text"] for n in graph.values() if n["class_type"] == "CLIPTextEncode")
+            self.assertEqual(texts, sorted([owner_value, "a fox"]))
+
     def test_missing_checkpoint_is_a_clear_configuration_error(self):
         with self.assertRaises(ImageProviderNotConfigured) as caught:
             ComfyUIProvider(settings(comfyui_checkpoint=""))._load_workflow("x")
