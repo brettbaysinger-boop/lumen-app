@@ -29,7 +29,14 @@ const DIRECT_VISUAL_CREATION =
 const NON_IMAGE_REQUEST =
   /\b(?:paint|draw)\s+(?:me\s+)?(?:a\s+)?picture\s+(?:with|using)\s+words\b|\b(?:paint|draw)\s+(?:me\s+)?(?:a\s+)?verbal\s+picture\b/i;
 
+// Mirrors the server's video_request (backend/lumen/media_jobs.py). A video ask often names an
+// image ("make a video animating the image you just generated"), so it must never take the
+// still-image shortcut; it goes to chat, where the server plans the video job.
+export const VIDEO_REQUEST =
+  /\b(?:make|create|generate|render|produce|film|shoot|send|give)\b[^.?!]{0,90}\b(?:video|vid|clip|animation|movie|gif|cinemagraph)s?\b|\banimate\b|\bbring\b[^.?!]{0,40}\bto life\b/i;
+
 export function isImageRequest(text: string): boolean {
+  if (VIDEO_REQUEST.test(text)) return false;
   if (NON_IMAGE_REQUEST.test(text)) return false;
   return IMAGE_REQUEST.test(text) || DIRECT_VISUAL_CREATION.test(text);
 }
