@@ -44,20 +44,44 @@ RMC engine, port or auth change. Older clients that send no `privacy_mode` behav
 
 The backend can go first by itself: until a new web build sends `privacy_mode`, every request is Private.
 
-## 2. Frontend (frontend-only release candidate, via the protected updater)
+## Preflight receipt (owner-run, 2026-11-15 America/Phoenix)
 
-Only after step 1 is live. The web build must carry the Live Room (#26/#36), the live Memories UI
-(#35/#38, byte-for-byte as above) and this PR's client files. Every frontend file in this PR,
-including `scripts/test-animated-privacy-mode-browser.cjs` and
-`scripts/animated-privacy-mode-preflight.sh`, matches the updater's existing `FRONTEND_ONLY` rule.
+`PREFLIGHT: no file needs review` at candidate `c6cf0cd` against PR #38 `8b182cf`. Live checkout
+HEAD `f23d112` with 12 uncommitted paths. Backend files clean (`runtime.py` applied), frontend files
+clean, protected Memories files identical to PR #38, backend patch `git apply --check` clean.
+Nothing changed on the host.
 
-1. Build from a branch whose backend matches what is live after step 1 (otherwise the updater
-   refuses, as designed).
-2. `scripts/animated-web-update.sh check`, then the owner's confirmed `update:<commit>`.
-3. Browser check: switch in Chat, Video Chat, Theater; mid-stream flip; reload in Public.
-4. Android: no new native module, so the existing JS-only refresh path applies, owner-run, with
-   the signed installation and rollback scripts as they are.
-5. Rollback: `LUMEN_WEB_UPDATE_CONFIRM=rollback scripts/animated-web-update.sh rollback`.
+## 2. Frontend: the protected web updater cannot ship this, by design
+
+`scripts/animated-web-update.sh` fast-forwards the live checkout from its HEAD and refuses any range
+that is not frontend-only or that touches a locally edited file. Live is `f23d112` plus uncommitted
+scoped files (#35/#38 Memories and RMC backend). The range `f23d112..candidate` therefore contains
+backend files (from #38 and this PR) and touches locally edited files, so `check` must say NOT READY.
+That is correct behaviour: the updater is not changed, widened or bypassed.
+
+**STOP here.** No existing tool can release this safely. Proposed minimal path, for owner review
+(nothing below is built or run yet):
+
+* **Step 1, backend (new owner-gated script, backend lane, not the web updater).** Confirm token
+  `apply:<patch sha256>`; sha256 backup of the 5 backend files; refuse unless each live file still
+  matches the preflight's `clean` hash; `git apply` of the exact reviewed patch
+  (`git diff 8b182cf <head> -- backend/lumen`) without moving HEAD or touching other local edits; run
+  the backend tests in a throwaway copy of the patched tree; restart only `lumen-api` the way it is
+  restarted today; health check plus fictional canary (Public turn: no `rmc_auto_state`, nothing
+  queued; Private turn: queued as today); automatic restore of the 5 files and restart on any failure.
+  Until a new web build exists, every request is Private, so this step changes no behaviour.
+* **Step 2, frontend (new scoped web step that mirrors how #35/#38 went live).** Confirm token;
+  build `dist` in a clean clone of the candidate with the live `.env`, run the updater's own
+  `export_problem` checks; refuse unless every live frontend file is in the preflight's `clean` or
+  `applied` state; swap `dist` keeping `dist.previous` for rollback; leave the live git HEAD and every
+  local edit as they are (like the current Memories files). This keeps the updater's allowlist and
+  fast-forward rule untouched for ordinary updates.
+* **Step 3, Android (separate gate).** The Live Room needs the newer APK (#26/#36). Use the existing
+  signed `scripts/android-refresh.sh` path and its rollback, owner-run.
+
+Alternative the owner may prefer: commit the live local edits to a local branch on the host so the
+existing updater can fast-forward again. That changes production Git, which the owner has ruled out
+so far, so it is not recommended.
 
 ## Not covered by Public mode yet (labelled in the app as "Chat and Live Room only")
 
