@@ -15,7 +15,10 @@ RMC Memories interface) as they are.
 | **Web release** (gate 2) | release branch head, see PR #43 | child of `a2148d8`; 35 frontend files only |
 | Android source (gate 3) | PR #43 head | same `app/ components/ lib/ hooks/ types/` as the web release |
 
-Branch `release/public-private-20261116` holds the two release commits. Its tree equals PR #43's head,
+Branch `release/public-private-20261116-r2` holds the current release commits; always check out the exact
+web release commit pinned on PR #43, never a branch name. (`release/public-private-20261116` @ `d6f1293` is
+superseded: its gate 1 targeted tests could not import on the host. It is kept frozen as the record.)
+The release tree equals PR #43's head,
 with three deliberate differences that keep the release inside the **unchanged** web updater:
 
 * `scripts/animated-web-update.sh` is the live one (`97e032f`). PR #26 (in PR #36) widened its
@@ -27,8 +30,8 @@ Run everything from a clean clone of the release branch on the Lumen host, as th
 
 ```bash
 git clone <repo> ~/lumen-privacy-release && cd ~/lumen-privacy-release
-git checkout release/public-private-20261116 && npm ci
-git log --oneline -3     # release head, a2148d8, 8b182cf
+git checkout --detach <web release commit pinned on PR #43> && npm ci
+git log --oneline -4     # the release commits, then a2148d8, then 8b182cf
 ```
 
 ## Gate 1: backend (lumen-api only)
@@ -129,7 +132,7 @@ from a clone of **PR #43's head** (it contains `scripts/android-refresh.sh`; its
 web release). One step per command; go on only after `RESULT <step>: OK`.
 
 ```bash
-git diff --quiet release/public-private-20261116 HEAD -- app components lib hooks types && echo "same app source as the web release"
+git diff --quiet <web release commit> HEAD -- app components lib hooks types && echo "same app source as the web release"
 scripts/android-refresh.sh backup                     # copies the installed APK off the phone; note the sha256 and signer it prints
 scripts/android-refresh.sh phone
 scripts/android-refresh.sh build-check
