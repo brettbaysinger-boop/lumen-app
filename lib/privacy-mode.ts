@@ -104,6 +104,33 @@ export function turnHidden(now: PrivacyMode, sentIn: PrivacyMode | null): boolea
   return now === 'public' && sentIn !== 'public';
 }
 
+// --- The message box: one draft per mode ----------------------------------------------------------
+// What is typed or attached in Private is put aside (never erased) when the switch goes to Public, and
+// comes back when it returns to Private. A draft started in Public is kept apart the same way.
+export interface ComposerDraft<Image, Doc> { text: string; images: Image[]; document: Doc | null }
+export type ComposerSlots<Image, Doc> = Record<PrivacyMode, ComposerDraft<Image, Doc>>;
+export function emptyComposer<Image, Doc>(): ComposerDraft<Image, Doc> { return { text: '', images: [], document: null }; }
+
+/** The switch moved from `from` to `to`: park what is showing, and return what to show now. */
+export function swapComposer<Image, Doc>(slots: ComposerSlots<Image, Doc>, from: PrivacyMode, to: PrivacyMode,
+  showing: ComposerDraft<Image, Doc>): { slots: ComposerSlots<Image, Doc>; show: ComposerDraft<Image, Doc> } {
+  if (from === to) return { slots, show: showing };
+  return { slots: { ...slots, [from]: showing, [to]: emptyComposer() }, show: slots[to] };
+}
+
+/**
+ * A turn failed and its words go back to the message box. If the switch has changed since it was
+ * sent, they go to that mode's parked draft instead (merged, nothing lost) and nothing is shown.
+ */
+export function returnFailedTurn<Image, Doc>(slots: ComposerSlots<Image, Doc>, sentIn: PrivacyMode, now: PrivacyMode,
+  failed: ComposerDraft<Image, Doc>): { slots: ComposerSlots<Image, Doc>; show: ComposerDraft<Image, Doc> | null } {
+  if (sentIn === now) return { slots, show: failed };
+  const parked = slots[sentIn];
+  return { slots: { ...slots, [sentIn]: {
+    text: parked.text.trim() ? (failed.text.trim() ? `${failed.text}\n${parked.text}` : parked.text) : failed.text,
+    images: [...failed.images, ...parked.images], document: parked.document ?? failed.document } }, show: null };
+}
+
 /** Conversation names can say a lot. In Public mode the list shows only a neutral name. */
 export function conversationLabel(mode: PrivacyMode, title: string, lastMessageAt?: string | null): string {
   if (mode === 'private') return title;

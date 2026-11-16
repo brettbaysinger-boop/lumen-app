@@ -135,3 +135,27 @@ test('the browser check follows the protected updater\'s file naming, which is n
   assert.equal(rule,"^(app/|components/|lib/|hooks/|types/|tests/|docs/|scripts/(test-)?(animated[-_][A-Za-z0-9_.-]+|android-refresh\\.sh)$)");
   assert.match('scripts/test-animated-privacy-mode-browser.cjs',new RegExp(rule));
 });
+
+test('the message box keeps one draft per mode, and a failed turn goes back only to its own mode',()=>{
+  const {swapComposer,returnFailedTurn,emptyComposer}=load();
+  const priv={text:'Juniper Hall deposit',images:['photo'],document:{id:'d'}};
+  let slots={private:emptyComposer(),public:emptyComposer()};
+  let step=swapComposer(slots,'private','public',priv);                     // flip to Public with a Private draft
+  assert.deepEqual({...step.show,images:[...step.show.images]},{text:'',images:[],document:null});
+  assert.deepEqual(step.slots.private,priv);                                   // parked, not erased
+  step=swapComposer(step.slots,'public','private',{text:'weather',images:[],document:null});
+  assert.deepEqual(step.show,priv);assert.equal(step.slots.public.text,'weather');
+  assert.equal(swapComposer(step.slots,'private','private',priv).show,priv);
+  // Sent in Private, failed after the switch to Public: nothing is shown, the question is parked for Private.
+  const failed={text:'Did the deposit clear?',images:['p2'],document:null};
+  let back=returnFailedTurn({private:emptyComposer(),public:{text:'pub',images:[],document:null}},'private','public',failed);
+  assert.equal(back.show,null);assert.equal(back.slots.private.text,'Did the deposit clear?');assert.deepEqual([...back.slots.private.images],['p2']);
+  assert.equal(back.slots.public.text,'pub');
+  back=returnFailedTurn({private:{text:'later words',images:[],document:null},public:emptyComposer()},'private','public',failed);
+  assert.equal(back.slots.private.text,'Did the deposit clear?\nlater words');   // merged, nothing lost
+  assert.equal(returnFailedTurn(slots,'private','private',failed).show,failed);    // same mode: as before
+  const screen=read('app/(tabs)/index.tsx');
+  assert.match(screen,/if \(snapshot && getPrivacyMode\(\) === 'private'\) \{/);          // a Public draft never overwrites the saved Private one
+  assert.match(screen,/const back = returnFailedTurn</);assert.doesNotMatch(screen,/setInputText\(text\);\n\s+setPendingImages\(images\);/);
+  assert.match(screen,/if \(getPrivacyMode\(\) === 'public'\) \{\n\s+composerSlots\.current = \{ \.\.\.composerSlots\.current, private:/);   // opening a chat in Public parks its saved draft
+});

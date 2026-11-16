@@ -44,6 +44,10 @@ need a new column and is an owner decision. Ordinary chat is not interrupted wit
 * A Private turn still streaming when the switch goes to Public is hidden at once (question, activity,
   partial reply) and later lines are dropped; it is not read aloud. The handoff card, memory notices
   and suggestions, and the attached document's name are hidden in Public.
+* The message box keeps one draft per mode. Text, photos or a document attached in Private are put
+  aside (not erased) when Public is switched on and come back in Private; a draft typed in Public is
+  kept apart and is not saved to the device's Private draft store. If a Private request fails after
+  the switch, its question goes back to the Private draft, never to the Public message box.
 
 ## Owner acceptance (fictional data, not yet run)
 

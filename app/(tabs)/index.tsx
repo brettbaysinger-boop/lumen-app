@@ -46,7 +46,7 @@ import { CompanionPortrait } from '@/components/CompanionPortrait';
 import { AnimatedCompanion } from '@/components/AnimatedCompanion';
 import { LiveRoomActions, LiveRoomHeader, LiveRoomTheaterBar } from '@/components/LiveRoom';
 import { PrivacyBar, PrivacyToggle } from '@/components/PrivacyToggle';
-import { conversationLabel, getPrivacyMode, listenForAppPrivacy, messageVisible, turnHidden, usePrivacyMode, type PrivacyMode } from '@/lib/privacy-mode';
+import { conversationLabel, emptyComposer, getPrivacyMode, listenForAppPrivacy, messageVisible, returnFailedTurn, swapComposer, turnHidden, usePrivacyMode, type ComposerDraft, type ComposerSlots, type PrivacyMode } from '@/lib/privacy-mode';
 import { ROOM_BACK_EVENT, ROOM_LANDSCAPE_EVENT, ROOM_PORTRAIT_EVENT, getRoomMode, isLiveRoom, postRoomEvent, roomEmbedded, setRoomMode, turnRoom, useRoomMode, type RoomView } from '@/lib/live-room';
 import { AnimatedCompanionSession, animatedCompanionAvailable, type AnimatedState } from '@/lib/animated-companion';
 import { AutoSpeak } from '@/lib/animated-companion-core';
@@ -165,12 +165,18 @@ export default function ChatScreen() {
   }, []);
   const inputRef = useRef(inputText);
   inputRef.current = inputText;
+  const pendingImagesRef = useRef(pendingImages);
+  pendingImagesRef.current = pendingImages;
+  const pendingDocumentRef = useRef(pendingDocument);
+  pendingDocumentRef.current = pendingDocument;
+  const composerSlots = useRef<ComposerSlots<PickedImage, PrivateDocument>>({ private: emptyComposer(), public: emptyComposer() });
   const setInputText = useCallback((value: string | ((previous: string) => string)) => {
     const text = typeof value === 'function' ? value(inputRef.current) : value;
     inputRef.current = text;
     setInputTextState(text);
     const snapshot = cacheRef.current;
-    if (snapshot) {
+    // Saved drafts are Private drafts: a draft typed in Public is kept in memory only.
+    if (snapshot && getPrivacyMode() === 'private') {
       cacheRef.current = { ...snapshot, drafts: { ...snapshot.drafts, [activeIdRef.current ?? 'new']: text } };
       persistCache();
     }
@@ -381,6 +387,18 @@ export default function ChatScreen() {
   useEffect(() => room ? listenForAppPrivacy() : undefined, [room]);
   // Switching to Public stops any reply being read aloud right now; the video keeps running.
   useEffect(() => { if (privacy.mode === 'public') { playbackRef.current?.abort(); autoSpeak.cancel(); } }, [privacy.mode, autoSpeak]);
+  // The message box keeps one draft per mode (text, photos, document): flipping parks one and shows the other.
+  const composerMode = useRef<PrivacyMode>(privacy.mode);
+  useEffect(() => {
+    const from = composerMode.current, to = privacy.mode;
+    composerMode.current = to;
+    if (from === to) return;
+    const next = swapComposer<PickedImage, PrivateDocument>(composerSlots.current, from, to,
+      { text: inputRef.current, images: pendingImagesRef.current, document: pendingDocumentRef.current });
+    composerSlots.current = next.slots;
+    inputRef.current = next.show.text;
+    setInputTextState(next.show.text); setPendingImages(next.show.images); setPendingDocument(next.show.document);
+  }, [privacy.mode]);
   const theater = room && roomMode === 'theater' && animatedState === 'ready';
   const [theaterMessages, setTheaterMessages] = useState(false);
   // Opening the room is the request to watch: live video is turned on once, when the server offers it.
@@ -550,7 +568,11 @@ export default function ChatScreen() {
     const id = activeConversation?.id;
     setMessages(id ? cacheRef.current?.messages[id] ?? [] : []);
     const draft = routeDraftRef.current ?? cacheRef.current?.drafts[id ?? 'new'] ?? '';
-    setInputTextState(draft);
+    // In Public the saved draft is put aside for Private, not shown.
+    if (getPrivacyMode() === 'public') {
+      composerSlots.current = { ...composerSlots.current, private: { ...composerSlots.current.private, text: draft } };
+      setInputTextState('');
+    } else setInputTextState(draft);
     if (routeDraftRef.current && cacheRef.current) {
       cacheRef.current = { ...cacheRef.current, drafts: { ...cacheRef.current.drafts, [id ?? 'new']: draft } };
       routeDraftRef.current = null;
@@ -792,14 +814,17 @@ export default function ChatScreen() {
         cacheRef.current = { ...cacheRef.current, drafts: { ...cacheRef.current.drafts, [draftKey]: '' } };
         persistCache();
       }
-      setInputTextState('');
+      if (getPrivacyMode() === sentMode) setInputTextState('');   // never clear a draft started in the other mode
       turnKey.current = null;
     } catch (err) {
       autoSpeak.cancel();
       if (!handedToServer) await removeStoredFiles('chat-media', uploaded);
       setError(err instanceof Error ? err.message : 'Lumen could not respond.');
-      setInputText(text);
-      setPendingImages(images);
+      // The question goes back to the message box only in the mode it was asked in.
+      const back = returnFailedTurn<PickedImage, PrivateDocument>(composerSlots.current, sentMode, getPrivacyMode(),
+        { text, images, document: null });
+      composerSlots.current = back.slots;
+      if (back.show) { setInputText(back.show.text); setPendingImages(back.show.images); }
     } finally {
       sendBusyRef.current = false;
       setSending(false);

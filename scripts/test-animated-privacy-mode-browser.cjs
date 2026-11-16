@@ -57,7 +57,8 @@ const api=http.createServer((req,res)=>{let raw='';req.on('data',c=>raw+=c);req.
     res.writeHead(200,{...cors,'content-type':'application/x-ndjson','cache-control':'no-cache'});
     const line=event=>res.write(JSON.stringify(event)+'\n');
     line({type:'activity',text:'Checking memories…'});
-    if(streamGate){line({type:'delta',text:STREAM_FIRST+' '});await streamGate.wait;line({type:'delta',text:STREAM_SECOND+'.'});}
+    if(streamGate){const gate=streamGate;line({type:'delta',text:STREAM_FIRST+' '});await gate.wait;line({type:'delta',text:STREAM_SECOND+'.'});
+      if(gate.fail){line({type:'error',text:'Lumen could not finish this reply. Reload before retrying.'});return res.end();}}
     line({type:'done',response:done});return res.end();
   }
   if(url.includes('/respond'))return json(done);
@@ -167,7 +168,42 @@ const text=page=>page.evaluate(()=>document.body.innerText);
   state=await page.evaluate(()=>({tag:document.querySelector('video').__tag,same:document.querySelector('video').srcObject===window.__stream,rtc:{...window.__rtc}}));
   assert.equal(state.tag,'first');assert.equal(state.same,true);assert.deepEqual(state.rtc,{created:1,closed:0});assert.equal(offers,1,'the live video was not restarted');
   assert.ok(!sent.some(s=>s.url.includes('/voice/speak')&&s.body.privacy_mode!=='public'),'no Private speech was requested after the switch');
+  const composer=()=>page.getByPlaceholder('Message Lumen…').inputValue();
+
+  // --- The message box: a Private draft typed but not sent is put aside in Public, never erased ------
+  await radio(page,'private').click();await page.waitForTimeout(200);
+  const DRAFT='Draft about the Juniper Hall deposit';
+  await page.getByPlaceholder('Message Lumen…').fill(DRAFT);
+  await radio(page,'public').click();await page.waitForTimeout(200);
+  assert.equal(await composer(),'','a Private draft is not shown in Public');
+  assert.ok(!(await text(page)).includes('Juniper Hall deposit'));
+  await page.getByPlaceholder('Message Lumen…').fill('Public note about the weather');
+  await radio(page,'private').click();await page.waitForTimeout(200);
+  assert.equal(await composer(),DRAFT,'the Private draft comes back in Private');
+  await radio(page,'public').click();await page.waitForTimeout(200);
+  assert.equal(await composer(),'Public note about the weather','a Public draft is kept apart');
+  await page.getByPlaceholder('Message Lumen…').fill('');
+  await radio(page,'private').click();await page.waitForTimeout(200);
+  await page.getByPlaceholder('Message Lumen…').fill('');
+
+  // --- A Private turn fails after the switch: its question never reappears in Public ----------------
+  const QUESTION='Did the Juniper Hall deposit clear?';
+  let releaseFail;streamGate={fail:true,wait:new Promise(resolve=>{releaseFail=resolve;})};
+  await page.getByPlaceholder('Message Lumen…').fill(QUESTION);await page.keyboard.press('Enter');
+  await page.getByText(STREAM_FIRST,{exact:false}).waitFor();
+  await radio(page,'public').click();
+  await page.getByText("hidden while 👥 Public is on",{exact:false}).first().waitFor();
+  releaseFail();streamGate=null;
+  await page.getByText('Lumen could not finish this reply',{exact:false}).waitFor();       // the failure is reported, generically
+  await page.waitForTimeout(400);
+  assert.equal(await composer(),'','the failed Private question is not put back in the Public message box');
+  body=await text(page);assert.ok(!body.includes(QUESTION)&&!body.includes(STREAM_SECOND),'nothing of the failed Private turn is shown');
+  await shot(page,'failed-private-turn-in-public');
+  await radio(page,'private').click();await page.waitForTimeout(300);
+  assert.equal(await composer(),QUESTION,'back in Private the question is in the message box to retry');
+  state=await page.evaluate(()=>({tag:document.querySelector('video').__tag,same:document.querySelector('video').srcObject===window.__stream,rtc:{...window.__rtc}}));
+  assert.equal(state.tag,'first');assert.equal(state.same,true);assert.deepEqual(state.rtc,{created:1,closed:0});assert.equal(offers,1,'the live video was never restarted');
   assert.deepEqual(errors,[],'no page errors');
-  console.log('Public / Private mode: switch in Chat, Video Chat and Theater; Public hides private messages and chat names, survives reload with a notice, is sent with chat'+(speak?' and voice':'')+' requests, hides a Private reply flipped to Public mid-stream (including later lines), and never reconnects the live video.');
+  console.log('Public / Private mode: switch in Chat, Video Chat and Theater; Public hides private messages and chat names, survives reload with a notice, is sent with chat'+(speak?' and voice':'')+' requests, hides a Private reply flipped to Public mid-stream (including later lines), keeps Private and Public drafts apart, never puts a failed Private question back in Public, and never reconnects the live video.');
   if(!speak)console.log('NOTE: no voice request was observed in this browser (sound path unavailable headless); voice is covered by unit and backend tests.');
 }finally{await browser.close();server.close();api.close();}})().catch(error=>{console.error(error);process.exitCode=1;});
