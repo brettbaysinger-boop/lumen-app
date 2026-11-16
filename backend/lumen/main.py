@@ -18,7 +18,7 @@ from .config import get_settings
 from .ollama import OllamaProvider
 from .runtime import CognitionRuntime
 from .memory_backend import memory_backend, supabase_memory_enabled
-from .rmc_auto_ingest import auto_ingest_rmc_user_message
+from .rmc_auto_ingest import auto_ingest_rmc_with_deferred_retry
 from .rmc.memory_routes import router as rmc_memory_router
 from .schemas import (
     HealthResponse,
@@ -125,8 +125,9 @@ def queue_rmc_memory_work(background_tasks: BackgroundTasks, user: AuthUser, ins
     message_id = getattr(instance, "rmc_auto_message_id", None)
     if message_id and getattr(settings, "rmc_auto_ingest_enabled", False):
         background_tasks.add_task(
-            auto_ingest_rmc_user_message, settings, user.token, user.id,
-            message_id, getattr(instance, "rmc_auto_assistant_text", "")
+            auto_ingest_rmc_with_deferred_retry, settings, user.token, user.id,
+            message_id, getattr(instance, "rmc_auto_companion_id", None),
+            getattr(instance, "rmc_auto_assistant_text", "")
         )
 
 
