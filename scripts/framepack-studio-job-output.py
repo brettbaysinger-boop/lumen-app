@@ -12,7 +12,13 @@ It refuses unless: the entry exists and is "completed" with no error; its result
 way FP-Studio's worker names outputs (<yymmdd_HHMMSS_mmm_rand>_<frames>.mp4) inside the outputs
 folder; the file exists and starts like an MP4; and it was written while the job ran (between
 started_at and completed_at, 120 s slack). --copy-to writes only lumen-fps-canary.mp4 in that folder.
-Stdlib only. Prints one JSON line.
+
+Identity (is this the Lumen canary, not some other render?): by default the job must have the
+canary's prompt and length (--expect-prompt, --expect-seconds). The prompt is compared, never
+printed, so no other prompt of yours is shown. --expect-image <canary PNG> compares the decoded
+pixels of FP-Studio's saved copy of the job's start frame (queue_images/<job id>_input.png, which
+FP-Studio re-encodes, so file hashes differ) with the canary PNG; it needs Pillow (FP-Studio's own
+Python has it). Any mismatch prints MISMATCH and copies nothing. Prints one JSON line.
 """
 import argparse
 import hashlib
@@ -25,9 +31,43 @@ from pathlib import Path
 OUTPUT_NAME = re.compile(r"^\d{6}_\d{6}_\d{3}_\d{1,4}_\d+\.mp4$")
 UUID = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")
 SLACK = 120
+CANARY_PROMPT = "gentle camera push-in, waves rolling against the rocks, the lighthouse light slowly turning"
 
 
-def check(queue_json: Path, job_id: str, outputs: Path | None) -> dict:
+def pixels(path: Path) -> dict:
+    """Size and sha256 of the decoded RGB pixels (independent of PNG encoding)."""
+    from PIL import Image  # FP-Studio's Python has Pillow
+    with Image.open(path) as image:
+        rgb = image.convert("RGB")
+        return {"size": list(rgb.size), "pixels_sha256": hashlib.sha256(rgb.tobytes()).hexdigest()}
+
+
+def identity(entry: dict, queue_json: Path, job_id: str, prompt: str, seconds: float | None,
+             image: Path | None) -> dict:
+    found = {"prompt_matches": (entry.get("prompt") or "").strip() == prompt.strip()}
+    if seconds is not None:
+        try:
+            found["seconds_match"] = abs(float(entry.get("total_second_length")) - seconds) < 0.05
+        except (TypeError, ValueError):
+            found["seconds_match"] = False
+    if image is not None:
+        saved = entry.get("saved_input_image_path") or str(queue_json.parent / "queue_images" / f"{job_id}_input.png")
+        try:
+            mine, theirs = pixels(Path(saved)), pixels(image)
+            found["input_image"] = {"job": mine, "expected": theirs,
+                                    "source_file_sha256": hashlib.sha256(image.read_bytes()).hexdigest()}
+            found["input_image_matches"] = mine == theirs
+        except ImportError:
+            found["input_image_matches"] = False
+            found["input_image"] = "Pillow is not available in this Python; run it with FP-Studio's Python"
+        except OSError as exc:
+            found["input_image_matches"] = False
+            found["input_image"] = f"could not read: {exc}"
+    return found
+
+
+def check(queue_json: Path, job_id: str, outputs: Path | None, *, prompt: str = CANARY_PROMPT,
+          seconds: float | None = 3.0, image: Path | None = None) -> dict:
     if not UUID.match(job_id):
         raise ValueError("job id must be the FP-Studio queue uuid printed by the canary")
     entries = json.loads(queue_json.read_text())
@@ -60,12 +100,14 @@ def check(queue_json: Path, job_id: str, outputs: Path | None) -> dict:
     if not started - SLACK <= mtime <= completed + SLACK:
         raise ValueError(f"{path.name} was written outside job {job_id}'s run window")
     # FP-Studio's own saved job properties, to compare with the canary (3 s, its prompt and seed).
-    saved = {key: entry.get(key) for key in ("model_type", "generation_type", "prompt", "seed",
-                                              "total_second_length", "input_image_path", "created_at",
-                                              "started_at", "completed_at") if key in entry}
+    # FP-Studio's saved job properties. The prompt is only compared (see identity), never printed.
+    saved = {key: entry.get(key) for key in ("model_type", "generation_type", "seed", "total_second_length",
+                                              "saved_input_image_path", "created_at", "started_at",
+                                              "completed_at") if key in entry}
     return {"job_id": job_id, "status": status, "job": saved, "file": str(path), "bytes": len(data),
             "sha256": hashlib.sha256(data).hexdigest(), "written_s_after_start": round(mtime - started, 1),
-            "run_s": round(completed - started, 1)}
+            "run_s": round(completed - started, 1),
+            "identity": identity(entry, queue_json, job_id, prompt, seconds, image)}
 
 
 def main(argv=None) -> int:
@@ -74,11 +116,20 @@ def main(argv=None) -> int:
     parser.add_argument("--job-id", required=True)
     parser.add_argument("--outputs", type=Path, help="FP-Studio outputs folder (default: next to queue.json)")
     parser.add_argument("--copy-to", type=Path, help="copy the verified file here as lumen-fps-canary.mp4")
+    parser.add_argument("--expect-prompt", default=CANARY_PROMPT, help="compared, never printed")
+    parser.add_argument("--expect-seconds", type=float, default=3.0)
+    parser.add_argument("--expect-image", type=Path, help="the canary's source PNG, compared by decoded pixels")
     args = parser.parse_args(argv)
     try:
-        summary = check(args.queue_json, args.job_id.strip(), args.outputs)
+        summary = check(args.queue_json, args.job_id.strip(), args.outputs, prompt=args.expect_prompt,
+                        seconds=args.expect_seconds, image=args.expect_image)
     except (OSError, ValueError) as exc:
         print(json.dumps({"result": "REFUSED", "reason": str(exc)}))
+        return 1
+    found = summary["identity"]
+    if not all(value for key, value in found.items() if key.endswith(("_matches", "_match"))):
+        print(json.dumps({"result": "MISMATCH", "note": "a real FP-Studio render, but not shown to be this "
+                          "canary; nothing copied", **summary}))
         return 1
     if args.copy_to:
         args.copy_to.mkdir(parents=True, exist_ok=True)

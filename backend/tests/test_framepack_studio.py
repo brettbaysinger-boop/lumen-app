@@ -576,6 +576,7 @@ class StudioJobOutputScriptTests(unittest.TestCase):
         self.file.write_bytes(b"\x00\x00\x00\x18ftypmp42" + b"0" * 64)
         os.utime(self.file, (self.started + 500, self.started + 500))
         self.queue = {JOB: {"id": JOB, "status": "completed", "error": None, "result": str(self.file),
+                            "prompt": self.mod.CANARY_PROMPT, "total_second_length": 3.0, "seed": 1234,
                             "started_at": self.started, "completed_at": self.started + 510},
                       OTHER: {"id": OTHER, "status": "completed", "error": None, "result": None,
                               "started_at": self.started - 900, "completed_at": self.started - 800}}
@@ -617,6 +618,33 @@ class StudioJobOutputScriptTests(unittest.TestCase):
             code, summary = self.run_script()
             self.assertEqual((code, summary["result"]), (1, "REFUSED"), label)
             self.queue[JOB] = saved
+        self.assertFalse((self.root / "copy").exists())
+
+    def test_a_render_that_is_not_the_canary_is_a_mismatch_and_its_prompt_is_never_printed(self):
+        self.queue[JOB]["prompt"] = "a private prompt of the owner's"
+        code, summary = self.run_script("--copy-to", str(self.root / "copy"))
+        self.assertEqual((code, summary["result"]), (1, "MISMATCH"))
+        self.assertFalse(summary["identity"]["prompt_matches"])
+        self.assertNotIn("private prompt", json.dumps(summary))
+        self.assertFalse((self.root / "copy").exists())
+        self.queue[JOB].update(prompt=self.mod.CANARY_PROMPT, total_second_length=6.0)
+        code, summary = self.run_script()
+        self.assertEqual((summary["result"], summary["identity"]["seconds_match"]), ("MISMATCH", False))
+
+    def test_start_frame_is_compared_by_pixels_not_file_bytes(self):
+        from PIL import Image
+        source = self.root / "lumen-canary.png"
+        Image.new("RGB", (8, 12), (200, 120, 40)).save(source)
+        (self.root / "queue_images").mkdir()
+        saved = self.root / "queue_images" / f"{JOB}_input.png"
+        Image.open(source).save(saved, compress_level=0)  # FP-Studio re-encodes: different bytes, same pixels
+        self.assertNotEqual(source.read_bytes(), saved.read_bytes())
+        code, summary = self.run_script("--expect-image", str(source))
+        self.assertEqual((code, summary["result"]), (0, "MATCH"), summary)
+        self.assertTrue(summary["identity"]["input_image_matches"])
+        Image.new("RGB", (8, 12), (10, 10, 10)).save(saved)  # a different start frame
+        code, summary = self.run_script("--expect-image", str(source), "--copy-to", str(self.root / "copy"))
+        self.assertEqual((code, summary["result"]), (1, "MISMATCH"))
         self.assertFalse((self.root / "copy").exists())
 
 

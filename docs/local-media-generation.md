@@ -185,12 +185,15 @@ Keyword rules are a backstop and can misfire; each refusal names the rule so it 
   written during that job's run. It never lists the folder to guess. From the Lumen canary checkout:
 
   ```
-  scp ~/lumen-fps-canary/scripts/framepack-studio-job-output.py <heavy>:/tmp/
-  ssh <heavy> 'cd /data/ai-media-studio/FP-Studio && python3 /tmp/framepack-studio-job-output.py --queue-json queue.json --job-id <canary job id> --copy-to /tmp/lumen-fps-canary'
+  scp ~/lumen-fps-canary/scripts/framepack-studio-job-output.py /tmp/raialume-biglust-8k5z36zq/lumen-canary.png <heavy>:/tmp/
+  ssh <heavy> 'cd /data/ai-media-studio/FP-Studio && <FP-Studio python> /tmp/framepack-studio-job-output.py --queue-json queue.json --job-id 0bb4dd05-9f03-4837-86d8-5c62f2f9b544 --expect-image /tmp/lumen-canary.png --copy-to /tmp/lumen-fps-canary'
   ```
 
-  `<canary job id>` is `fp_studio_job_id` from the canary's FAIL line (likely `0bb4dd05-…`, the newest
-  entry). MATCH prints the file, bytes and sha256; REFUSED prints why and copies nothing.
+  Identity is checked, not assumed: the job's prompt must equal the canary prompt (compared, never
+  printed), its length 3 s, and with `--expect-image` the decoded pixels of FP-Studio's saved start
+  frame (`queue_images/<job id>_input.png`) must equal the canary PNG (`<FP-Studio python>` = the
+  Python FP-Studio runs with, which has Pillow). MATCH copies the clip; MISMATCH means a real render
+  that is not this canary, and copies nothing; REFUSED prints why.
 * Hardware canary 3 (758c2b3, 2026-11-16) rendered on the GPU: FP-Studio's queue.json has job
   `0bb4dd05-…` completed with `result` `outputs/261116_095453_817_1084_19.mp4` (836,627 bytes, H.264
   512×768, 2.43 s). The adapter rejected it because it expected `<uuid>_` names; fixed in 34f10dd.
