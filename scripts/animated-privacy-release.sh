@@ -11,6 +11,9 @@
 #   scripts/animated-privacy-release.sh baseline-check
 #   PRIVACY_RELEASE_CONFIRM=baseline:<12 of the backend commit> scripts/animated-privacy-release.sh baseline
 #   PRIVACY_RELEASE_CONFIRM=baseline-undo scripts/animated-privacy-release.sh baseline-undo
+#   Only if baseline-check names files as "missing" (tests and docs that never reached the live checkout):
+#   PRIVACY_RELEASE_CONFIRM=fill:<12 printed> scripts/animated-privacy-release.sh baseline-fill
+#   PRIVACY_RELEASE_CONFIRM=fill-undo scripts/animated-privacy-release.sh baseline-fill-undo
 # Step 2b, web app: read-only pre-check here, then the unchanged scripts/animated-web-update.sh.
 #   scripts/animated-privacy-release.sh web-check
 #   scripts/animated-privacy-release.sh status
@@ -26,6 +29,7 @@
 # over a live file: the backend step applies only the reviewed patch, and only to files that still equal
 # PR #38. The baseline step writes no file at all.
 set -Eeuo pipefail   # -E: a failure inside a helper function still runs the undo trap
+export LC_ALL=C      # one byte order for every list compared below
 MODE="${1:-}"
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 LIVE_DIR="${LIVE_DIR:-/home/brett/lumen-push}"
@@ -221,10 +225,26 @@ backend_rollback() {
 # reviewed backend commit, then moves the checkout's HEAD (and those index entries) to that commit.
 # No file in the working tree is written; `baseline-undo` moves HEAD and the index back.
 baseline_paths() { repo diff --name-only "$(live rev-parse HEAD)" "$BACKEND_COMMIT"; }
+live_edits() { live -c core.quotePath=false diff --name-only HEAD; }        # tracked files edited locally
+in_list() { grep -Fxf "$1" || true; }                                       # lines of stdin that are in file $1
+FILL_ALLOWED='^(backend/tests/|docs/|tests/)'   # only tests and docs may ever be written by baseline-fill
+classify() {  # path -> ok | missing | changed | mode | extra (live has a file the commit does not)
+  local path="$1" want; want=$(blob_of "$BACKEND_COMMIT" "$path")
+  if [ "$(live_blob "$path")" = "$want" ]; then
+    [ "$want" = absent ] || [ "$(live_mode "$path")" = "$(mode_of "$BACKEND_COMMIT" "$path")" ] && echo ok || echo mode
+  elif [ "$want" = absent ]; then echo extra
+  elif [ ! -e "$LIVE_DIR/$path" ]; then echo missing
+  else echo changed; fi
+}
+fillable() {  # the missing files baseline-fill may write: absent in live, tests or docs only
+  local path; while read -r path; do [ "$(classify "$path")" = missing ] && grep -Eq "$FILL_ALLOWED" <<< "$path" && echo "$path"; done < <(baseline_paths) || true
+}
+fill_id() { fillable | while read -r p; do echo "$(blob_of "$BACKEND_COMMIT" "$p") $p"; done | sha256sum | cut -c1-12; }
 baseline_check() {
   clone_checks
   [ "$problems" = 0 ] || return 0
-  local head path want mismatch=() staged
+  local head path state n=0 paths staged others
+  local -a missing=() other=()
   head=$(live rev-parse HEAD)
   repo merge-base --is-ancestor "$BACKEND_COMMIT" HEAD && pass "this clone's commit builds on the backend commit" || bad "this clone is not the release branch (its HEAD does not contain ${BACKEND_COMMIT:0:12})"
   if [ "$head" = "$(repo rev-parse "$BACKEND_COMMIT")" ]; then info "already recorded: live HEAD is the backend commit"; return 0; fi
@@ -232,15 +252,73 @@ baseline_check() {
     && pass "live HEAD ${head:0:12} is an ancestor of the backend commit" || { bad "live HEAD ${head:0:12} is not an ancestor of the backend commit"; return 0; }
   [ "$(backend_state)" = applied ] && pass "step 1 is done (live backend files are the reviewed ones)" || bad "do step 1 (backend) first"
   while read -r path; do
-    want=$(blob_of "$BACKEND_COMMIT" "$path")
-    if [ "$(live_blob "$path")" != "$want" ]; then mismatch+=("$path")
-    elif [ "$want" != absent ] && [ "$(live_mode "$path")" != "$(mode_of "$BACKEND_COMMIT" "$path")" ]; then mismatch+=("$path (file mode)"); fi
+    n=$((n + 1)); state=$(classify "$path")
+    case "$state" in
+      ok) ;;
+      missing) missing+=("$path"); info "  missing  $path (reviewed $(blob_of "$BACKEND_COMMIT" "$path" | cut -c1-12), not in the live checkout)" ;;
+      *) other+=("$path"); info "  $state  $path (live $(live_blob "$path" | cut -c1-12), reviewed $(blob_of "$BACKEND_COMMIT" "$path" | cut -c1-12))" ;;
+    esac
   done < <(baseline_paths)
-  [ "${#mismatch[@]}" = 0 ] && pass "all $(baseline_paths | wc -l) file(s) between live HEAD and the backend commit are already in the working tree, byte for byte" \
-    || bad "these live files differ from the reviewed commit, so nothing can be recorded: ${mismatch[*]}"
-  staged=$(comm -12 <(live diff --cached --name-only | sort) <(baseline_paths | sort))
+  [ "${#missing[@]}" = 0 ] && [ "${#other[@]}" = 0 ] && pass "all $n file(s) between live HEAD and the backend commit are already in the working tree, byte for byte"
+  [ "${#missing[@]}" = 0 ] || bad "${#missing[@]} reviewed file(s) are missing from the live checkout, so nothing can be recorded: ${missing[*]}"
+  [ "${#other[@]}" = 0 ] || bad "${#other[@]} live file(s) differ from the reviewed commit and need hand review (never overwritten): ${other[*]}"
+  if [ "${#missing[@]}" -gt 0 ] && [ "${#other[@]}" = 0 ] && [ "$(fillable | wc -l)" = "${#missing[@]}" ]; then
+    info "every missing file is a test or doc; after owner review they can be written exactly from the commit with:"
+    info "  PRIVACY_RELEASE_CONFIRM=fill:$(fill_id) $0 baseline-fill"
+  fi
+  paths=$(mktemp); baseline_paths > "$paths"
+  staged=$(live -c core.quotePath=false diff --cached --name-only | in_list "$paths")
   [ -z "$staged" ] && pass "none of them is staged in the live index" || bad "staged in the live index: $(tr '\n' ' ' <<< "$staged")"
-  info "other local edits stay exactly as they are: $(comm -23 <(live status --porcelain --untracked-files=no | cut -c4- | sort) <(baseline_paths | sort) | wc -l)"
+  others=$(live_edits | grep -vFxf "$paths" || true); rm -f "$paths"
+  info "other local edits stay exactly as they are: $(grep -c . <<< "$others" || true)"
+}
+
+# Writes only reviewed tests and docs that are absent from the live checkout (never an existing file), exactly
+# from the backend commit, and records them so baseline-fill-undo can delete exactly those again.
+baseline_fill() {
+  local id; id=$(fill_id)
+  [ "${PRIVACY_RELEASE_CONFIRM:-}" = "fill:$id" ] || die "Owner confirmation missing. After reviewing 'baseline-check', run: PRIVACY_RELEASE_CONFIRM=fill:$id $0 baseline-fill"
+  [ ! -f "$STATE_DIR/fill-current" ] || die "A fill is already recorded ($(cat "$STATE_DIR/fill-current"))."
+  [ ! -f "$STATE_DIR/baseline-current" ] || die "A baseline is recorded; nothing may be written now."
+  clone_checks > /dev/null; [ "$problems" = 0 ] || die "this clone or the live checkout is not as expected. Nothing was changed."
+  [ "$(backend_state)" = applied ] || die "do step 1 (backend) first. Nothing was changed."
+  local path state record
+  while read -r path; do
+    state=$(classify "$path")
+    [ "$state" = ok ] || [ "$state" = missing ] || die "$path is '$state', not missing; that needs hand review. Nothing was changed."
+    [ "$state" = ok ] || grep -Eq "$FILL_ALLOWED" <<< "$path" || die "$path is missing but is not a test or doc; it is never written here. Nothing was changed."
+  done < <(baseline_paths)
+  [ -n "$(fillable)" ] || die "nothing is missing. Nothing was changed."
+  record=$(new_record fill); fillable > "$record/written"
+  echo "$record" > "$STATE_DIR/fill-current"
+  trap 'echo "Fill failed; deleting what it wrote." >&2; trap - ERR; fill_remove "$record"; exit 1' ERR
+  while read -r path; do
+    [ ! -e "$LIVE_DIR/$path" ]                                      # still absent: never replace a file
+    mkdir -p "$LIVE_DIR/$(dirname "$path")"
+    repo show "$BACKEND_COMMIT:$path" > "$LIVE_DIR/$path"
+    [ "$(mode_of "$BACKEND_COMMIT" "$path")" != 100755 ] || chmod +x "$LIVE_DIR/$path"
+    [ "$(classify "$path")" = ok ]
+    echo "wrote $path"
+  done < "$record/written"
+  trap - ERR
+  echo "Done: $(wc -l < "$record/written") reviewed test/doc file(s) written; no other file touched. Next: $0 baseline-check"
+  echo "Go back with: PRIVACY_RELEASE_CONFIRM=fill-undo $0 baseline-fill-undo"
+}
+fill_remove() {  # $1 = record; deletes exactly the files it wrote, only while they are still the reviewed ones
+  local record="$1" path
+  while read -r path; do
+    [ -e "$LIVE_DIR/$path" ] || continue
+    [ "$(classify "$path")" = ok ] || die "$path changed after the fill; left in place, nothing more was deleted."
+    rm -f "$LIVE_DIR/$path"
+  done < "$record/written"
+  mv "$STATE_DIR/fill-current" "$STATE_DIR/fill-undone-$(basename "$record")" 2>/dev/null || true
+  echo "The written test/doc files are gone again; the live checkout is as before the fill."
+}
+baseline_fill_undo() {
+  [ "${PRIVACY_RELEASE_CONFIRM:-}" = fill-undo ] || die "Owner confirmation missing. Run: PRIVACY_RELEASE_CONFIRM=fill-undo $0 baseline-fill-undo"
+  [ -f "$STATE_DIR/fill-current" ] || die "No fill is recorded. Nothing to go back to."
+  [ ! -f "$STATE_DIR/baseline-current" ] || die "A baseline is recorded; undo it first: PRIVACY_RELEASE_CONFIRM=baseline-undo $0 baseline-undo"
+  fill_remove "$(cat "$STATE_DIR/fill-current")"
 }
 
 tree_sums() { local p; while read -r p; do echo "$(live_blob "$p") $p"; done < "$1"; }
@@ -323,7 +401,9 @@ backend-rollback) backend_rollback ;;
 baseline-check) baseline_check; finish "After owner review: PRIVACY_RELEASE_CONFIRM=baseline:${BACKEND_COMMIT:0:12} $0 baseline" ;;
 baseline)       baseline_record ;;
 baseline-undo)  baseline_undo ;;
+baseline-fill)  baseline_fill ;;
+baseline-fill-undo) baseline_fill_undo ;;
 web-check)      web_check; finish "After owner review: LUMEN_WEB_UPDATE_CONFIRM=update:$(repo rev-parse --short=7 HEAD) scripts/animated-web-update.sh update" ;;
 status)         status ;;
-*) sed -n '2,27p' "${BASH_SOURCE[0]}"; exit 2 ;;
+*) sed -n '2,30p' "${BASH_SOURCE[0]}"; exit 2 ;;
 esac

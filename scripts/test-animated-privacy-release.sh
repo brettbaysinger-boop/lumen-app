@@ -5,6 +5,7 @@
 # systemctl, sudo, curl, npx and id. The real backend test suite runs on the patched copy.
 # Touches no service and no real checkout. Run it from a clone of the release branch:
 #   TEST_PYTHON=/path/to/venv/bin/python scripts/test-animated-privacy-release.sh
+# TEST_LOCPATH: a directory with a compiled en_US.UTF-8 locale, if the system has none (localedef -i en_US -f UTF-8 DIR/en_US.UTF-8).
 set -euo pipefail
 SRC=$(cd "$(dirname "$0")/.." && pwd)
 PY="${TEST_PYTHON:-$SRC/backend/.venv/bin/python}"
@@ -137,16 +138,36 @@ out=$(rel baseline-undo PRIVACY_RELEASE_CONFIRM=baseline-undo) && [ "$(snap)" = 
 out=$(rel backend-rollback PRIVACY_RELEASE_CONFIRM=backend-rollback) && [ "$(snap)" = "$START" ] \
   && ok "all the way back: live HEAD, index, every file and the served build are exactly as at the start" || { bad "full rollback"; echo "$out"; }
 
-# --- As found on the real host: the live checkout lacks two of PR #38's test files --------------------
-rm "$L/backend/tests/test_rmc_auto_ingest.py" "$L/backend/tests/test_rmc_memory_routes.py"; NOTESTS=$(snap)
+# --- As found on the real host: 5 of PR #38's tests and docs never reached the live checkout ------------
+HOSTMISSING="backend/tests/test_rmc_auto_ingest.py backend/tests/test_rmc_memory_routes.py docs/RMC-AUTOMATIC-LEARNING-D01-63.md docs/RMC-MEMORIES-PANEL-20261115.md tests/rmc-memories-panel.test.cjs"
+for p in $HOSTMISSING; do rm "$L/$p"; done; NOTESTS=$(snap)
 out=$(rel backend PRIVACY_RELEASE_CONFIRM=backend:$PATCH_ID) || { bad "backend without live test files"; echo "$out"; }
 [ "$(grep -c 'added reviewed test file missing from the live checkout (copy only)' <<<"$out")" = 1 ] && grep -q 'copy only): backend/tests/test_rmc_auto_ingest.py' <<<"$out" && grep -q 'RMC automatic learning (D01-63E): 14 tests pass' <<<"$out" \
   && backend_is "$BACKEND" && [ ! -e "$L/backend/tests/test_rmc_auto_ingest.py" ] \
-  && ok "live without PR #38's 2 test files (as on the host): whole suite on the live tests, reviewed test_rmc_auto_ingest.py added to the copy only, targeted suites 26 + 14, live gets only the 7 files" || { bad "missing test files"; echo "$out"; }
-out=$(rel baseline-check) || true; grep -q 'differ from the reviewed commit' <<<"$out" && grep -q 'test_rmc_auto_ingest.py' <<<"$out" \
-  && ok "baseline-check refuses while those 2 test files are missing (open item for gate 2a)" || { bad "baseline missing files"; echo "$out"; }
-out=$(rel backend-rollback PRIVACY_RELEASE_CONFIRM=backend-rollback) && [ "$(snap)" = "$NOTESTS" ] || { bad "rollback without test files"; echo "$out"; }
-for p in backend/tests/test_rmc_auto_ingest.py backend/tests/test_rmc_memory_routes.py; do git -C "$SRC" show "$RMC_BASE:$p" > "$L/$p"; done
+  && ok "live without PR #38's test files (as on the host): whole suite on the live tests, reviewed test_rmc_auto_ingest.py added to the copy only, targeted suites 26 + 14, live gets only the 7 files" || { bad "missing test files"; echo "$out"; }
+AFTERG1=$(snap)
+rc=0; out=$(env ${TEST_LOCPATH:+LOCPATH=$TEST_LOCPATH} LANG=en_US.UTF-8 LC_ALL=en_US.UTF-8 PATH="$B:$PATH" HOME="$H" XDG_STATE_HOME="$H/state" LIVE_DIR="$L" bash "$C/scripts/animated-privacy-release.sh" baseline-check 2>&1) || rc=$?
+[ "$rc" = 1 ] && grep -q '^NOT READY' <<<"$out" && [ "$(grep -c '^INFO    missing ' <<<"$out")" = 5 ] && ! grep -q 'comm:' <<<"$out" && grep -q 'PRIVACY_RELEASE_CONFIRM=fill:' <<<"$out" && [ "$(snap)" = "$AFTERG1" ] \
+  && ok "baseline-check (UTF-8 locale): names the 5 files as missing, ends NOT READY, no sort/comm error, read-only" || { bad "baseline-check classify"; echo "$out"; }
+FILL=$(grep -o 'PRIVACY_RELEASE_CONFIRM=fill:[0-9a-f]*' <<<"$out" | head -1)
+out=$(rel baseline PRIVACY_RELEASE_CONFIRM=baseline:${BACKEND:0:12}) || true; grep -q 'baseline-check reports' <<<"$out" && [ "$(snap)" = "$AFTERG1" ] && ok "baseline refuses while files are missing; nothing written" || { bad "baseline with missing"; echo "$out"; }
+out=$(rel baseline-fill) || true; grep -q 'Owner confirmation missing' <<<"$out" && [ "$(snap)" = "$AFTERG1" ] && ok "baseline-fill refuses without confirmation" || { bad "fill confirmation"; echo "$out"; }
+echo "# changed" >> "$L/docs/RMC-AUTOMATIC-LEARNING-D01-63.md" 2>/dev/null; git -C "$SRC" show "$RMC_BASE:docs/RMC-AUTOMATIC-LEARNING-D01-63.md" > "$L/docs/RMC-AUTOMATIC-LEARNING-D01-63.md"; echo "# changed" >> "$L/docs/RMC-AUTOMATIC-LEARNING-D01-63.md"
+out=$(rel baseline-fill $FILL) || true; grep -q 'Owner confirmation missing' <<<"$out" && [ ! -e "$L/backend/tests/test_rmc_auto_ingest.py" ] && ok "baseline-fill: the token names the exact files, so a changed file voids it; nothing written" || { bad "fill token"; echo "$out"; }
+F2=$(git -C "$C" diff --name-only "$LIVE_BASE" "$BACKEND" | while read -r p; do case " $HOSTMISSING " in *" $p "*) [ "$p" = docs/RMC-AUTOMATIC-LEARNING-D01-63.md ] || echo "$(git -C "$C" rev-parse "$BACKEND:$p") $p" ;; esac; done | sha256sum | cut -c1-12)
+out=$(rel baseline-fill PRIVACY_RELEASE_CONFIRM=fill:$F2) || true; grep -q "is 'changed', not missing" <<<"$out" && [ ! -e "$L/backend/tests/test_rmc_auto_ingest.py" ] && ok "baseline-fill refuses when a file exists but differs (hand review; never overwritten)" || { bad "fill changed"; echo "$out"; }
+rm "$L/docs/RMC-AUTOMATIC-LEARNING-D01-63.md"; [ "$(snap)" = "$AFTERG1" ] || bad "reset changed doc"
+out=$(rel baseline-fill $FILL) || { bad "fill run"; echo "$out"; }
+for p in $HOSTMISSING; do [ "$(git hash-object "$L/$p")" = "$(git -C "$C" rev-parse "$BACKEND:$p")" ] || bad "fill wrote $p wrong"; done
+[ "$(grep -c '^wrote ' <<<"$out")" = 5 ] && ok "baseline-fill writes exactly the 5 missing tests/docs from the commit, byte for byte" || { bad "fill"; echo "$out"; }
+[ "$(snap)" = "$AFTER1" ] && ok "after the fill the live checkout equals the normal post-gate-1 state" || bad "fill state"
+out=$(rel baseline-check) && grep -q '^READY' <<<"$out" && ok "baseline-check READY after the fill" || { bad "check after fill"; echo "$out"; }
+out=$(rel baseline-fill-undo PRIVACY_RELEASE_CONFIRM=fill-undo) && [ "$(snap)" = "$AFTERG1" ] && ok "baseline-fill-undo deletes exactly what it wrote" || { bad "fill undo"; echo "$out"; }
+out=$(rel baseline-fill $FILL) && out=$(rel baseline PRIVACY_RELEASE_CONFIRM=baseline:${BACKEND:0:12}) && [ "$(snap)" = "$AFTER2" ] || { bad "fill + baseline"; echo "$out"; }
+out=$(rel baseline-fill-undo PRIVACY_RELEASE_CONFIRM=fill-undo) || true; grep -q 'undo it first' <<<"$out" && ok "baseline-fill-undo refuses while the baseline is recorded" || { bad "fill-undo order"; echo "$out"; }
+out=$(rel baseline-undo PRIVACY_RELEASE_CONFIRM=baseline-undo) && out=$(rel baseline-fill-undo PRIVACY_RELEASE_CONFIRM=fill-undo) && out=$(rel backend-rollback PRIVACY_RELEASE_CONFIRM=backend-rollback) && [ "$(snap)" = "$NOTESTS" ] \
+  && ok "host case all the way back (baseline-undo, fill-undo, backend-rollback): exactly as before gate 1" || { bad "host way back"; echo "$out"; }
+for p in $HOSTMISSING; do git -C "$SRC" show "$RMC_BASE:$p" > "$L/$p"; done
 [ "$(snap)" = "$START" ] || bad "restore test files"
 
 # --- Refusals ---------------------------------------------------------------------------------------

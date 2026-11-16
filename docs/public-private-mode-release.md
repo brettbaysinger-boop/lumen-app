@@ -97,9 +97,22 @@ staged. Then it fetches the commit into the live repository, moves HEAD (the bra
 file, resets nothing, discards nothing: afterwards `git status` is clean because the files already were
 that commit. Any other local edit stays as it is.
 
-**Open item before 2a:** the owner's Gate 1 run showed the live checkout lacks PR #38's
-`backend/tests/test_rmc_auto_ingest.py` and `backend/tests/test_rmc_memory_routes.py`, so `baseline-check`
-will refuse (correctly) until that is decided. Nothing here adds them to the live checkout.
+**Missing tests and docs (found by the owner's 2a check).** The live checkout never received five of PR #38's
+non-runtime files: `backend/tests/test_rmc_auto_ingest.py`, `backend/tests/test_rmc_memory_routes.py`,
+`docs/RMC-AUTOMATIC-LEARNING-D01-63.md`, `docs/RMC-MEMORIES-PANEL-20261115.md`, `tests/rmc-memories-panel.test.cjs`.
+`baseline-check` (read-only) names each file as `missing` or `changed` and ends NOT READY. When every
+mismatch is `missing` and is under `backend/tests/`, `docs/` or `tests/`, it prints a confirmation word for:
+
+```bash
+PRIVACY_RELEASE_CONFIRM=fill:<12 printed> scripts/animated-privacy-release.sh baseline-fill
+```
+
+It writes exactly those files from `a2148d8`, refuses to replace any existing file, checks each one's blob and
+mode afterwards, and touches nothing else (no Git command that writes, no restart). The word is a hash of the
+exact file list and blobs, so any change voids it. A `changed` file is never written: that is hand review.
+**Undo:** `PRIVACY_RELEASE_CONFIRM=fill-undo scripts/animated-privacy-release.sh baseline-fill-undo` deletes only
+the files it wrote, and only while they are still the reviewed ones; it refuses while a baseline is recorded.
+Then `baseline-check` again must say READY before 2a can be authorized.
 
 **Undo:** `PRIVACY_RELEASE_CONFIRM=baseline-undo scripts/animated-privacy-release.sh baseline-undo` puts
 HEAD and those index entries back to `f23d112`; the files stay untouched. It refuses while the new web
