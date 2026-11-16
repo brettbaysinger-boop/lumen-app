@@ -615,13 +615,31 @@ class ProjectRegistry:
                         raw_msg = commit_obj.get("message", "").split("\n")[0]
                         commit_text = f"{repo}: {raw_msg}"[:240]
 
-                        latest_commit_info = LastCommit(
+                        candidate_commit = LastCommit(
                             at=commit_at,
                             branch=default_branch,
                             ref=f"https://github.com/{repo}/commit/{sha}" if sha else None,
                             commit_sha=sha[:40] if sha else None,
                             observed_at=now_iso,
                         )
+                        # Multiple repositories may belong to one project.
+                        # Show the chronologically latest commit, not the
+                        # commit from whichever repository was polled last.
+                        try:
+                            candidate_time = datetime.fromisoformat(
+                                commit_at.replace("Z", "+00:00")
+                            ).astimezone(timezone.utc)
+                            previous_time = (
+                                datetime.fromisoformat(
+                                    latest_commit_info.at.replace("Z", "+00:00")
+                                ).astimezone(timezone.utc)
+                                if latest_commit_info else None
+                            )
+                            if previous_time is None or candidate_time > previous_time:
+                                latest_commit_info = candidate_commit
+                        except (ValueError, TypeError, AttributeError):
+                            # Malformed source time is not proof of recency.
+                            pass
                         activity_events.append(
                             ActivityEvent(
                                 at=commit_at,
@@ -697,6 +715,11 @@ class ProjectRegistry:
                 # Store insights (empty list if checked and none found, None if uncollected)
                 open_prs_val = OpenPrsGroup(observed_at=now_iso, items=open_prs_list) if prs_checked else None
 
+                if latest_commit_info is None and not prs_checked:
+                    # Repo links alone are not a successful evidence refresh.
+                    # Retain the previous snapshot, if any, as historical.
+                    results[pid] = "unavailable_no_verified_github_evidence"
+                    continue
                 self._insights[pid] = ProjectInsights(
                     observed_at=now_iso,
                     open_prs=open_prs_val,
