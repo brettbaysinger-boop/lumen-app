@@ -71,26 +71,41 @@ class CognitionRuntime:
         if rmc_memory is not None:
             rmc_read_status, memories = await rmc_memory.relevant(
                 companion, conversation_id, user_message)
-            # New chats need a small stable continuity anchor. Hindsight
-            # relevance to an unrelated first question cannot be relied upon
-            # to surface a previously agreed nickname.
+            # In a new chat the opening question alone is rarely a useful
+            # retrieval query: an unrelated greeting can make a companion
+            # seem to have forgotten established names, preferences, rituals
+            # and unfinished work. Consult the SAME authenticated RMC bank
+            # through two additional bounded evidence-only queries.
             if new_conversation and rmc_read_status == "ok":
-                continuity_status, continuity = await rmc_memory.relevant(
-                    companion, conversation_id,
-                    "Which nicknames and shared names have the user and companion explicitly agreed to use?"
+                continuity_queries = (
+                    "What agreed nicknames, preferred forms of address, and "
+                    "shared team or duo names have the user and companion accepted?",
+                    "What lasting user preferences, ongoing projects, goals, "
+                    "recurring chat rituals, and explicitly discussed shared "
+                    "moments matter for continuity with this companion?",
                 )
-                if continuity_status == "ok":
-                    # Favor verified shared continuity over generic initial
-                    # matches when the prompt has only 12 memory slots.
-                    combined, seen = [], set()
-                    for item in [*continuity, *memories]:
-                        key = item.get("id") or item.get("content")
-                        if key and key not in seen:
-                            combined.append(item)
-                            seen.add(key)
-                        if len(combined) >= 12:
-                            break
-                    memories = combined
+                # Preserve current-message relevance (up to 4) and reserve
+                # room for up to 4 matches per continuity topic. Never claim
+                # a complete catalog or treat a failed recall as no memories.
+                topical = list(memories[:4])
+                continuity_groups = []
+                for question in continuity_queries:
+                    extra_status, extra = await rmc_memory.relevant(
+                        companion, conversation_id, question
+                    )
+                    continuity_groups.append(
+                        extra[:4] if extra_status == "ok" else []
+                    )
+                merged, seen = [], set()
+                for item in [*topical, *continuity_groups[0],
+                             *continuity_groups[1], *memories]:
+                    key = item.get("id") or item.get("content")
+                    if key and key not in seen:
+                        merged.append(item)
+                        seen.add(key)
+                    if len(merged) >= 12:
+                        break
+                memories = merged
         else:
             memories = await self.db.get_relevant_memories(
                 companion_id,
