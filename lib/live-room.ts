@@ -52,7 +52,8 @@ export function useRoomMode(): RoomMode { return useSyncExternalStore(watchRoomM
 // --- Words between the page and the phone app ---------------------------------------------------
 // ready/gone: the room's own header is (not) on screen, so the app hides (shows) its bar.
 // chat/theater: the view now showing. close/browser: the person tapped that control in the room.
-export const ROOM_EVENTS = ['ready', 'gone', 'chat', 'theater', 'close', 'browser'] as const;
+// restored: the page's own full screen has just ended.
+export const ROOM_EVENTS = ['ready', 'gone', 'chat', 'theater', 'close', 'browser', 'restored'] as const;
 export type RoomEvent = typeof ROOM_EVENTS[number];
 
 /** True when the page is running inside the phone app's own view. */
@@ -80,7 +81,7 @@ export function readRoomEvent(data: unknown): RoomEvent | null {
 export const ROOM_BACK_EVENT = 'lumenroomback';
 export const ROOM_BACK_SCRIPT = `window.dispatchEvent(new Event('${ROOM_BACK_EVENT}'));true;`;
 
-// Two more fixed lines, sent only by a build that can turn this one screen: the phone is now held
+// Two more fixed lines from the app: the phone is now held
 // sideways, or upright again. Decided by the app, never by the page: a portrait window with the
 // keyboard open is also wider than it is tall, and that must not count as turning the phone.
 export const ROOM_LANDSCAPE_EVENT = 'lumenroomlandscape';

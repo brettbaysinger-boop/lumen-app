@@ -217,9 +217,6 @@ build_check() {
   # Live video inside the app needs the web view's native part, which exists only if the project's own
   # package.json lists it. This script never changes that file; without it the app offers the browser only.
   grep -q '"react-native-webview"' "$BUILD_TREE/package.json" 2>/dev/null && info "native project lists react-native-webview: in-app Live video can be offered" || info "native project does NOT list react-native-webview: this build will offer Live video in the browser only (no crash, no in-app view)"
-  # Turning the phone in the Live Room needs the native part of expo-screen-orientation. Same rule: it is
-  # there only if the project's own package.json lists it, and this script never adds it.
-  grep -q '"expo-screen-orientation"' "$BUILD_TREE/package.json" 2>/dev/null && info "native project lists expo-screen-orientation: the Live Room can turn with the phone" || info "native project does NOT list expo-screen-orientation: the Live Room stays portrait, with the Full screen control in Theater (no crash)"
   for dir in $SOURCE_DIRS; do
     [ -d "$BUILD_TREE/$dir" ] || continue
     while read -r file; do

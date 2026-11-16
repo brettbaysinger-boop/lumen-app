@@ -50,7 +50,7 @@ test('the video is always the whole 3:2 frame: compact in Video Chat, as large a
 test('the page tells the phone app only fixed words, and only inside the phone app',()=>{
   const inside=load({embedded:true});
   for(const word of inside.ROOM_EVENTS)inside.postRoomEvent(word);
-  assert.deepEqual(inside.posted.map(data=>JSON.parse(data)),['ready','gone','chat','theater','close','browser'].map(event=>({lumenRoom:1,event})));
+  assert.deepEqual(inside.posted.map(data=>JSON.parse(data)),['ready','gone','chat','theater','close','browser','restored'].map(event=>({lumenRoom:1,event})));
   const browser=load();browser.postRoomEvent('close');assert.equal(browser.roomEmbedded(),false);assert.deepEqual(browser.posted,[]);
   const {readRoomEvent}=load();
   for(const data of inside.posted)assert.ok(readRoomEvent(data));
@@ -130,36 +130,34 @@ test('the guarded web updater accepts this change as it stands: its allowlist is
   assert.equal(fs.existsSync('scripts/test-live-room-browser.cjs'),false);
 });
 
-// --- Turning the phone: automatic Theater, in a build whose native project has the means ---
-function loadRotation({platform='android',native}={}){
-  const mod={exports:{}},calls=[];
-  const module=native==='throws'?null:native==='present'?{lockAsync:async lock=>{calls.push(lock);}}:native==='refuses'?{lockAsync:async()=>{throw Error('no activity');}}:native==='odd'?{}:null;
-  vm.runInNewContext(ts.transpileModule(read('lib/room-rotation.ts'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText,
-    {module:mod,exports:mod.exports,require:name=>name==='react-native'?{Platform:{OS:platform}}:{requireOptionalNativeModule:asked=>{if(native==='throws')throw Error('no registry');assert.equal(asked,'ExpoScreenOrientation');return module;}}});
-  return {...mod.exports,calls};
+// --- Turning the phone: automatic Theater, with what the app's navigation already has ---
+function loadRotation(){
+  const mod={exports:{}};
+  vm.runInNewContext(ts.transpileModule(read('lib/room-rotation.ts'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText,{module:mod,exports:mod.exports,require:()=>{throw Error('imports nothing');}});
+  return mod.exports;
 }
-test('turning is offered only by an Android build that has the native part, and never crashes without it',async()=>{
-  for(const native of [undefined,'throws','odd'])assert.equal(loadRotation({native}).roomRotation(),null,String(native));   // today's signed build: portrait, as before
-  for(const platform of ['ios','web'])assert.equal(loadRotation({platform,native:'present'}).roomRotation(),null,platform);
-  const built=loadRotation({native:'present'}),rotation=built.roomRotation();
-  assert.equal(await rotation.set('follow'),true);assert.equal(await rotation.set('portrait'),true);assert.equal(await rotation.set('landscape'),true);
-  assert.deepEqual(built.calls,[0,3,5]);                                              // Android decides (honours auto-rotate), portrait, landscape
-  assert.equal(await loadRotation({native:'refuses'}).roomRotation().set('follow'),false);   // a refusal is reported, not thrown
-  assert.doesNotMatch(read('lib/room-rotation.ts'),/from 'expo-screen-orientation'/);
+test('only the room turns: portrait away from it, held still while typing, Android\'s auto-rotate honoured',()=>{
+  const {roomLock,roomImmersive,APP_ORIENTATION}=loadRotation();
+  for(const keyboard of [false,true])for(const landscape of [false,true])assert.equal(roomLock(false,keyboard,landscape),'portrait_up');   // sign-in, failure, background
+  assert.equal(roomLock(true,false,false),'default');assert.equal(roomLock(true,false,true),'default');   // 'default': Android decides, so rotation lock in quick settings is obeyed
+  assert.equal(roomLock(true,true,false),'portrait_up');assert.equal(roomLock(true,true,true),'landscape');   // the keyboard is not turned over mid-word
+  assert.equal(roomLock(true,false,true,true),'portrait_up');                          // one moment after the page's own full screen ends
+  assert.doesNotMatch(read('lib/room-rotation.ts'),/'all'|sensor/i);                   // never a value that overrides the phone's rotation lock
+  assert.equal(roomImmersive(true,true),true);
+  for(const [shown,landscape] of [[true,false],[false,true],[false,false]])assert.equal(roomImmersive(shown,landscape),false);   // bars hidden only sideways in the room
+  assert.equal(APP_ORIENTATION,'portrait_up');
 });
-test('only the room turns: portrait away from it, held still while typing',()=>{
-  const {roomLock}=loadRotation();
-  for(const keyboard of [false,true])for(const landscape of [false,true])assert.equal(roomLock(false,keyboard,landscape),'portrait');   // sign-in, failure, background, leaving
-  assert.equal(roomLock(true,false,false),'follow');assert.equal(roomLock(true,false,true),'follow');
-  assert.equal(roomLock(true,true,false),'portrait');assert.equal(roomLock(true,true,true),'landscape');   // the keyboard is not turned over mid-word
-  const screen=read('app/live-video.tsx');
+test('rotation is stated per screen by the native stack: no new native module, the app portrait elsewhere',()=>{
+  const screen=read('app/live-video.tsx'),root=read('app/_layout.tsx');
+  assert.match(root,/<Stack screenOptions=\{\{ headerShown: false, orientation: APP_ORIENTATION \}\}>/);   // every screen states portrait, so none is left free to turn
+  assert.match(screen,/<Stack\.Screen options=\{\{ orientation: roomLock\(roomShown, keyboardOpen, landscape, settle\), statusBarHidden: roomImmersive\(roomShown, landscape\), navigationBarHidden: roomImmersive\(roomShown, landscape\) \}\} \/>/);
   assert.match(screen,/const roomShown = active && room !== null && !failed && !\(silent && !probe\) && !\(probe && !probe\.ok\);/);
-  assert.match(screen,/if \(rotation\) void rotation\.set\(roomLock\(roomShown, keyboardOpen, landscape\)\);/);
-  assert.match(screen,/useEffect\(\(\) => \(\) => \{ void rotation\?\.set\('portrait'\); \}, \[rotation\]\);/);   // leaving the screen restores portrait
-  assert.match(screen,/if \(rotation && roomShown\) view\.current\?\.injectJavaScript\(landscape \? ROOM_LANDSCAPE_SCRIPT : ROOM_PORTRAIT_SCRIPT\)/);   // without the native part the page is told nothing
-  assert.match(screen,/\{!!rotation && <StatusBar hidden=\{roomShown && landscape\} animated \/>\}/);
+  assert.match(screen,/if \(roomShown\) view\.current\?\.injectJavaScript\(landscape \? ROOM_LANDSCAPE_SCRIPT : ROOM_PORTRAIT_SCRIPT\)/);
+  assert.match(screen,/if \(word === 'restored'\) \{ setSettle\(true\); return; \}/);
   assert.equal(JSON.parse(read('app.json')).expo.orientation,'portrait');
-  assert.match(read('scripts/android-refresh.sh'),/native project does NOT list expo-screen-orientation: the Live Room stays portrait/);
+  const packages=read('package.json');
+  assert.doesNotMatch(packages,/expo-screen-orientation|expo-navigation-bar/);assert.match(packages,/"react-native-screens": "~4\.16\.0"/);
+  for(const file of ['app/live-video.tsx','lib/room-rotation.ts'])assert.doesNotMatch(read(file),/requireOptionalNativeModule|ExpoScreenOrientation/,file);
 });
 test('sideways shows Theater by itself and upright puts back exactly what was there',()=>{
   const room=load(),chat={mode:'chat',messages:false},theaterOpen={mode:'theater',messages:true},alone={mode:'theater',messages:false};

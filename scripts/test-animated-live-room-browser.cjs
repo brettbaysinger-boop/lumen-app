@@ -177,7 +177,8 @@ const oneSession=(m,what)=>{assert.equal(m.tag,'first',`${what}: still the very 
     await page.getByRole('button',{name:'More actions'}).click();await page.getByRole('button',{name:'Conversations',exact:true}).waitFor();
     await page.getByRole('button',{name:'Open in browser ↗',exact:true}).click();
     await page.getByRole('button',{name:'Close live video and return to the chat'}).click();
-    assert.deepEqual((await page.evaluate(()=>window.__posted)).filter((word,index,all)=>word!==all[index-1]),['chat','ready',...Array(7).fill(['theater','chat']).flat(),'browser','close'],`${at}: only the fixed words reach the phone app`);
+    assert.equal((await page.evaluate(()=>window.__posted)).filter(word=>word==='restored').length,2,`${at}: the phone app is told each time full screen ends`);
+    assert.deepEqual((await page.evaluate(()=>window.__posted)).filter(word=>word!=='restored').filter((word,index,all)=>word!==all[index-1]),['chat','ready',...Array(7).fill(['theater','chat']).flat(),'browser','close'],`${at}: only the fixed words reach the phone app`);
     // Live off is a real, distinct state; Theater is then unavailable.
     await page.getByRole('switch',{name:'Live video'}).click();await page.getByText('Live · Off',{exact:true}).waitFor();
     m=await measure(page);assert.equal(m.video,null);assert.equal(m.rtc.closed,1);inside(m.composer,m,`${at} live off: message box`);

@@ -390,8 +390,8 @@ export default function ChatScreen() {
   const canFullScreen = room && typeof document !== 'undefined' && document.fullscreenEnabled === true;
   useEffect(() => {
     if (!room) return;
-    // The view is said again when full screen ends: the phone app then puts its own rotation rule back.
-    const changed = () => { setFullScreen(!!document.fullscreenElement); postRoomEvent(getRoomMode()); };
+    // The phone app is told when full screen ends, so it can state its own rotation rule again.
+    const changed = () => { setFullScreen(!!document.fullscreenElement); if (!document.fullscreenElement) postRoomEvent('restored'); };
     document.addEventListener('fullscreenchange', changed);
     return () => document.removeEventListener('fullscreenchange', changed);
   }, [room]);
@@ -404,7 +404,7 @@ export default function ChatScreen() {
   }, []);
   // Full screen belongs to Theater: leaving Theater, by any route, leaves full screen too.
   useEffect(() => { if (room && !theater) leaveFullScreen(); }, [room, theater, leaveFullScreen]);
-  // The phone turned sideways (said by the phone app, where its build can turn this screen): Theater
+  // The phone turned sideways (said by the phone app, which alone knows how it is held): Theater
   // by itself, and back to what was showing when it is upright again. Layout only, like every other
   // view change here. A view chosen by hand while sideways is kept.
   const [sideways, setSideways] = useState(false);
