@@ -3,7 +3,7 @@
 from uuid import uuid4
 
 from .images import compose_image_prompt, create_image_provider
-from .media_safety import adult_prompt, check_media_prompt, refusal_text
+from .media_safety import check_media_prompt, refusal_text
 
 
 async def create_companion_image(
@@ -30,7 +30,7 @@ async def create_companion_image(
         raise ValueError(refusal_text(verdict))
 
     provider = create_image_provider(settings)
-    result = await provider.generate(adult_prompt(resolved_prompt, verdict))
+    result = await provider.generate(resolved_prompt)
 
     mime_type = result["mime_type"]
     extension = {

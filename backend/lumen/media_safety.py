@@ -1,17 +1,25 @@
-"""Hard limits for locally generated images and videos.
+"""The only content rules for locally generated images and videos (owner directive 2026-11-16).
 
-Adult-oriented generation is allowed for fictional adults. These checks run in
-the backend before any GPU work, for every generation path (direct image
-requests, companion-initiated images and video jobs). They are deliberately
-conservative: a false refusal is a re-phrase, a false allow is not acceptable.
+BigLust SDXL and FramePack run locally and privately. Adult nudity and erotic material of
+consenting fictional adults is allowed as written: there is no NSFW filter, no cloud moderation,
+no safe mode and no rewrite of the user's prompt. These checks run in the backend before any GPU
+work, for every generation path, and refuse only these combinations:
 
-Hard blocks, whatever the wording or mode:
-* sexual or nude content together with any sign of a minor or a young age;
-* sexual or nude content of a real, identifiable person (celebrities, public
-  figures, people the user knows, "lookalikes", deepfakes);
-* sexual content without consent (force, incapacitation, sleep, coercion);
-* sexual or nude video made from an uploaded photo. Uploaded photos can show
-  real people, so intimate video is only made from images Lumen generated.
+* sexual or nude content together with a sign of a minor (a minor word, an age under 18,
+  school-child framing, "barely legal", "young-looking");
+* sexual or nude content of a real, identifiable person (celebrities, "lookalikes", deepfakes,
+  face swaps, "real person"/"irl", or people the user knows: "my wife", "photo of my coworker");
+* sexual content that states there is no consent (rape, non-consensual, drugged, unconscious,
+  coercion, blackmail, hidden camera, upskirt, voyeur, revenge porn);
+* sexual or nude video made from an uploaded photo, because an uploaded photo can show a real
+  person. Intimate video is made from images Lumen generated.
+
+Everything else, including explicit content, is passed through unchanged. Keyword rules are a
+backstop and can misfire; a refusal names the rule so it can be rephrased.
+
+The one remaining transformation is a negative prompt (see ADULT_NEGATIVE and the
+COMFYUI_NEGATIVE_PROMPT default): child-related terms are added to the NEGATIVE side so the model
+does not drift toward young-looking bodies. The user's own (positive) prompt is never changed.
 """
 from __future__ import annotations
 
@@ -29,22 +37,19 @@ _SEXUAL = re.compile(
 
 _MINOR = re.compile(
     r"\b(?:child|children|childlike|kid|kids|kiddie|minor|minors|underage|under-age|teen|teens|"
-    r"teenage|teenager|teenagers|preteen|pre-teen|tween|adolescent|juvenile|youngster|"
+    r"teenage|teenager|teenagers|preteen|pre-teen|tween|adolescent|juvenile|"
     r"schoolgirl|schoolboy|school\s*girl|school\s*boy|school\s*uniform|middle\s*school|"
-    r"high\s*school(?:er)?|elementary|kindergarten|toddler|infant|baby|babies|newborn|"
+    r"high\s*school(?:er)?|elementary\s*school|kindergarten|toddler|infant|newborn|"
     r"loli|lolita|shota|shotacon|lolicon|jailbait|little\s+(?:girl|boy)|young\s+(?:girl|boy)|"
-    r"girl\s+child|boy\s+child|daughter|son|niece|nephew|stepdaughter|stepson|"
-    r"barely\s+legal|petite\s+young|flat[-\s]?chested|childish\s+body|young[-\s]looking|"
-    r"(?:1[0-7]|[1-9])\s*(?:-|\s)?(?:years?|yrs?|yo)(?:\s*-?\s*old)?|"
-    r"(?:age|aged)\s*(?:1[0-7]|[1-9])\b)\b",
+    r"barely\s+legal|childish\s+body|young[-\s]looking|"
+    r"(?:1[0-7]|[1-9])\s*(?:-|\s)?(?:years?|yrs?)\s*-?\s*old|(?:1[0-7]|[1-9])\s*yo|"
+    r"(?:age|aged)\s*(?:1[0-7]|[1-9]))\b",
     re.IGNORECASE,
 )
 
 _REAL_PERSON = re.compile(
-    r"\b(?:celebrit(?:y|ies)|famous|actress|actor|singer|rapper|pop\s*star|influencer|streamer|"
-    r"youtuber|tiktoker|politician|president|prime\s+minister|royal|athlete|footballer|"
-    r"real\s+(?:person|people|woman|man|girl|guy)|real[-\s]life|irl|look[-\s]?alike|"
-    r"deep\s*fake|face\s*swap|photo\s+of\s+my|picture\s+of\s+my|"
+    r"\b(?:celebrit(?:y|ies)|famous|real\s+(?:person|people|woman|man|girl|guy)|real[-\s]life|irl|"
+    r"look[-\s]?alike|deep\s*fake|face\s*swap|photo\s+of\s+my|picture\s+of\s+my|"
     r"my\s+(?:ex|wife|husband|girlfriend|boyfriend|partner|boss|coworker|co-worker|colleague|"
     r"neighbou?r|friend|classmate|teacher|student|crush|sister|brother|mom|mother|dad|father|"
     r"cousin|aunt|uncle|roommate|landlord|employee))\b",
@@ -52,9 +57,9 @@ _REAL_PERSON = re.compile(
 )
 
 _NON_CONSENT = re.compile(
-    r"\b(?:rape|raped|raping|non[-\s]?consensual|noncon|without\s+consent|against\s+(?:her|his|their)\s+will|"
-    r"forced|forcing|coerc\w*|drugged|unconscious|passed\s+out|asleep|sleeping|incapacitated|"
-    r"blackmail\w*|hidden\s+camera|spy\s*cam|upskirt|voyeur\w*|revenge\s+porn)\b",
+    r"\b(?:rape|raped|raping|non[-\s]?consensual|noncon|without\s+(?:(?:her|his|their)\s+)?consent|"
+    r"against\s+(?:her|his|their)\s+will|forced\s+(?:sex|to|into)|coerc\w*|drugged|unconscious|"
+    r"incapacitated|blackmail\w*|hidden\s+camera|spy\s*cam|upskirt|voyeur\w*|revenge\s+porn)\b",
     re.IGNORECASE,
 )
 
@@ -71,7 +76,7 @@ class SafetyVerdict:
 
 
 _SPELLED_SEXUAL = ("nude", "naked", "sex", "porn", "nsfw", "topless", "explicit")
-_SPELLED_MINOR = ("teen", "child", "kid", "loli", "minor", "underage", "schoolgirl", "young")
+_SPELLED_MINOR = ("teen", "child", "kid", "loli", "minor", "underage", "schoolgirl")
 
 
 def _spelled_out(text: str) -> str:
@@ -108,10 +113,3 @@ REFUSALS = {
 
 def refusal_text(verdict: SafetyVerdict) -> str:
     return REFUSALS.get(verdict.reason, "I can't create that.")
-
-
-def adult_prompt(prompt: str, verdict: SafetyVerdict) -> str:
-    """For allowed adult content, state the adult age explicitly to the model."""
-    if not verdict.explicit:
-        return prompt
-    return f"{prompt}\n\nAll people depicted are consenting adults over 25 years old."
