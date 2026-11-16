@@ -13,6 +13,7 @@ import {
 import { useAuth, AuthProvider } from '@/lib/auth';
 import { ThemeProvider, useTheme } from '@/lib/theme-context';
 import { useFrameworkReady } from '@/hooks/useFrameworkReady';
+import { APP_ORIENTATION } from '@/lib/room-rotation';
 
 SplashScreen.preventAutoHideAsync();
 
@@ -27,7 +28,8 @@ function AppContent() {
   return (
     <>
       <PushLifecycle />
-      <Stack screenOptions={{ headerShown: false }}>
+      {/* Every screen states portrait; the Live Room screen alone overrides it (lib/room-rotation.ts). */}
+      <Stack screenOptions={{ headerShown: false, orientation: APP_ORIENTATION }}>
         <Stack.Screen name="+not-found" />
       </Stack>
       <StatusBar style={mode === 'dark' ? 'light' : 'dark'} />

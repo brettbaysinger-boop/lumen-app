@@ -107,9 +107,17 @@ export function speechChunks(text: string, maximum = 500): string[] {
 // audio plays in the browser as usual, so each chunk is requested once and heard once.
 export type ReplyPlayer = (audio: Blob, signal: AbortSignal) => Promise<{ ended: Promise<void>; release: () => void } | null>;
 
+// Public / Private mode (Issue #39): in Public mode the server speaks only a reply written in Public mode,
+// so the reply's id goes with each chunk. Private sends nothing new, exactly as before.
+export type SpeechPrivacy = { mode: 'private' | 'public'; messageId?: string };
+export function speechPrivacy(privacy?: SpeechPrivacy): Record<string, string> {
+  if (!privacy || privacy.mode !== 'public') return {};
+  return privacy.messageId ? { privacy_mode: 'public', message_id: privacy.messageId } : { privacy_mode: 'public' };
+}
+
 export const SOUND_BLOCKED_MESSAGE = 'Could not play the audio. Check browser sound permissions and try Play again.';
 
-export async function playReply(text: string, signal: AbortSignal, onEnd: () => void, options: { companionId?: string; voice?: string; onStart?: () => void; onError?: (error: Error) => void; player?: ReplyPlayer } = {}): Promise<() => void> {
+export async function playReply(text: string, signal: AbortSignal, onEnd: () => void, options: { companionId?: string; voice?: string; onStart?: () => void; onError?: (error: Error) => void; player?: ReplyPlayer; privacy?: SpeechPrivacy } = {}): Promise<() => void> {
   browserAudio();
   const chunks = speechChunks(text).filter(chunk => chunk.trim());
   if (!chunks.length) throw new Error('Reply text is empty.');
@@ -128,7 +136,7 @@ export async function playReply(text: string, signal: AbortSignal, onEnd: () => 
   if (signal.aborted) { stop(); throw new Error('Playback cancelled.'); }
   async function startChunk(chunk: string): Promise<{ ended: Promise<void> }> {
     const blob = await voiceRequest('speak', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text: chunk, companion_id: options.companionId, voice: options.voice }),
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text: chunk, companion_id: options.companionId, voice: options.voice, ...speechPrivacy(options.privacy) }),
     }, controller.signal) as Blob;
     if (finished) throw new Error('Playback cancelled.');
     if (options.player) {

@@ -6,7 +6,7 @@ function compile(file,stubs={}){const mod=new Module(require('node:path').resolv
 let windowSize={width:1920,height:1000};
 const stored=new Map();globalThis.localStorage={getItem:key=>stored.get(key)??null,setItem:(key,value)=>stored.set(key,String(value))};
 const native={Platform:{OS:'web'},View:'View',Text:'Text',TouchableOpacity:'TouchableOpacity',useWindowDimensions:()=>windowSize};
-const {AnimatedCompanion}=compile('components/AnimatedCompanion.tsx',{'react-native':native,'@/lib/animated-companion-core':compile('lib/animated-companion-core.ts'),'@/lib/animated-companion':{}});
+const {AnimatedCompanion}=compile('components/AnimatedCompanion.tsx',{'react-native':native,'@/lib/animated-companion-core':compile('lib/animated-companion-core.ts'),'@/lib/animated-companion':{},'@/lib/live-room':compile('lib/live-room.ts')});
 // A stand-in for the session that records every call the screen makes on it.
 const calls=[];const session=new Proxy({},{get:(_,name)=>(...args)=>{calls.push([name,...args]);}});
 const element={tagName:'VIDEO'};
@@ -74,6 +74,46 @@ const label=root=>root.root.findAllByType('Text').find(text=>String(text.props.a
   await act(async()=>{root=render();});assert.equal(box(root).width,420);await press(root,'Shrink');assert.equal(box(root).width,260);
   await act(async()=>root.unmount());
   windowSize={width:390,height:844};await act(async()=>{root=render();});assert.equal(box(root).width,260);  // Compact by default on a phone
+  await act(async()=>root.unmount());
+  // Full screen: offered for the uncropped size only, and only where the browser can do it. It asks the
+  // browser to show the same element; the session is not touched. A phone held sideways gets the whole frame.
+  const full=root=>root.root.findAllByType('TouchableOpacity').find(item=>item.props.accessibilityLabel==='Show animated companion full screen');
+  windowSize={width:780,height:360};globalThis.localStorage={getItem:()=>'wide',setItem(){}};
+  await act(async()=>{root=render();});assert.equal(full(root),undefined);          // a browser without full screen: no control
+  assert.equal(video(root).props.style.objectFit,'contain');assert.ok(box(root).width<=780-32&&box(root).height<=360);
+  await act(async()=>root.unmount());
+  globalThis.document={fullscreenEnabled:true};let asked=0;element.requestFullscreen=()=>{asked++;return Promise.reject(new Error('refused'));};
+  calls.length=0;await act(async()=>{root=render();});
+  await act(async()=>full(root).props.onPress());assert.equal(asked,1);              // a refusal by the browser is swallowed
+  assert.deepEqual(calls,[['attach',element]]);
+  await press(root,'Shrink');assert.equal(full(root),undefined);                     // square, cropped sizes: not offered
+  await act(async()=>root.unmount());delete globalThis.document;
+
+  // --- The Live Room: Video Chat <-> Companion Theater is again only a different box ---
+  const room=view=>React.createElement(AnimatedCompanion,{session,borderColor:'#111',controlColor:'#222',room:view});
+  const controls=root=>root.root.findAllByType('TouchableOpacity').length;
+  windowSize={width:360,height:660};calls.length=0;
+  await act(async()=>{root=create(room('chat'),{createNodeMock:node=>node.type==='video'?element:null});});
+  await act(async()=>outer(root).props.onLayout({nativeEvent:{layout:{width:360,height:248}}}));
+  const roomFirst=video(root).instance??video(root);
+  assert.equal(box(root).width,360);assert.equal(box(root).height,240);              // Video Chat: the whole 3:2 frame, 36% of the height
+  assert.equal(video(root).props.style.objectFit,'contain');assert.equal(box(root).borderRadius,0);assert.equal(controls(root),0);   // no size choices in the room
+  for(let round=0;round<3;round++){
+    await act(async()=>{root.update(room('theater'));});
+    await act(async()=>outer(root).props.onLayout({nativeEvent:{layout:{width:360,height:612}}}));
+    assert.equal(box(root).width,360);assert.equal(box(root).height,240);            // portrait Theater: letterboxed, never cropped or stretched
+    assert.equal(outer(root).props.style.some(part=>part&&part.flex===1),true);       // and centred in the whole space
+    await act(async()=>outer(root).props.onLayout({nativeEvent:{layout:{width:360,height:200}}}));
+    assert.equal(box(root).width,300);assert.equal(box(root).height,200);            // a short space (messages panel open): limited by its height
+    assert.equal(video(root).props.style.objectFit,'contain');
+    await act(async()=>{root.update(room('chat'));});
+    await act(async()=>outer(root).props.onLayout({nativeEvent:{layout:{width:360,height:248}}}));
+    assert.equal(box(root).height,240);
+  }
+  windowSize={width:360,height:343};await act(async()=>{root.update(room('chat'));});   // the keyboard opens
+  assert.equal(box(root).width,195);assert.equal(box(root).height,130);
+  assert.equal(video(root).instance??video(root),roomFirst);                         // the same element throughout
+  assert.deepEqual(calls,[['attach',element]]);                                      // and the session was never touched
   await act(async()=>root.unmount());
   console.log('animated size component: all checks passed');
 })().catch(error=>{console.error(error);process.exit(1);});
