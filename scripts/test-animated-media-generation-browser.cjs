@@ -92,7 +92,8 @@ const shot=async(page,name)=>{if(SHOTS)await page.screenshot({path:path.join(SHO
   galleryReads.length=0;jobRequests.length=0;
   context=await browser.newContext();
   ({page,errors}=await open(context,{mode:'public',url:'gallery'}));
-  await page.getByText('Gallery is hidden in 👥 Public').waitFor({timeout:20000});
+  await page.getByText('Gallery opens in 🔒 Private.').waitFor({timeout:20000});
+  assert.ok(!/hidden/i.test(await page.evaluate(()=>document.body.innerText)),'Public Gallery is a quiet empty page');
   await page.waitForTimeout(800);
   assert.deepEqual(galleryReads,[],'Public never reads gallery_items');
   assert.ok(!(await page.evaluate(()=>document.body.innerText)).includes('Lantern on a lake'));

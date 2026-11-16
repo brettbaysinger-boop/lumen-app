@@ -14,7 +14,7 @@ import {
   useWindowDimensions,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Plus, X, Trash2, Image as ImageIcon, Video, Sparkles, Lock } from 'lucide-react-native';
+import { Plus, X, Trash2, Image as ImageIcon, Video, Sparkles } from 'lucide-react-native';
 import { supabase } from '@/lib/supabase';
 import { useSignedUrl } from '@/lib/media';
 import { useTheme } from '@/lib/theme-context';
@@ -161,11 +161,10 @@ export default function GalleryScreen() {
   if (!isPrivate) {
     return (
       <SafeAreaView style={styles.container} edges={['top']}>
-        <View style={styles.emptyState} accessibilityLabel="Gallery is hidden while Public mode is on">
-          <Lock color={c.neutral[500]} size={40} strokeWidth={1.5} />
-          <Text style={styles.emptyTitle}>Gallery is hidden in 👥 Public</Text>
-          <Text style={styles.emptySubtitle}>Your photos, images and videos stay private. Switch to 🔒 Private to see them.</Text>
-          <View style={{ marginTop: Spacing.md }}><PrivacyToggle c={c} /></View>
+        {/* Public: a quiet empty page. Nothing private is read or shown (no count, no thumbnails). */}
+        <View style={styles.emptyState}>
+          <Text style={[styles.emptySubtitle, { marginBottom: Spacing.sm }]}>Gallery opens in 🔒 Private.</Text>
+          <PrivacyToggle c={c} />
         </View>
       </SafeAreaView>
     );
