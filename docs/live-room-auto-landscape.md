@@ -54,9 +54,15 @@ The states (`lib/room-rotation.ts`):
 
 The app tells the page which way the phone is held with two fixed lines
 (`lumenroomlandscape` / `lumenroomportrait`); the page tells the app one more fixed word
-(`restored`) when its own full screen ends. As before: no data in either direction. The page never
-guesses from the window's shape, because a portrait window with the keyboard open is also wider than
-it is tall.
+(`restored`) when its own full screen ends. As before: no data in either direction.
+
+**What counts as "sideways".** The app decides it from the size of the phone's **screen**
+(`Dimensions` `'screen'`, `hooks/useScreenLandscape.ts`), never from the app's window: this app's
+keyboard mode is `resize`, and a window can also change shape in split screen or a pop-up window.
+None of those is turning the phone. The page never guesses from its own window either.
+Device gate: that React Native reports the `'screen'` change on rotation on the S22 is expected and
+is check 2 below; if it does not, automatic entry does not happen and that is reported, not faked
+with a sensor.
 
 ## Guarded build, and the way back
 
@@ -95,6 +101,44 @@ picks the SDK 54 version (9.0.x, not the current 58.x), in a **checksummed copy*
 never in the tree itself, with the Gradle and autolinking output read before any APK is signed.
 That is a native rebuild with its own review; it is not part of this PR.
 
+## Releasing the web build without losing what is live (RMC Memories, PR #35)
+
+**Do not run the web updater from this branch as it stands.** PR #35's description records that the
+RMC Memories screen is live on Lumen from source `ca45253a`, applied as scoped files over a live
+checkout that is still at `f23d112`. This branch (#36 on #26, #20, #17, Wide Theater `f23d112`) does
+not contain PR #35's files. `scripts/animated-web-update.sh` builds the website **from the reviewed
+clone**, so a build of this branch alone would serve a website **without** the live Memories screen,
+even though the updater's ancestry and frontend-only checks would pass.
+
+What was checked here, read-only (a local trial merge, aborted, nothing pushed):
+
+- PR #35 (`ca45253a`) merges into this branch with **no conflict**. The two touch no file in common:
+  PR #35 changes `app/(tabs)/memories.tsx`, `components/RmcMemoriesPanel.tsx`, its doc and test, and
+  four backend files; this branch touches none of those.
+- On that trial merge: type check passes, `node --test tests/*.test.cjs` 131 pass (this branch's
+  tests plus PR #35's panel tests), the web build exports, and the Live Room browser test passes.
+
+Plan, each step the owner's to authorize:
+
+1. **Read-only inventory on Lumen** before anything else: `git -C /home/brett/lumen-push status
+   --short` and `git -C /home/brett/lumen-push rev-parse HEAD` (expected: `f23d112` with PR #35's
+   files as local changes), `scripts/animated-web-update.sh status`, and the checksum of the served
+   bundle. If anything else differs from `f23d112` there, it must be accounted for the same way.
+2. **A release candidate branch**, made only after review: this branch plus PR #35's frontend files,
+   byte-identical to `ca45253a`. Whether PR #35's four backend files ride along in the candidate's
+   history is the owner's call: the web updater refuses any diff that includes `backend/`, which is
+   correct, and the backend on Lumen already has them. The clean route is for PR #35 to land in the
+   base first, so the live checkout and the branch agree; the alternative is a frontend-only
+   candidate carrying just its two app files, doc and test.
+3. The updater also refuses when a locally edited live file would be touched. PR #35's files are
+   local edits there, so `check` on the candidate is expected to stop on them. That refusal is the
+   guard working; resolving it (recording PR #35 in the live checkout) is a decision for the owner
+   and the RMC work, not something to force from this side.
+4. Only then `check`, and only with a further go `update`. RMC02, the backend, the database and the
+   avatar bridge are not touched by any of this.
+
+Nothing in this section has been done. No candidate branch exists yet.
+
 ## Checks on the Galaxy S22 (after PR #26's checks pass)
 
 Auto rotate **on** unless stated. Run once with gesture navigation and once with three buttons.
@@ -130,7 +174,7 @@ project's manifest is not in this repository); insets around the cut-out in land
 
 ## Tests
 
-`node --test tests/*.test.cjs`: 127 pass. `scripts/test-animated-live-room-browser.cjs` plays the
+`node --test tests/*.test.cjs`: 128 pass. `scripts/test-animated-live-room-browser.cjs` plays the
 app's two fixed lines: sideways gives Theater, upright restores the earlier view (including an open
 messages panel), a keyboard-height window does **not** count as sideways, and one `<video>` element,
 one connection and one offer hold throughout. The orientation states above and "every screen states

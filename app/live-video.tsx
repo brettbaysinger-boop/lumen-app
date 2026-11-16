@@ -7,7 +7,7 @@
 // room's own header is showing, this screen's bar steps aside, so there is one header, not two.
 // The room and this screen exchange only the fixed words in lib/live-room.ts.
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { AppState, BackHandler, KeyboardAvoidingView, Platform, Text, TouchableOpacity, View, useWindowDimensions } from 'react-native';
+import { AppState, BackHandler, KeyboardAvoidingView, Platform, Text, TouchableOpacity, View } from 'react-native';
 import { Redirect, Stack, router } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useTheme } from '@/lib/theme-context';
@@ -16,6 +16,7 @@ import { IN_APP_PROBE, inAppVideoSupported, liveRoomWebUrl, liveVideoWebUrl, ope
 import { ROOM_BACK_SCRIPT, ROOM_LANDSCAPE_SCRIPT, ROOM_PORTRAIT_SCRIPT, readRoomEvent, type RoomMode } from '@/lib/live-room';
 import { roomImmersive, roomLock } from '@/lib/room-rotation';
 import { useKeyboardVisible } from '@/hooks/useKeyboardVisible';
+import { useScreenLandscape } from '@/hooks/useScreenLandscape';
 
 const PROBE_TIMEOUT_MS = 8_000;
 
@@ -55,8 +56,8 @@ export default function LiveVideoScreen() {
   // Only this screen, and only while the room itself is on it (see lib/room-rotation.ts). It is stated
   // as this screen's own native-stack options below, so it ends by itself when the screen is left.
   const keyboardOpen = useKeyboardVisible();
-  const { width, height } = useWindowDimensions();
-  const landscape = width > height;
+  // The phone's screen, not the app's window: the keyboard resizes the window and must not read as a turn.
+  const landscape = useScreenLandscape();
   const roomShown = active && room !== null && !failed && !(silent && !probe) && !(probe && !probe.ok);
   const [settle, setSettle] = useState(false);   // one moment of portrait after the page's own full screen ends
   useEffect(() => { if (!settle) return; const timer = setTimeout(() => setSettle(false), 60); return () => clearTimeout(timer); }, [settle]);

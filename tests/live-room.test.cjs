@@ -175,3 +175,23 @@ test('sideways shows Theater by itself and upright puts back exactly what was th
   for(const line of screen.split('\n').filter(line=>/turnRoom\(|setSideways\(/.test(line)))assert.doesNotMatch(line,/animated\.(connect|close)|toggleAnimated/,line.trim());   // layout only
   assert.doesNotMatch(screen,/innerWidth\s*>\s*innerHeight|screenWidth > screenHeight/);   // never guessed from the window's shape (the keyboard changes it)
 });
+test('sideways is read from the phone\'s screen, never from the window the keyboard resizes',()=>{
+  const screen=read('app/live-video.tsx'),hook=read('hooks/useScreenLandscape.ts');
+  assert.match(screen,/const landscape = useScreenLandscape\(\);/);
+  assert.doesNotMatch(screen,/useWindowDimensions|Dimensions\.get\('window'\)/);
+  assert.doesNotMatch(hook,/useWindowDimensions|get\('window'\)|\{ window/);
+  assert.match(hook,/Dimensions\.addEventListener\('change', \(\{ screen \}\) => setLandscape\(isLandscape\(screen\)\)\)/);
+  assert.match(hook,/return \(\) => watch\.remove\(\);/);
+  // Run the hook's logic against a stand-in phone: the keyboard shrinks the window, the screen stays as it is.
+  const mod={exports:{}};let listener=null,removed=0;const sizes={screen:{width:360,height:780},window:{width:360,height:780}};const state=[];
+  vm.runInNewContext(ts.transpileModule(hook,{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText,{module:mod,exports:mod.exports,require:name=>name==='react'
+    ?{useState:initial=>{const value=typeof initial==='function'?initial():initial;state.push(value);return [value,next=>state.push(next)];},useEffect:effect=>{mod.cleanup=effect();}}
+    :{Dimensions:{get:name=>sizes[name],addEventListener:(_,handler)=>{listener=handler;return {remove:()=>removed++};}}}});
+  assert.equal(mod.exports.useScreenLandscape(),false);
+  sizes.window={width:360,height:300};listener({window:sizes.window,screen:sizes.screen});assert.equal(state.at(-1),false);   // keyboard open, phone upright: not sideways
+  sizes.screen={width:780,height:360};listener({window:{width:780,height:360},screen:sizes.screen});assert.equal(state.at(-1),true);   // the phone is turned
+  listener({window:{width:780,height:120},screen:sizes.screen});assert.equal(state.at(-1),true);                                      // keyboard open sideways: still sideways
+  sizes.screen={width:360,height:780};listener({window:{width:360,height:300},screen:sizes.screen});assert.equal(state.at(-1),false);
+  mod.cleanup();assert.equal(removed,1);
+  for(const bad of [null,undefined,{width:0,height:0},{width:500,height:500}])assert.equal(mod.exports.isLandscape(bad),false);
+});
