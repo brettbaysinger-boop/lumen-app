@@ -161,12 +161,12 @@ Keyword rules are a backstop and can misfire; each refusal names the rule so it 
 * Read-only check (no upload, no queue): `python3 scripts/check-framepack-endpoint.py --url
   http://127.0.0.1:7863 --api-name /handle_start_button` prints the 29 values Lumen would send.
 * Gated GPU canary (owner approval, video still off in Lumen). Run on Lumen, as the lumen-api user,
-  with the live backend venv and the adapter pinned at `34f10dd`. FP-Studio stays on Heavy's loopback;
+  with the live backend venv and the adapter pinned at `60b2930`. FP-Studio stays on Heavy's loopback;
   a temporary SSH forward is opened for the canary only and closed after (`<heavy>` = the SSH host you
   already use from Lumen to Heavy):
 
   ```
-  git clone https://github.com/brettbaysinger-boop/lumen-app.git ~/lumen-fps-canary && git -C ~/lumen-fps-canary checkout -q --detach 34f10dd
+  git clone https://github.com/brettbaysinger-boop/lumen-app.git ~/lumen-fps-canary && git -C ~/lumen-fps-canary checkout -q --detach 60b2930
   ssh -f -N -o ExitOnForwardFailure=yes -L 127.0.0.1:17863:127.0.0.1:7863 <heavy>
   cd ~/lumen-fps-canary && /home/brett/lumen-push/backend/.venv/bin/python scripts/canary-framepack-studio.py --run-gpu \
     --url http://127.0.0.1:17863 --comfy-url http://127.0.0.1:18188 \
@@ -193,7 +193,7 @@ Keyword rules are a backstop and can misfire; each refusal names the rule so it 
   entry). MATCH prints the file, bytes and sha256; REFUSED prints why and copies nothing.
 * Hardware canary 3 (758c2b3, 2026-11-16) rendered on the GPU: FP-Studio's queue.json has job
   `0bb4dd05-…` completed with `result` `outputs/261116_095453_817_1084_19.mp4` (836,627 bytes, H.264
-  512×768, 2.43 s). The adapter rejected it because it expected `<uuid>_` names; fixed in 34f10dd.
+  512×768, 2.43 s). The adapter rejected it because it expected `<uuid>_` names; fixed in 60b2930.
 * Still open: the unattended private route from the worker to FP-Studio; Chat/Gallery delivery and
   playback of video on the S22. `VIDEO_GENERATION_ENABLED` stays false until a real canary passes and the
   owner approves.
