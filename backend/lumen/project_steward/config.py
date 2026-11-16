@@ -20,6 +20,7 @@ ALLOWED_REPOSITORIES = [
     "brettbaysinger-boop/lumen-app",
     "brettbaysinger-boop/raialume-memory-core",
     "brettbaysinger-boop/forge",
+    "brettbaysinger-boop/forge-phase-b-r1",  # historical delivery drop, not production Forge
     "brettbaysinger-boop/kalshi-arena",
     "brettbaysinger-boop/kalshi-bot-arena",
     "brettbaysinger-boop/florabot1",
