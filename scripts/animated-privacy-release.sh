@@ -289,17 +289,29 @@ baseline_fill() {
     [ "$state" = ok ] || grep -Eq "$FILL_ALLOWED" <<< "$path" || die "$path is missing but is not a test or doc; it is never written here. Nothing was changed."
   done < <(baseline_paths)
   [ -n "$(fillable)" ] || die "nothing is missing. Nothing was changed."
-  record=$(new_record fill); fillable > "$record/written"
+  local dir tmp
+  while read -r path; do   # before any write: no target may exist in any form, and no directory on the way may be a link
+    [ ! -e "$LIVE_DIR/$path" ] && [ ! -L "$LIVE_DIR/$path" ] || die "$path exists (or is a link). Nothing was changed."
+    dir=$(dirname "$path")
+    while [ "$dir" != . ]; do [ ! -L "$LIVE_DIR/$dir" ] || die "$dir is a symbolic link. Nothing was changed."; dir=$(dirname "$dir"); done
+  done < <(fillable)
+  record=$(new_record fill); fillable > "$record/planned"; : > "$record/written"
   echo "$record" > "$STATE_DIR/fill-current"
-  trap 'echo "Fill failed; deleting what it wrote." >&2; trap - ERR; fill_remove "$record"; exit 1' ERR
+  trap 'echo "Fill failed; deleting only what it created." >&2; trap - ERR; rm -f "${tmp:-}"; fill_remove "$record"; exit 1' ERR
   while read -r path; do
-    [ ! -e "$LIVE_DIR/$path" ]                                      # still absent: never replace a file
     mkdir -p "$LIVE_DIR/$(dirname "$path")"
-    repo show "$BACKEND_COMMIT:$path" > "$LIVE_DIR/$path"
-    [ "$(mode_of "$BACKEND_COMMIT" "$path")" != 100755 ] || chmod +x "$LIVE_DIR/$path"
-    [ "$(classify "$path")" = ok ]
+    # Write and check a temporary file in the same directory, then hard-link it to the name. `ln` without -f
+    # fails if anything exists at the name (a file, a directory or a link, even a dangling one): no clobbering.
+    tmp=$(mktemp "$LIVE_DIR/$(dirname "$path")/.privacy-fill.XXXXXX")
+    repo show "$BACKEND_COMMIT:$path" > "$tmp"
+    if [ "$(mode_of "$BACKEND_COMMIT" "$path")" = 100755 ]; then chmod 755 "$tmp"; else chmod 644 "$tmp"; fi
+    [ "$(git hash-object --no-filters -- "$tmp")" = "$(blob_of "$BACKEND_COMMIT" "$path")" ]
+    ln -- "$tmp" "$LIVE_DIR/$path"
+    echo "$path" >> "$record/written"                                # recorded only once it was created
+    rm -f -- "$tmp"; tmp=
+    [ ! -L "$LIVE_DIR/$path" ] && [ "$(classify "$path")" = ok ]
     echo "wrote $path"
-  done < "$record/written"
+  done < "$record/planned"
   trap - ERR
   echo "Done: $(wc -l < "$record/written") reviewed test/doc file(s) written; no other file touched. Next: $0 baseline-check"
   echo "Go back with: PRIVACY_RELEASE_CONFIRM=fill-undo $0 baseline-fill-undo"
@@ -307,8 +319,8 @@ baseline_fill() {
 fill_remove() {  # $1 = record; deletes exactly the files it wrote, only while they are still the reviewed ones
   local record="$1" path
   while read -r path; do
-    [ -e "$LIVE_DIR/$path" ] || continue
-    [ "$(classify "$path")" = ok ] || die "$path changed after the fill; left in place, nothing more was deleted."
+    [ -e "$LIVE_DIR/$path" ] || [ -L "$LIVE_DIR/$path" ] || continue
+    [ ! -L "$LIVE_DIR/$path" ] && [ "$(classify "$path")" = ok ] || die "$path changed after the fill; left in place, nothing more was deleted."
     rm -f "$LIVE_DIR/$path"
   done < "$record/written"
   mv "$STATE_DIR/fill-current" "$STATE_DIR/fill-undone-$(basename "$record")" 2>/dev/null || true
