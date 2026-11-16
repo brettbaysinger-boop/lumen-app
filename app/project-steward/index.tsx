@@ -41,14 +41,23 @@ export default function ProjectsOverviewScreen() {
   const setMode = (m: SourceMode) => router.setParams({ source: m });
   const ok = result?.status === 'ok' ? result : null;
   const projects = ok?.snapshot.projects ?? [];
+  const insights = ok?.insights ?? null;
 
-  const filtered = useMemo(() => filterProjects(projects, query, now), [projects, query, now]);
-  const attention = useMemo(() => attentionQueue(projects, now), [projects, now]);
+  const filtered = useMemo(
+    () => filterProjects(projects, query, now, insights),
+    [projects, query, now, insights],
+  );
+  const attention = useMemo(
+    () => attentionQueue(projects, now, insights),
+    [projects, now, insights],
+  );
   const counts = useMemo(() => {
     const c: Partial<Record<QuickFilter, number>> = {};
-    for (const q of QUICKS) c[q] = filterProjects(projects, { ...EMPTY_QUERY, quick: q }, now).length;
+    for (const q of QUICKS) {
+      c[q] = filterProjects(projects, { ...EMPTY_QUERY, quick: q }, now, insights).length;
+    }
     return c;
-  }, [projects, now]);
+  }, [projects, now, insights]);
 
   const open = (id: string) =>
     router.push({ pathname: '/project-steward/[id]', params: { id, source: mode } });
@@ -96,6 +105,7 @@ export default function ProjectsOverviewScreen() {
                         <View key={p.id} style={[styles.cell, wide && styles.cellWide]}>
                           <ProjectCard
                             project={p}
+                            insights={insights?.[p.id]}
                             isDemo={ok.origin === 'demo-fixture'}
                             now={now}
                             onPress={() => open(p.id)}

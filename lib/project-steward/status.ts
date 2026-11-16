@@ -10,6 +10,7 @@ import type {
   Source,
   SourceKind,
 } from './types';
+import type { InsightsMap, ProjectInsights } from './insights';
 
 export type Tone = 'good' | 'info' | 'warn' | 'bad' | 'muted';
 
@@ -170,7 +171,9 @@ export type AttentionReason =
   | 'stale'
   | 'never_checked'
   | 'no_sources'
-  | 'deployment_unverified';
+  | 'deployment_unverified'
+  | 'owner_decision'
+  | 'ci_failing';
 
 export const ATTENTION_LABEL: Record<AttentionReason, string> = {
   blocked: 'Blocked',
@@ -178,10 +181,18 @@ export const ATTENTION_LABEL: Record<AttentionReason, string> = {
   never_checked: 'Never checked',
   no_sources: 'No cited sources',
   deployment_unverified: 'Deployment only reported',
+  owner_decision: 'Waiting on your decision',
+  ci_failing: 'CI failing',
 };
 
-export function attentionReasons(project: Project, now: number): AttentionReason[] {
+export function attentionReasons(
+  project: Project,
+  now: number,
+  insights?: ProjectInsights | null,
+): AttentionReason[] {
   const reasons: AttentionReason[] = [];
+  if (insights?.next.some((n) => n.kind === 'owner_decision')) reasons.push('owner_decision');
+  if (insights?.ci?.state === 'failing') reasons.push('ci_failing');
   if (project.state === 'blocked' || project.blocked_by.length > 0) reasons.push('blocked');
   const f = freshness(project.observed_at, now);
   if (f === 'stale') reasons.push('stale');
@@ -197,9 +208,16 @@ export interface AttentionItem {
 }
 
 /** Needs-attention queue: blocked first, then by priority, then by name. */
-export function attentionQueue(projects: Project[], now: number): AttentionItem[] {
+export function attentionQueue(
+  projects: Project[],
+  now: number,
+  insights?: InsightsMap | null,
+): AttentionItem[] {
   return projects
-    .map((project) => ({ project, reasons: attentionReasons(project, now) }))
+    .map((project) => ({
+      project,
+      reasons: attentionReasons(project, now, insights?.[project.id]),
+    }))
     .filter((item) => item.reasons.length > 0 && item.project.priority !== 'on_hold')
     .sort((a, b) => {
       const ab = a.reasons.includes('blocked') ? 0 : 1;
@@ -253,6 +271,7 @@ export function filterProjects(
   projects: Project[],
   query: ProjectQuery,
   now: number,
+  insights?: InsightsMap | null,
 ): Project[] {
   const terms = query.text.toLowerCase().split(/\s+/).filter(Boolean);
   return projects
@@ -261,7 +280,12 @@ export function filterProjects(
       switch (query.quick) {
         case 'attention':
           // Same rule as attentionQueue(): on-hold projects do not ask for attention.
-          if (p.priority === 'on_hold' || attentionReasons(p, now).length === 0) return false;
+          if (
+            p.priority === 'on_hold' ||
+            attentionReasons(p, now, insights?.[p.id]).length === 0
+          ) {
+            return false;
+          }
           break;
         case 'blocked':
           if (!(p.state === 'blocked' || p.blocked_by.length > 0)) return false;
@@ -328,4 +352,84 @@ export function knownAndUnknown(p: Project, now: number): FactSplit {
     known.push(`${p.blocked_by.length} open blocker${p.blocked_by.length > 1 ? 's' : ''}.`);
   }
   return { known, unknown };
+}
+
+// ---------- insights presentation (PRs, CI, signals) ----------
+
+/** Compact duration: "35m", "5h", "3d". */
+export function shortDuration(ms: number): string {
+  const mins = Math.max(0, Math.round(ms / 60_000));
+  if (mins < 60) return `${mins}m`;
+  const hours = Math.round(mins / 60);
+  if (hours < 48) return `${hours}h`;
+  return `${Math.round(hours / 24)}d`;
+}
+
+export const PR_REVIEW_LABEL = {
+  draft: 'Draft',
+  review_required: 'Awaiting review',
+  changes_requested: 'Changes requested',
+  approved: 'Approved',
+} as const;
+
+export const PR_REVIEW_TONE: Record<keyof typeof PR_REVIEW_LABEL, Tone> = {
+  draft: 'muted',
+  review_required: 'warn',
+  changes_requested: 'bad',
+  approved: 'good',
+};
+
+export const CI_LABEL = {
+  passing: 'Passing',
+  failing: 'Failing',
+  pending: 'Running',
+  none: 'No CI runs',
+  unknown: 'Unknown',
+} as const;
+
+export const CI_TONE: Record<keyof typeof CI_LABEL, Tone> = {
+  passing: 'good',
+  failing: 'bad',
+  pending: 'info',
+  none: 'muted',
+  unknown: 'warn',
+};
+
+export interface Signal {
+  key: 'decision' | 'ci' | 'prs';
+  label: string;
+  tone: Tone;
+}
+
+/**
+ * At most two short signals for an overview card, most urgent first. Healthy or
+ * empty facts stay off the card on purpose; the detail page has the full picture.
+ */
+export function cardSignals(insights: ProjectInsights | null | undefined, now: number): Signal[] {
+  if (!insights) return [];
+  const out: Signal[] = [];
+  if (insights.next.some((n) => n.kind === 'owner_decision')) {
+    out.push({ key: 'decision', label: 'Your decision needed', tone: 'warn' });
+  }
+  if (insights.ci?.state === 'failing') out.push({ key: 'ci', label: 'CI failing', tone: 'bad' });
+  const prs = insights.open_prs?.items ?? [];
+  if (prs.length > 0) {
+    const oldest = Math.min(...prs.map((pr) => Date.parse(pr.opened_at)));
+    out.push({
+      key: 'prs',
+      label: `${prs.length} open PR${prs.length > 1 ? 's' : ''} · oldest ${shortDuration(now - oldest)}`,
+      tone: 'info',
+    });
+  }
+  return out.slice(0, 2);
+}
+
+/** Link for an "owner/repo#n" ref when the kind says whether it is a PR or an issue. */
+export function refUrl(ref: string | null, kind: 'pr' | 'issue' | 'unknown'): string | null {
+  if (!ref) return null;
+  if (/^https:\/\/[^\s]+$/i.test(ref)) return ref;
+  const m = /^([A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+)#(\d+)$/.exec(ref);
+  if (!m) return null;
+  // GitHub redirects /issues/n to the PR when n is a PR, so "unknown" is safe too.
+  return `https://github.com/${m[1]}/${kind === 'pr' ? 'pull' : 'issues'}/${m[2]}`;
 }

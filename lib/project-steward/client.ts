@@ -6,6 +6,8 @@
 // shown when the caller asks for it, and the UI labels it.
 
 import { demoSnapshot } from './fixtures';
+import { demoInsights } from './fixtures-insights';
+import { validateInsightsMap, type InsightsMap } from './insights';
 import type { DataOrigin, ProjectSnapshot } from './types';
 import { validateSnapshot } from './validate';
 
@@ -16,6 +18,11 @@ export type SnapshotResult =
       status: 'ok';
       origin: DataOrigin;
       snapshot: ProjectSnapshot;
+      /**
+       * PRs, CI, activity, links per project id. Not in the v1 contract: null for a
+       * live v1 snapshot ("not available"), supplied only by the demo fixture today.
+       */
+      insights: InsightsMap | null;
       /** When this client received the data (not when the server checked sources). */
       receivedAt: string;
     }
@@ -101,6 +108,7 @@ export async function fetchSnapshot(opts: FetchSnapshotOptions): Promise<Snapsho
       status: 'ok',
       origin: 'live-api',
       snapshot: v.snapshot,
+      insights: null,
       receivedAt: now().toISOString(),
     };
   } finally {
@@ -113,10 +121,13 @@ export async function fetchSnapshot(opts: FetchSnapshotOptions): Promise<Snapsho
 export function loadDemoSnapshot(now: () => Date = () => new Date()): SnapshotResult {
   const v = validateSnapshot(demoSnapshot);
   if (!v.ok) return { status: 'invalid', errors: v.errors };
+  const insightErrors = validateInsightsMap(demoInsights);
+  if (insightErrors.length > 0) return { status: 'invalid', errors: insightErrors };
   return {
     status: 'ok',
     origin: 'demo-fixture',
     snapshot: v.snapshot,
+    insights: demoInsights,
     receivedAt: now().toISOString(),
   };
 }

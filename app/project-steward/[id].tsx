@@ -64,6 +64,8 @@ export default function ProjectDetailScreen() {
               {project ? (
                 <ProjectDetailView
                   project={project}
+                  insights={ok.insights?.[project.id] ?? null}
+                  insightsSupported={ok.insights !== null}
                   isDemo={ok.origin === 'demo-fixture'}
                   now={now}
                   wide={width >= 900}

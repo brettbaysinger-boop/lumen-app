@@ -15,7 +15,7 @@ const { chromium } = require('playwright');
 const DIST_NOLIVE = process.env.DIST_NOLIVE;
 const DIST_LIVE = process.env.DIST_LIVE;
 const SHOTS = process.env.SHOTS || path.join(__dirname, 'screenshots');
-const NOW = '2026-11-16T02:00:00Z';
+const NOW = '2026-11-16T02:30:00Z';
 const SNAPSHOT_URL = 'http://127.0.0.1:8765/project-steward/snapshot';
 const FIXTURE_COUNT = 11;
 
@@ -151,6 +151,12 @@ async function main() {
       assert((await page.locator('[data-testid^="ps-card-"]').count()) === 1, 'expected 1');
       await tid(page, 'ps-priority-any').click();
     });
+    await check('cards carry at most two compact signals; clean projects carry none', async () => {
+      const s = await tid(page, 'ps-signals-project-steward').innerText();
+      assert(s.includes('Your decision needed') && s.includes('4 open PRs'), s);
+      assert((await tid(page, 'ps-signals-pesttrails').count()) === 0, 'pesttrails should have no signals');
+      assert((await tid(page, 'ps-attention').innerText()).includes('Waiting on your decision'), 'queue reason');
+    });
     await check('needs-attention queue lists blockers first', async () => {
       const q = await tid(page, 'ps-attention').innerText();
       assert(q.indexOf('Project Steward') < q.indexOf('Forge'), 'order');
@@ -163,16 +169,52 @@ async function main() {
       assert(page.url().includes('source=demo'), 'mode kept in URL');
       // The overview stays mounted under the stack, so scope to the detail screen.
       await page.locator('[data-testid="ps-detail"] [data-testid="ps-origin-demo"]').waitFor();
-      assert((await tid(page, 'ps-detail-deployment').innerText()).includes('not a statement about today'), 'deploy explain');
-      assert((await tid(page, 'ps-detail-sources').innerText()).includes('lumen-app#10'), 'source ref');
-      assert((await tid(page, 'ps-detail-facts').innerText()).includes('still running now'), 'unknown fact');
+      assert((await tid(page, 'ps-detail-deployment').innerText()).includes('Not a statement about today'), 'deploy explain');
+    });
+    await check('summary tab: next milestone, PR list capped with expand, link chips', async () => {
+      assert((await tid(page, 'ps-detail-next').innerText()).includes('Gold Master'), 'next');
+      assert((await tid(page, 'ps-detail-prs').innerText()).includes('Open pull requests (17)'), 'pr count');
+      assert((await page.locator('[data-testid="ps-pr-row"]').count()) === 4, 'preview should show 4');
+      assert((await page.locator('[data-testid="ps-pr-row"]').first().innerText()).match(/Draft\s*open \d+[mhd] · updated/), 'review + wait');
+      await tid(page, 'ps-prs-toggle').click();
+      assert((await page.locator('[data-testid="ps-pr-row"]').count()) === 17, 'expanded');
+      await tid(page, 'ps-prs-toggle').click();
+      await tid(page, 'ps-link-repo').waitFor();
+      assert((await tid(page, 'ps-link-live').count()) === 0, 'no live URL may be shown for a real project');
+      // Only one panel is mounted at a time.
+      assert((await tid(page, 'ps-detail-sources').count()) === 0, 'evidence should be behind its tab');
     });
     await check('360px detail: no horizontal page scroll', () => noHorizontalScroll(page, 360));
-    await page.screenshot({ path: path.join(SHOTS, 'detail-lumen-demo-360.png'), fullPage: true });
+    await page.screenshot({ path: path.join(SHOTS, 'detail-lumen-summary-360.png'), fullPage: true });
+    await check('activity tab: last commit, honest "no deploy", timeline', async () => {
+      await tid(page, 'ps-tab-activity').click();
+      assert((await tid(page, 'ps-last-commit').innerText()).includes('main @38cc92a'), 'commit');
+      const dep = await tid(page, 'ps-last-deploy').innerText();
+      assert(dep.includes('None recorded') && dep.includes('not deployments'), dep);
+      assert((await page.locator('[data-testid="ps-timeline-event"]').count()) === 8, 'timeline');
+      await noHorizontalScroll(page, 360);
+    });
+    await page.screenshot({ path: path.join(SHOTS, 'detail-lumen-activity-360.png'), fullPage: true });
+    await check('evidence tab: CI as its own source with checked time, sources, unknowns', async () => {
+      await tid(page, 'ps-tab-evidence').click();
+      const ci = await tid(page, 'ps-detail-ci').innerText();
+      assert(ci.includes('No CI runs') && ci.includes('main @38cc92a') && /[Cc]hecked/.test(ci), ci);
+      assert((await tid(page, 'ps-detail-sources').innerText()).includes('lumen-app#10'), 'source ref');
+      assert((await tid(page, 'ps-detail-facts').innerText()).includes('still running now'), 'unknown fact');
+      await noHorizontalScroll(page, 360);
+    });
+    await page.screenshot({ path: path.join(SHOTS, 'detail-lumen-evidence-360.png'), fullPage: true });
     await check('never-checked project detail shows the unverified notice', async () => {
       await page.goto(`${baseNo}/project-steward/dreamvault?source=demo`);
       await tid(page, 'ps-detail-stale').waitFor({ timeout: 20000 });
+      await tid(page, 'ps-insights-missing').waitFor();
+      assert((await tid(page, 'ps-detail-prs').count()) === 0, 'no PR section without data');
+      await tid(page, 'ps-tab-activity').click();
+      await tid(page, 'ps-activity-missing').waitFor();
+      await tid(page, 'ps-tab-evidence').click();
       await tid(page, 'ps-no-sources').waitFor();
+      await tid(page, 'ps-ci-missing').waitFor();
+      await tid(page, 'ps-tab-summary').click();
     });
     await page.screenshot({ path: path.join(SHOTS, 'detail-dreamvault-demo-360.png'), fullPage: true });
     await check('unknown id shows not-found, not a blank page', async () => {
@@ -209,7 +251,17 @@ async function main() {
     await page.screenshot({ path: path.join(SHOTS, 'overview-demo-1280.png'), fullPage: true });
     await page.goto(`${baseNo}/project-steward/project-steward?source=demo`);
     await tid(page, 'ps-detail-name').waitFor({ timeout: 20000 });
-    await page.screenshot({ path: path.join(SHOTS, 'detail-project-steward-demo-1280.png'), fullPage: true });
+    await check('desktop detail: owner decision is the first thing on Summary', async () => {
+      const next = await tid(page, 'ps-detail-next').boundingBox();
+      const dev = await tid(page, 'ps-detail-development').boundingBox();
+      assert(next.y < dev.y, 'next-up should sit above the status row');
+      assert((await tid(page, 'ps-detail-next').innerText()).toUpperCase().includes('WAITING ON YOUR DECISION'), 'decision');
+      await tid(page, 'ps-link-docs').waitFor();
+    });
+    await page.screenshot({ path: path.join(SHOTS, 'detail-project-steward-summary-1280.png'), fullPage: true });
+    await tid(page, 'ps-tab-evidence').click();
+    await tid(page, 'ps-detail-ci').waitFor();
+    await page.screenshot({ path: path.join(SHOTS, 'detail-project-steward-evidence-1280.png'), fullPage: true });
     await check('no uncaught page errors (desktop run)', () => assert(errors.length === 0, errors.join(' | ')));
     await ctx.close();
   }
@@ -246,6 +298,18 @@ async function main() {
       assert(errors.length === 0, errors.join(' | '));
     });
     if (shot) await page.screenshot({ path: path.join(SHOTS, shot), fullPage: true });
+    await ctx.close();
+  }
+  {
+    const { ctx, page } = await newPage(360, 800);
+    await page.route(SNAPSHOT_URL, (r) => r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(liveSnapshot('2026-11-16T02:00:00Z')) }));
+    await page.goto(`${baseLive}/project-steward/synthetic-live-a`);
+    await check('live v1 detail: says PRs/CI/activity are not available, shows none', async () => {
+      const m = await tid(page, 'ps-insights-missing').innerText({ timeout: 20000 });
+      assert(m.includes('not in the v1 snapshot contract'), m);
+      assert((await tid(page, 'ps-detail-prs').count()) === 0 && (await tid(page, 'ps-detail-links').count()) === 0, 'leak');
+      assert((await page.locator('[data-testid="ps-demo-badge"]').count()) === 0, 'demo badge on live');
+    });
     await ctx.close();
   }
   {

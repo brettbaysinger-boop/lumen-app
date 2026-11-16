@@ -9,20 +9,25 @@ import {
   EVIDENCE_LABEL,
   EVIDENCE_TONE,
   PRIORITY_LABEL,
+  cardSignals,
 } from '@/lib/project-steward/status';
 import type { Project } from '@/lib/project-steward/types';
+import type { ProjectInsights } from '@/lib/project-steward/insights';
+import { TONE_COLORS } from './Badge';
 import { Badge, DemoBadge } from './Badge';
 import { FreshnessLine } from './Freshness';
 
 interface Props {
   project: Project;
+  insights?: ProjectInsights | null;
   isDemo: boolean;
   now: number;
   onPress: () => void;
 }
 
-export function ProjectCard({ project: p, isDemo, now, onPress }: Props) {
+export function ProjectCard({ project: p, insights, isDemo, now, onPress }: Props) {
   const blocked = p.blocked_by.length;
+  const signals = cardSignals(insights, now);
   return (
     <Pressable
       onPress={onPress}
@@ -59,7 +64,7 @@ export function ProjectCard({ project: p, isDemo, now, onPress }: Props) {
       </View>
 
       {p.summary ? (
-        <Text style={styles.summary} numberOfLines={3}>
+        <Text style={styles.summary} numberOfLines={2}>
           {p.summary}
         </Text>
       ) : null}
@@ -71,6 +76,17 @@ export function ProjectCard({ project: p, isDemo, now, onPress }: Props) {
             {p.blocked_by[0]}
             {blocked > 1 ? ` (+${blocked - 1} more)` : ''}
           </Text>
+        </View>
+      ) : null}
+
+      {signals.length > 0 ? (
+        <View style={styles.signals} testID={`ps-signals-${p.id}`}>
+          {signals.map((s) => (
+            <View key={s.key} style={styles.signal}>
+              <View style={[styles.dot, { backgroundColor: TONE_COLORS[s.tone].fg }]} />
+              <Text style={[styles.signalText, { color: TONE_COLORS[s.tone].fg }]}>{s.label}</Text>
+            </View>
+          ))}
         </View>
       ) : null}
 
@@ -122,6 +138,10 @@ const styles = StyleSheet.create({
     padding: Spacing.sm,
   },
   blockerText: { ...Typography.caption, color: Colors.error[100], flex: 1 },
+  signals: { flexDirection: 'row', flexWrap: 'wrap', columnGap: Spacing.md, rowGap: 2 },
+  signal: { flexDirection: 'row', alignItems: 'center', gap: Spacing.xs },
+  dot: { width: 6, height: 6, borderRadius: 3 },
+  signalText: { ...Typography.caption, fontFamily: Typography.fontFamilyMedium },
   meta: {
     flexDirection: 'row',
     flexWrap: 'wrap',

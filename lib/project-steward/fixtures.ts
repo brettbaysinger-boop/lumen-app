@@ -15,7 +15,7 @@ export const DEMO_FIXTURE_LABEL = 'DEMO FIXTURE';
 
 export const demoSnapshot: ProjectSnapshot = {
   version: '1.0',
-  generated_at: '2026-11-16T00:30:00Z',
+  generated_at: '2026-11-16T02:05:00Z',
   projects: [
     {
       id: 'pesttrails',
