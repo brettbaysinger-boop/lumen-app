@@ -11,6 +11,7 @@ ACTION_END = "</lumen_image_action>"
 class ImageAction:
     prompt: str
     subject: str | None = None
+    kind: str = "image"  # "image" or "video"
 
 
 def parse_image_action(payload: str) -> ImageAction | None:
@@ -30,7 +31,7 @@ def parse_image_action(payload: str) -> ImageAction | None:
     if value.get("subject") not in (None, "self", "other"):
         return None
 
-    if value["action"] != "generate_image":
+    if value["action"] not in ("generate_image", "generate_video"):
         return None
 
     prompt = value["action_input"]
@@ -44,6 +45,7 @@ def parse_image_action(payload: str) -> ImageAction | None:
     return ImageAction(
         prompt=prompt,
         subject=value.get("subject"),
+        kind="video" if value["action"] == "generate_video" else "image",
     )
 
 

@@ -1,8 +1,9 @@
-import { useMemo, useState } from 'react';
-import { View, Image, TouchableOpacity, Modal, ActivityIndicator, StyleSheet, ScrollView, useWindowDimensions } from 'react-native';
+import { createElement, useMemo, useState } from 'react';
+import { View, Image, Text, TouchableOpacity, Modal, ActivityIndicator, StyleSheet, ScrollView, Platform, useWindowDimensions } from 'react-native';
 import { X } from 'lucide-react-native';
 import { useSignedUrl, type PickedImage } from '@/lib/media';
 import type { MessageAttachment } from '@/lib/cognition';
+import { readMediaJob, useMediaJob } from '@/lib/media-jobs';
 import { Radius, Spacing, type ExtendedThemeColors } from '@/lib/theme';
 
 export function readAttachments(metadata: Record<string, unknown> | null | undefined): MessageAttachment[] {
@@ -33,6 +34,80 @@ function StoredImage({ path, size, colors: c, onOpen }: {
   );
 }
 
+function attribute(value: string): string {
+  return value.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
+}
+
+/** A private chat-media video. Web uses <video>; Android/iOS use the WebView already in the app. */
+export function StoredVideo({ path, width, height, colors: c }: {
+  path: string; width: number; height: number; colors: ExtendedThemeColors;
+}) {
+  const url = useSignedUrl('chat-media', path);
+  const frame = [styles.imageFrame, { width, height, backgroundColor: '#000' }];
+  if (!url) {
+    return <View style={frame}><ActivityIndicator color={c.primary[400]} /></View>;
+  }
+  if (Platform.OS === 'web') {
+    return (
+      <View style={frame}>
+        {createElement('video', {
+          src: url, controls: true, playsInline: true, loop: true, preload: 'metadata',
+          'aria-label': 'Video from Lumen',
+          style: { width: '100%', height: '100%', objectFit: 'contain', backgroundColor: '#000' },
+        })}
+      </View>
+    );
+  }
+  const { WebView } = require('react-native-webview');
+  const html = '<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1">'
+    + '</head><body style="margin:0;background:#000;height:100vh;display:flex">'
+    + `<video src="${attribute(url)}" controls playsinline loop preload="metadata" `
+    + 'style="width:100%;height:100%;object-fit:contain"></video></body></html>';
+  return (
+    <View style={frame} accessibilityLabel="Video from Lumen">
+      <WebView source={{ html }} originWhitelist={['*']} allowsInlineMediaPlayback
+        mediaPlaybackRequiresUserAction mixedContentMode="compatibility" scrollEnabled={false}
+        style={{ flex: 1, backgroundColor: '#000' }} />
+    </View>
+  );
+}
+
+/** Progress for a video that is still being made, or the reason it could not be finished. */
+export function MediaJobStatus({ metadata, colors: c }: {
+  metadata: Record<string, unknown> | null | undefined; colors: ExtendedThemeColors;
+}) {
+  const { width } = useWindowDimensions();
+  const initial = readMediaJob(metadata);
+  const job = useMediaJob(initial);
+  if (!initial) return null;
+  const status = job?.status ?? initial.status;
+  const size = Math.min(260, width * 0.6);
+  if (status === 'completed') {
+    // The saved message already lists the video once it is reloaded.
+    if (initial.status === 'completed' || !job?.result_path) return null;
+    return <View style={styles.grid}><StoredVideo path={job.result_path} width={size} height={size} colors={c} /></View>;
+  }
+  if (status === 'failed') {
+    return (
+      <Text accessibilityLiveRegion="polite" style={{ color: c.neutral[300], fontStyle: 'italic', marginBottom: Spacing.xs }}>
+        The video couldn't be finished. {job?.error ?? initial.error ?? ''}
+      </Text>
+    );
+  }
+  const percent = Math.max(2, Math.min(99, job?.progress ?? 0));
+  return (
+    <View accessibilityRole="progressbar" accessibilityValue={{ min: 0, max: 100, now: percent }}
+      accessibilityLabel={`Making a video, ${percent} percent`} style={{ marginBottom: Spacing.xs, maxWidth: size }}>
+      <Text style={{ color: c.neutral[300], marginBottom: 4 }}>
+        🎬 {job?.stage || (status === 'queued' ? 'Waiting to start…' : 'Working on it…')} {percent}%
+      </Text>
+      <View style={{ height: 6, borderRadius: 3, backgroundColor: c.neutral[800], overflow: 'hidden' }}>
+        <View style={{ width: `${percent}%`, height: 6, backgroundColor: c.primary[400] }} />
+      </View>
+    </View>
+  );
+}
+
 export function MessageImages({ attachments, colors: c }: { attachments: MessageAttachment[]; colors: ExtendedThemeColors }) {
   const { width, height } = useWindowDimensions();
   const [openUrl, setOpenUrl] = useState<string | null>(null);
@@ -43,7 +118,9 @@ export function MessageImages({ attachments, colors: c }: { attachments: Message
   return (
     <>
       <View style={styles.grid}>
-        {attachments.map((a) => (
+        {attachments.map((a) => a.mime_type.startsWith('video/') ? (
+          <StoredVideo key={a.path} path={a.path} width={Math.min(260, width * 0.6)} height={Math.min(260, width * 0.6)} colors={c} />
+        ) : (
           <StoredImage key={a.path} path={a.path} size={size} colors={c} onOpen={setOpenUrl} />
         ))}
       </View>

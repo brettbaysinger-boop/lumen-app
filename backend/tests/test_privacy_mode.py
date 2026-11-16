@@ -259,10 +259,13 @@ class PrivacyModeTests(unittest.IsolatedAsyncioTestCase):
                  '</lumen_image_action>')
         async def fake_image(settings_, db, *a, **k):
             await db.upload_storage("chat-media", "x.png", b"", "image/png")
-        with patch("lumen.runtime.create_companion_image", side_effect=fake_image):
+        with patch("lumen.runtime.create_companion_image", side_effect=fake_image) as create:
             runtime, response = await self.turn("public", "Show me a picture of you", model_reply=reply)
-        self.assertIn("storage chat-media", runtime.db.denied)
+        # Public mode never starts GPU work: the image provider is not called at all.
+        create.assert_not_called()
+        self.assertNotIn("storage chat-media", runtime.db.denied)
         self.assertNotIn("lumen_image_action", response.content)
+        self.assertNotIn("media_job", self.supabase.messages[-1].get("metadata") or {})
 
     # --- Mode contract ---------------------------------------------------------------------------
     def test_unknown_mode_is_rejected_not_treated_as_private(self):

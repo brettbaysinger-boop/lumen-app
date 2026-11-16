@@ -101,7 +101,8 @@ test('Private voice requests are unchanged; Public ones name the reply to be spo
 
 test('the switch is in Chat, Video Chat and Theater, and flipping it never touches the video session',()=>{
   const screen=read('app/(tabs)/index.tsx');
-  assert.match(screen,/\{!theater && !\(room && animatedState === 'ready'\) && <PrivacyBar c=\{colors\} \/>\}/);   // ordinary Chat, and Video Chat without video
+  assert.match(screen,/<PrivacyToggle c=\{colors\} onInfo=\{\(\) => setPrivacyInfo\(open => !open\)\} \/>\n\s+<\/View>\n\s+<\/View>\}/);   // ordinary Chat: a chip at the right of the header
+  assert.match(screen,/\{room && !theater && animatedState !== 'ready' && <PrivacyBar c=\{colors\} \/>\}/);   // Video Chat without video: its own small row
   assert.match(screen,/privacy=\{animatedState === 'ready' && roomPrivacyInRow \? <PrivacyToggle c=\{colors\} \/> : undefined\} \/>\}/);   // Video Chat with video: in the button row
   assert.match(screen,/\{room && !theater && !roomPrivacyInRow && <View pointerEvents="box-none" style=\{\{ position: 'absolute', bottom: 10, left: 10 \}\}><PrivacyToggle c=\{colors\} overlay \/><\/View>\}/);   // short windows: lower corner
   assert.doesNotMatch(screen,/position: 'absolute', top: 10, left: 10 \}\}><PrivacyToggle/);   // never over the face
@@ -113,6 +114,25 @@ test('the switch is in Chat, Video Chat and Theater, and flipping it never touch
   // Public stops audible speech at once; nothing else changes with the mode.
   assert.match(screen,/if \(privacy\.mode === 'public'\) \{ playbackRef\.current\?\.abort\(\); autoSpeak\.cancel\(\); \}/);
   assert.doesNotMatch(screen,/privacy\.mode[^\n]*animated\.(close|connect)/);
+});
+
+test('discreet Public (owner, 2026-11-16): Private messages are left out, a small chip, no banner',()=>{
+  const {messageVisible}=load();
+  const rows=[{id:'a',metadata:{}},{id:'b',metadata:{privacy_mode:'public'}},{id:'c',metadata:null},{id:'d',metadata:{privacy_mode:'private'}},{id:'e',metadata:{privacy_mode:'public'}}];
+  assert.deepEqual(rows.filter(r=>messageVisible('public',r)).map(r=>r.id),['b','e']);        // only Public-written rows, in order
+  assert.deepEqual(rows.filter(r=>messageVisible('private',r)).map(r=>r.id),['a','b','c','d','e']);   // Private: the exact history
+  const screen=read('app/(tabs)/index.tsx');
+  assert.match(screen,/const shownMessages = useMemo\(\(\) => messages\.filter\(item => messageVisible\(privacy\.mode, item\)\), \[messages, privacy\.mode\]\);/);
+  assert.match(screen,/data=\{shownMessages\}/);assert.doesNotMatch(screen,/data=\{messages\}/);   // filtered before the list: no row, no placeholder
+  assert.doesNotMatch(screen,/Hidden while|hidden while|Message hidden/);
+  assert.match(screen,/ListFooterComponent=\{sending && hideTurn \? null :/);                    // a Private reply on its way shows nothing in Public
+  const toggle=read('components/PrivacyToggle.tsx').replace(/^\s*\/\/.*$/gm,'');
+  assert.match(toggle,/accessibilityRole="switch" accessibilityLabel="Public mode"/);
+  assert.match(toggle,/accessibilityState=\{\{ checked: isPublic \}\}/);
+  assert.match(toggle,/minHeight: 28[^\n]*/);assert.match(toggle,/hitSlop=\{8\}/);              // 28 + 2 × 8 = 44 px touch target
+  assert.doesNotMatch(toggle,/#f5a524|minWidth: 104|Alert\.|confirm/);                           // no amber fill, no wide segments, no dialog
+  assert.match(toggle,/Other tabs are not covered\./);                                           // the scope stays findable (ⓘ and screen reader hint)
+  assert.match(toggle,/accessibilityLabel="What Public mode covers"/);
 });
 
 test('a Private reply is hidden the moment the switch says Public, and later text is dropped',()=>{
@@ -134,7 +154,8 @@ test('the browser check follows the protected updater\'s file naming, which is n
   assert.ok(!fs.existsSync('scripts/test-privacy-mode-browser.cjs'));
   const updater=read('scripts/animated-web-update.sh');
   const rule=updater.match(/^FRONTEND_ONLY='(.+)'$/m)[1];
-  assert.equal(rule,"^(app/|components/|lib/|hooks/|types/|tests/|docs/|scripts/(test-)?(animated[-_][A-Za-z0-9_.-]+|android-refresh\\.sh)$)");
+  // The live updater (97e032f) that the release ships; never PR #26's widened rule.
+  assert.equal(rule,"^(app/|components/|lib/|hooks/|types/|tests/|docs/|scripts/(test-)?animated[-_][A-Za-z0-9_.-]+$)");
   assert.match('scripts/test-animated-privacy-mode-browser.cjs',new RegExp(rule));
 });
 

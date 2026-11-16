@@ -46,7 +46,7 @@ import { CompanionPortrait } from '@/components/CompanionPortrait';
 import { AnimatedCompanion } from '@/components/AnimatedCompanion';
 import { LiveRoomActions, LiveRoomHeader, LiveRoomTheaterBar, Pill } from '@/components/LiveRoom';
 import { takeRoomLeft } from '@/lib/room-rotation';
-import { PrivacyBar, PrivacyToggle } from '@/components/PrivacyToggle';
+import { PRIVACY_SCOPE, PrivacyBar, PrivacyToggle } from '@/components/PrivacyToggle';
 import { conversationLabel, emptyComposer, getPrivacyMode, listenForAppPrivacy, messageVisible, returnFailedTurn, swapComposer, turnHidden, usePrivacyMode, type ComposerDraft, type ComposerSlots, type PrivacyMode } from '@/lib/privacy-mode';
 import { ROOM_BACK_EVENT, ROOM_LANDSCAPE_EVENT, ROOM_PORTRAIT_EVENT, getRoomMode, isLiveRoom, lockRoomViewport, postRoomEvent, roomEmbedded, setRoomMode, turnRoom, useRoomMode, type RoomView } from '@/lib/live-room';
 import { AnimatedCompanionSession, animatedCompanionAvailable, type AnimatedState } from '@/lib/animated-companion';
@@ -70,7 +70,7 @@ import { respondToMessage, generateImage, isImageRequest } from '@/lib/cognition
 import { EffortControl } from '@/components/EffortControl';
 import { imagePromptFromConfirmation } from '@/lib/image-followup';
 import { pickImages, uploadImage, removeStoredFiles, MediaError, type PickedImage } from '@/lib/media';
-import { MessageImages, PendingAttachments, readAttachments } from '@/components/ChatAttachments';
+import { MediaJobStatus, MessageImages, PendingAttachments, readAttachments } from '@/components/ChatAttachments';
 import { recordMicrophone, transcribeRecording, type RecordingHandle } from '@/lib/recording';
 import { ConversationList, type ConversationListHandle } from '@/components/ConversationList';
 import { useTheme } from '@/lib/theme-context';
@@ -115,11 +115,14 @@ export default function ChatScreen() {
   // switch says Public, including anything that arrives after (lib/privacy-mode.ts turnHidden).
   const [turnMode, setTurnMode] = useState<PrivacyMode | null>(null);
   const hideTurn = turnHidden(privacy.mode, turnMode);
+  const [privacyInfo, setPrivacyInfo] = useState(false);
   const [companion, setCompanion] = useState<Companion | null>(null);
   const { state: companionState } = useCompanionState(companion?.id);
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [activeConversation, setActiveConversation] = useState<Conversation | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
+  // Public: Private messages are left out of the list entirely (no placeholder, count or position).
+  const shownMessages = useMemo(() => messages.filter(item => messageVisible(privacy.mode, item)), [messages, privacy.mode]);
   const [inputText, setInputTextState] = useState('');
   const [effort, setEffort] = useState<'quick' | 'deep' | 'default'>('quick');
   const [pendingDocument, setPendingDocument] = useState<PrivateDocument | null>(null);
@@ -850,13 +853,7 @@ export default function ChatScreen() {
   }, [inputText, pendingImages, pendingDocument, documentBusy, companion, session?.user.id, sending, activeConversation, loadMessages, messages, autoSpeak, animated]);
 
   const renderMessage = useCallback(
-    ({ item }: { item: Message }) => !messageVisible(privacy.mode, item) ? (
-          <View style={[styles.messageWrapper, item.role === 'user' ? styles.messageWrapperUser : styles.messageWrapperAI]}>
-            <View accessibilityLabel="Message hidden while Public mode is on" style={[styles.messageBubble, item.role === 'user' ? styles.messageBubbleUser : styles.messageBubbleAI, { opacity: 0.6 }]}>
-              <Text style={[styles.messageText, item.role === 'user' ? styles.messageTextUser : styles.messageTextAI, { fontStyle: 'italic' }]}>Hidden while 👥 Public is on</Text>
-            </View>
-          </View>
-        ) : (
+    ({ item }: { item: Message }) => (
           <View
             style={[
               styles.messageWrapper,
@@ -874,6 +871,7 @@ export default function ChatScreen() {
             >
               {!!item.metadata?.document_title && <Text style={{ color: colors.primary[300], marginBottom: 8 }}>Document: {String(item.metadata.document_title)}</Text>}
               <MessageImages attachments={readAttachments(item.metadata)} colors={colors} />
+              {item.role === 'assistant' && <MediaJobStatus metadata={item.metadata} colors={colors} />}
               <ChatText
                 content={item.content}
                 citations={item.role === 'assistant' ? item.metadata?.web_search : undefined}
@@ -1027,10 +1025,13 @@ export default function ChatScreen() {
           {!(isMobile && !sending && syncStatus === 'current') && <Text style={styles.statusText}>
             {sending ? 'Thinking…' : syncStatus === 'current' ? 'Conversation' : syncStatus === 'refreshing' ? 'Refreshing…' : 'Saved on device'}
           </Text>}
+          <PrivacyToggle c={colors} onInfo={() => setPrivacyInfo(open => !open)} />
         </View>
       </View>}
-      {/* In the Live Room with video on, the switch is in the room's row of buttons, never over the companion's picture. */}
-      {!theater && !(room && animatedState === 'ready') && <PrivacyBar c={colors} />}
+      {/* Ordinary Chat: the chip is in the header. Video Chat without video: its own small row. With video on, it is
+          in the room's row of buttons, never over the companion's picture. */}
+      {room && !theater && animatedState !== 'ready' && <PrivacyBar c={colors} />}
+      {!room && privacyInfo && <Text accessibilityLiveRegion="polite" style={{ color: colors.neutral[400], fontSize: 12, paddingHorizontal: 16, paddingVertical: 6, textAlign: 'right' }}>{PRIVACY_SCOPE}</Text>}
 
       {syncStatus === 'cached' && !theater && <TouchableOpacity accessibilityRole="button" accessibilityLabel="Retry connection"
         onPress={() => { void loadCompanion().then(() => { if (activeIdRef.current) void loadMessages(activeIdRef.current); }); }}
@@ -1177,10 +1178,8 @@ export default function ChatScreen() {
       {soundBlocked && <View style={styles.errorBanner}><Text accessibilityRole="alert" style={styles.errorBannerText}>Your browser is holding back sound until you allow it.</Text><TouchableOpacity onPress={enableSound} accessibilityRole="button" accessibilityLabel="Enable sound"><Text style={styles.errorBannerText}>Enable sound</Text></TouchableOpacity></View>}
       <ConversationList
         ref={flatListRef}
-        data={messages}
-        ListFooterComponent={sending && hideTurn ? <View style={{ gap: 12, padding: 16 }}>
-          <Text accessibilityLiveRegion="polite" style={{ color: colors.neutral[300], fontStyle: 'italic' }}>{companion?.name || 'Lumen'} is finishing a reply that's hidden while 👥 Public is on.</Text>
-        </View> : sending ? <View style={{ gap: 12, padding: 16 }}>
+        data={shownMessages}
+        ListFooterComponent={sending && hideTurn ? null : sending ? <View style={{ gap: 12, padding: 16 }}>
           <Text style={{ color: colors.neutral[100], textAlign: 'right' }}>{pendingQuestion}</Text>
           <View style={{ flexDirection: 'row', gap: 12, alignItems: 'flex-start' }}>
             <CompanionPortrait colors={colors} size={isMobile ? 36 : 46} portraitUrl={companion?.portrait_url} mood="thinking" />
@@ -1289,7 +1288,7 @@ export default function ChatScreen() {
             </TouchableOpacity>
           </View>}
           {pendingDocument && <View style={{ padding: 12, borderRadius: 12, backgroundColor: colors.neutral[900], gap: 8 }}>
-            <Text style={{ color: colors.neutral[100] }}>{privacy.mode === 'private' ? `Using document: ${pendingDocument.title}` : 'Using a document (name hidden while 👥 Public is on)'}</Text>
+            <Text style={{ color: colors.neutral[100] }}>{privacy.mode === 'private' ? `Using document: ${pendingDocument.title}` : 'Using a document'}</Text>
             <Text style={{ color: colors.neutral[400], fontSize: 12 }}>Your next questions use this document. Remove it to return to ordinary chat. Extracted text is saved in your document library.</Text>
             <View style={{ flexDirection: 'row', gap: 24 }}>
               <TouchableOpacity accessibilityRole="button" disabled={sending || documentBusy} onPress={() => setInputText('Explain this document in plain language.')}>

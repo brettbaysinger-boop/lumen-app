@@ -1,0 +1,110 @@
+#!/usr/bin/env python3
+"""Read-only check of a FramePack (Gradio) server before Lumen uses it for image-to-video.
+
+Nothing is uploaded or queued. It reports whether the URL answers, which Gradio API prefix it
+uses, every named endpoint, and the inputs (label, name, default) of the endpoint Lumen would
+call, so the label mapping in backend/lumen/video_providers.py can be checked against the real
+install. Run it on Heavy against whichever FramePack install is actually operational:
+
+  python3 scripts/check-framepack-endpoint.py --url http://127.0.0.1:<port> [--api-name /process]
+  python3 scripts/check-framepack-endpoint.py --url http://127.0.0.1:7863 --api-name /handle_start_button
+                                                                  (FramePack-Studio adapter contract)
+Exit status 0 only when the endpoint exists and Lumen can fill its inputs.
+"""
+import argparse
+import json
+import sys
+from pathlib import Path
+from urllib.error import URLError
+from urllib.request import urlopen
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "backend"))
+
+
+def get(url: str):
+    with urlopen(url, timeout=10) as response:  # noqa: S310 - operator-supplied local URL
+        return json.load(response)
+
+
+def check_studio(endpoints, base: str = "", need_seconds: float | None = None) -> int:
+    """FramePack-Studio: check the exact contract Lumen's adapter was written for. Read-only."""
+    from lumen.video_providers import STUDIO_INPUTS, studio_arguments, studio_contract, studio_max_seconds
+    try:
+        parameters = studio_contract(endpoints)
+    except Exception as exc:  # report, never guess
+        print(f"FramePack-Studio adapter contract: FAILS ({exc})")
+        return 1
+    image = {"path": "check", "meta": {"_type": "gradio.FileData"}}
+    data = studio_arguments(parameters, image=image, prompt="check", negative="", seed=1, seconds=3.0)
+    print("FramePack-Studio adapter contract: OK (29 inputs in the expected order; Original mode offered;")
+    print("  /monitor_job takes the job id; /check_for_current_job_and_monitor reports the running job)")
+    for position, (label, value) in enumerate(zip(STUDIO_INPUTS, data)):
+        shown = "<start frame>" if value is image else value
+        print(f"  {position:2d} {label}: {shown!r}")
+    print("Lumen never calls /end_process_with_update, /partial or any clear/cancel endpoint.")
+    try:
+        longest = studio_max_seconds(get(f"{base}/config")) if base else None
+    except (URLError, OSError, ValueError):
+        longest = None
+    print(f"Longest clip its length slider allows: {f'{longest:g} s' if longest else 'not readable from /config'}")
+    if need_seconds is not None and (longest is None or longest + 0.05 < need_seconds):
+        print(f"RESULT: NOT READY for {need_seconds:g}-second clips (nothing was uploaded or queued)")
+        return 1
+    print("RESULT: READY (contract only; nothing was uploaded or queued and no video was generated)")
+    return 0
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument("--url", required=True)
+    parser.add_argument("--api-name", default="/process")
+    parser.add_argument("--need-seconds", type=float, help="FramePack-Studio only: fail unless its length "
+                                                           "slider allows clips this long (read from /config)")
+    parser.add_argument("--dump", help="write every endpoint's inputs and returns to this JSON file "
+                                       "(for designing an adapter; contains no secrets)")
+    args = parser.parse_args()
+    base = args.url.rstrip("/")
+    info, prefix = None, None
+    for candidate in ("/gradio_api", ""):
+        try:
+            info = get(f"{base}{candidate}/info")
+            prefix = candidate
+            break
+        except (URLError, OSError, ValueError):
+            continue
+    if info is None:
+        print("FramePack/Gradio: UNREACHABLE or not a Gradio app")
+        return 1
+    print(f"Gradio API: reachable, prefix '{prefix or '(none)'}'")
+    endpoints = info.get("named_endpoints") or {}
+    print("Named endpoints:", ", ".join(sorted(endpoints)) or "(none)")
+    if args.dump:
+        with open(args.dump, "w", encoding="utf-8") as handle:
+            json.dump({"prefix": prefix, "named_endpoints": endpoints,
+                       "unnamed_endpoints": info.get("unnamed_endpoints") or {}}, handle, indent=2, default=str)
+        print(f"Wrote full endpoint metadata to {args.dump}")
+    endpoint = endpoints.get(args.api_name)
+    if not isinstance(endpoint, dict):
+        print(f"Endpoint {args.api_name}: MISSING (set FRAMEPACK_API_NAME to one listed above)")
+        return 1
+    parameters = endpoint.get("parameters") or []
+    for p in parameters:
+        default = p.get("parameter_default") if p.get("parameter_has_default") else "(required)"
+        print(f"  input: label={p.get('label')!r} name={p.get('parameter_name')!r} "
+              f"component={p.get('component')!r} default={default!r}")
+    if args.api_name == "/handle_start_button":
+        return check_studio(endpoints, base, args.need_seconds)
+    try:
+        from lumen.video_providers import framepack_arguments
+        image = {"path": "check", "meta": {"_type": "gradio.FileData"}}
+        framepack_arguments(parameters, image=image, prompt="check", negative="", seed=1, seconds=3.0)
+        print("Lumen input mapping: OK")
+    except Exception as exc:  # report, never guess
+        print(f"Lumen input mapping: FAILS ({exc})")
+        return 1
+    print("RESULT: READY (endpoint and inputs only; no video was generated)")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

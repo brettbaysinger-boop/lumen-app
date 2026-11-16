@@ -93,3 +93,12 @@ test('rejects unrelated confirmations', () => {
 
   assert.equal(result, null);
 });
+
+test('a "yes" to a video offer never becomes a still image', () => {
+  const result = resolve('Yes please', [
+    { role: 'user', content: 'Create an image of a lighthouse at dusk.' },
+    { role: 'assistant', content: 'Would you like me to make a short video of this image next?' },
+  ]);
+
+  assert.equal(result, null);
+});
