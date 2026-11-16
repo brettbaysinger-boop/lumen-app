@@ -197,17 +197,14 @@ Keyword rules are a backstop and can misfire; each refusal names the rule so it 
 * Hardware canary 3 (758c2b3, 2026-11-16) rendered on the GPU: FP-Studio's queue.json has job
   `0bb4dd05-…` completed with `result` `outputs/261116_095453_817_1084_19.mp4` (836,627 bytes, H.264
   512×768, 2.43 s). The adapter rejected it because it expected `<uuid>_` names; fixed in 34f10dd.
-* Still open: the unattended private route from the worker to FP-Studio; Chat/Gallery delivery and
-  playback of video on the S22. `VIDEO_GENERATION_ENABLED` stays false until a real canary passes and the
+* Still open: Chat/Gallery delivery and playback of video on the S22 (the private route is in place). `VIDEO_GENERATION_ENABLED` stays false until a real canary passes and the
   owner approves.
 
-### Private route to FramePack-Studio (owner decision, host step)
-The worker needs an unattended route to Heavy's loopback `7863`. The manual `ssh -L` used for the
-canary asks for a key passphrase and closes, so it can't serve the worker. Recommended: the same
-mechanism that already gives lumen-api `COMFYUI_URL` (`127.0.0.1:18188` on Lumen), with one more
-forward, `127.0.0.1:17863 → Heavy 127.0.0.1:7863`. Then `FRAMEPACK_URL=http://127.0.0.1:17863`.
-It must stay private (loopback on both ends, nothing on a public interface, no SSH or Tailscale
-setting weakened), and the existing ComfyUI route must not be changed.
+### Private route to FramePack-Studio: in place (owner, 2026-11-16)
+`lumen-framepack-tunnel.service` on Lumen forwards `127.0.0.1:17863 → Heavy 127.0.0.1:7863`. It is cloned
+from the unchanged `lumen-comfyui-tunnel.service` (18188), and Heavy's restricted key now permits both
+loopback destinations only. `FRAMEPACK_URL=http://127.0.0.1:17863` is set at stage 6 of
+`docs/video-release.md`.
 
 ### Gated step A: isolated BigLust canary (no service, database or app change)
 On the lumen-api host, from a throwaway checkout of this PR (never the live checkout):

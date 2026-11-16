@@ -53,28 +53,22 @@ The start frame's RGB pixels were **not** compared. Optional follow-up: the same
 `--expect-image /tmp/lumen-canary.png`. The render took about 8.5 minutes for a 3 s clip, which is why
 rendering runs in the worker, not in the request.
 
-## Stage 1: the private route for FP-Studio (read-only check, then an owner change)
+## Stage 1: the private route for FP-Studio. PASSED (owner, 2026-11-16)
 
-`scripts/video-release.sh route` shows how `127.0.0.1:18188` (ComfyUI) reaches Heavy today:
-* the listener and that it is loopback-only;
-* the owning process and its systemd unit, with that unit's definition;
-* whether `17863` is free.
+Done by the owner on Lumen, mirroring the ComfyUI route:
+* The existing `lumen-comfyui-tunnel.service` (`127.0.0.1:18188 → Heavy 127.0.0.1:8188`) is unchanged and
+  healthy.
+* A separate `lumen-framepack-tunnel.service` was cloned from it, with only the forward changed to
+  `-L 127.0.0.1:17863:127.0.0.1:7863`. It is enabled at boot.
+* Heavy's authorized key keeps `restrict,port-forwarding,…,command="/bin/false"` and permits exactly the
+  loopback destinations `127.0.0.1:8188` and `127.0.0.1:7863`.
+* Checks passed: `systemctl is-active`, `curl http://127.0.0.1:17863/gradio_api/info`, and ComfyUI's
+  `/system_stats` on 18188.
 
-If the owning process belongs to another user, run `sudo ss -ltnp 'sport = :18188'` for the process.
-
-Recommendation: give FP-Studio the same mechanism with one more loopback forward,
-`127.0.0.1:17863 → Heavy 127.0.0.1:7863`. For an ssh/autossh unit, that's one more
-`-L 127.0.0.1:17863:127.0.0.1:7863`.
-* Keep both ends on loopback.
-* Keep the key and its passphrase handling exactly as the 18188 route has them.
-* Never remove a passphrase, widen `AllowTcpForwarding`, open a port or loosen a Tailscale ACL to do it.
-
-The interactive `ssh -L` used for the canary asks for the key passphrase and closes, so it cannot serve
-the worker. The script changes none of this; the owner edits that unit.
-
-Check: `curl -fsS http://127.0.0.1:17863/gradio_api/info >/dev/null && echo ok` on Lumen, and
-`python3 scripts/check-framepack-endpoint.py --url http://127.0.0.1:17863 --api-name /handle_start_button`
-(read-only). Way back: remove that one forward.
+A first attempt failed with SSH `administratively prohibited` (the destination was not yet permitted)
+and was rolled back. Nothing else changed: video is still off, and no backend, database or web change
+was made. Do not reinstall or retest this route. Stage 6 uses `VIDEO_FRAMEPACK_URL=http://127.0.0.1:17863`.
+`scripts/video-release.sh route` stays available as a read-only check.
 
 ## Stage 2: migration (owner applies). STOP if anything else is pending
 
