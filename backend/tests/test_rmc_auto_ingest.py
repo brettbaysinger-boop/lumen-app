@@ -7,6 +7,7 @@ from unittest.mock import AsyncMock, Mock, patch
 from lumen.observations import Candidate
 from lumen.rmc_auto_ingest import (
     approved_evidence, auto_ingest_rmc_user_message,
+    deterministic_safe_preference, _screen,
 )
 
 USER = "00000000-0000-4000-8000-00000000ada1"
@@ -31,6 +32,33 @@ class ApprovalTests(unittest.TestCase):
     def test_verbatim_durable_user_fact_is_eligible(self):
         self.assertEqual(approved_evidence(SOURCE, candidate(), "Lumen"), SOURCE)
 
+    def test_clear_nonsensitive_favorite_is_deterministically_approved(self):
+        for source in (
+            "My favorite fruit is golden kiwi.",
+            "My favorite fruit is ripe papaya.",
+            "My favorite color is blue.",
+        ):
+            with self.subTest(source=source):
+                proposed = deterministic_safe_preference(source)
+                self.assertIsNotNone(proposed)
+                self.assertEqual(approved_evidence(source, proposed, "Lumen"), source)
+                self.assertFalse(proposed.sensitive)
+                self.assertTrue(proposed.direct_assertion)
+
+    def test_ambiguous_and_sensitive_preferences_do_not_bypass_model_screen(self):
+        bad = (
+            "My favorite fruit is golden kiwi?",
+            "My favorite fruit is 123456789.",
+            "My favorite fruit is my bank password.",
+            "My favorite fruit is something, but maybe mango.",
+            "My favorite fruit is apple; my email is me@example.com.",
+            "Imagine my favorite fruit is golden kiwi.",
+            "My favorite fruit is golden kiwi. I have a question.",
+        )
+        for source in bad:
+            with self.subTest(source=source):
+                self.assertIsNone(deterministic_safe_preference(source))
+
     def test_no_sensitive_or_inferred_or_unverified_memory(self):
         examples = [
             ("My bank account has money.", candidate(
@@ -50,6 +78,17 @@ class ApprovalTests(unittest.TestCase):
             with self.subTest(source=source, candidate=c):
                 self.assertIsNone(approved_evidence(source, c, "Lumen"))
 
+
+class DeterministicScreenTests(unittest.IsolatedAsyncioTestCase):
+    async def test_obvious_fact_does_not_depend_on_model_classification(self):
+        settings = SimpleNamespace()
+        companion = {"name": "Lumen", "conversation_model": "does-not-exist"}
+        with patch("lumen.rmc_auto_ingest.OllamaProvider") as ollama:
+            result = await _screen(settings, "My favorite fruit is ripe papaya.", companion)
+        ollama.assert_not_called()
+        self.assertEqual(len(result), 1)
+        self.assertEqual(result[0].evidence, "My favorite fruit is ripe papaya.")
+        self.assertTrue(result[0].direct_assertion)
 
 class RmcAutoTests(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
