@@ -147,7 +147,8 @@ class RmcAutoTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(write.args, ("PATCH", "messages"))
         self.assertEqual(write.kwargs["json"]["metadata"], {
             "rmc_auto_state": "saved",
-            "rmc_auto_confirmed_count": 1, "original": "preserve",
+            "rmc_auto_confirmed_count": 1, "rmc_auto_attempts": 1,
+            "original": "preserve",
         })
         self.assertEqual(self.repo_class.call_args.args[1], "fictional-user-token")
 
