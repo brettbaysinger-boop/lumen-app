@@ -9,13 +9,17 @@ the live database or a phone. Not deployed.
 |---|---|---|---|
 | Still images (default) | ComfyUI + **BigLust SDXL v1.6** (`backend/workflows/biglust-sdxl-v16-api.json`, `COMFYUI_CHECKPOINT`) | `images.py`, `companion_images.py` | Owner requirement 2026-11-16; checkpoint not yet confirmed on Heavy |
 | Still images (previous) | ComfyUI + FLUX.2 Klein (`flux2-klein-4b-fp8.json`) | same | Worked live 2026-10-09 |
-| Image to video | FramePack Gradio app (`demo_gradio.py`, port 7862 per Local Media Studio's inventory) | `video_providers.FramePackProvider` (Gradio HTTP API) | New, not run on Heavy |
+| Image to video | Whichever FramePack (Gradio) install on Heavy is operational; not yet identified | `video_providers.FramePackProvider` (Gradio HTTP API) | New; install, port and inputs unverified |
 | Text to video | Wan2.2 ComfyUI workflow, if exported | `video_providers.run_comfy_video_workflow` | New; no Wan2.2 workflow found in any repo |
 | Text to video without Wan2.2 | BigLust SDXL still, then FramePack | `media_jobs.run_video_job` (`t2i2v`) | New, not run on Heavy |
 
-Local Media Studio is a browser page that calls ComfyUI directly (AnimateDiff templates); it has no
-backend to reuse. Its `scripts/inventory_heavy_readonly.sh` is the read-only way to confirm the
-FramePack port and API names.
+Local Media Studio is retired (owner, 2026-11-16) and is not a dependency or integration target.
+Lumen talks only to ComfyUI and FramePack directly, from the backend.
+
+FramePack's port, Gradio API name and input labels are **not verified**. The client matches inputs
+by label (image, prompt, negative prompt, seed, length) and keeps every other input at the
+install's own default; `scripts/check-framepack-endpoint.py` shows whether that mapping fits the
+real install before anything is enabled.
 
 ## Flow
 
@@ -76,11 +80,12 @@ checkpoint and every node exist.
 
 1. Apply `supabase/migrations/20261116100000_media_generation_jobs.sql` (new table; `chat-media`
    accepts MP4/WebM up to 50 MB).
-2. On Heavy, run Local Media Studio's `scripts/inventory_heavy_readonly.sh`. Confirm FramePack's port,
-   that `/gradio_api/info` lists `/process`, and its input labels (Image, Prompt, Negative Prompt,
-   Seed, Total Video Length (Seconds), …).
+2. On Heavy, read-only: find the FramePack install that is actually running (its service or process
+   and port), then run `python3 scripts/check-framepack-endpoint.py --url http://127.0.0.1:<port>`.
+   It lists the named endpoints and inputs and says whether Lumen can fill them. Set
+   `FRAMEPACK_API_NAME` if the endpoint is not `/process`.
 3. Backend `.env`: `COMFYUI_WORKFLOW=<repo>/backend/workflows/biglust-sdxl-v16-api.json`,
-   `COMFYUI_CHECKPOINT=<exact name from the check>`, `VIDEO_GENERATION_ENABLED=true`, `FRAMEPACK_URL=http://<heavy>:7862`.
+   `COMFYUI_CHECKPOINT=<exact name from the check>`, `VIDEO_GENERATION_ENABLED=true`, `FRAMEPACK_URL=<verified FramePack URL>`.
    Optional: `COMFYUI_T2V_WORKFLOW=/path/wan22_t2v_api.json` exported with "Save (API)" and these
    exact string values: `{{LUMEN_PROMPT}}`, optionally `{{LUMEN_NEGATIVE}}`, `{{LUMEN_SEED}}`,
    `{{LUMEN_FRAMES}}` (4n+1), `{{LUMEN_FPS}}`; output through VideoHelperSuite or SaveVideo as MP4/WebM.

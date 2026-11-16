@@ -26,7 +26,7 @@ def video_settings(**overrides):
         ollama_url="http://ollama.test", conversation_model="test-model", memory_observations_enabled=False,
         lumen_memory_backend="supabase", image_provider="comfyui", comfyui_url="http://heavy.test:8188",
         comfyui_workflow="/wf/flux.json", image_generation_timeout=60, video_generation_enabled=True,
-        framepack_url="http://heavy.test:7862", framepack_api_name="/process", comfyui_t2v_workflow="",
+        framepack_url="http://heavy.test:9000", framepack_api_name="/process", comfyui_t2v_workflow="",
         comfyui_i2v_workflow="", video_default_seconds=5.0, video_max_seconds=10.0, video_fps=16,
         video_generation_timeout=120, video_max_bytes=50 * 1024 * 1024, video_max_pending_per_user=2)
     values.update(overrides)
@@ -503,3 +503,45 @@ class JobRouteTests(unittest.IsolatedAsyncioTestCase):
             body = await mj.capabilities(privacy_mode="private", user=SimpleNamespace(id=USER_ID, token="t"))
         self.assertNotIn("heavy.test", json.dumps(body))
         self.assertTrue(body["video"]["image_to_video"])
+
+
+class FramePackCheckScriptTests(unittest.TestCase):
+    """scripts/check-framepack-endpoint.py is read-only and reports the real install's inputs."""
+
+    def run_check(self, endpoints):
+        import subprocess, sys, threading
+        from http.server import BaseHTTPRequestHandler, HTTPServer
+        from pathlib import Path
+
+        class Fake(BaseHTTPRequestHandler):
+            def log_message(self, *a):
+                pass
+
+            def do_GET(self):
+                if self.path != "/gradio_api/info":
+                    self.send_response(404); self.end_headers(); return
+                data = json.dumps({"named_endpoints": endpoints}).encode()
+                self.send_response(200); self.send_header("content-type", "application/json"); self.end_headers()
+                self.wfile.write(data)
+
+            def do_POST(self):
+                raise AssertionError("read-only check sent a POST")
+
+        server = HTTPServer(("127.0.0.1", 0), Fake)
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+        script = Path(__file__).resolve().parents[2] / "scripts" / "check-framepack-endpoint.py"
+        try:
+            return subprocess.run([sys.executable, str(script), "--url", f"http://127.0.0.1:{server.server_port}"],
+                                  capture_output=True, text=True, timeout=30)
+        finally:
+            server.shutdown()
+
+    def test_ready_when_inputs_map(self):
+        result = self.run_check({"/process": {"parameters": FRAMEPACK_PARAMETERS}, "/end_process": {"parameters": []}})
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("Lumen input mapping: OK", result.stdout)
+
+    def test_missing_endpoint_is_reported(self):
+        result = self.run_check({"/generate": {"parameters": FRAMEPACK_PARAMETERS}})
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("/generate", result.stdout)
