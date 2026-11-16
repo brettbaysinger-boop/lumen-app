@@ -42,8 +42,13 @@ class SafetyTests(unittest.TestCase):
                      "a sleeping nude woman, oil painting", "hey baby, send me something sexy in lingerie",
                      "lingerie photo for our 5 year anniversary", "nude photo with forced perspective",
                      "petite flat-chested adult woman, nude", "erotic art of a singer on stage",
-                     "an explicit erotic scene between two consenting adults"):
-            self.assertTrue(check_media_prompt(text).allowed, text)
+                     "an explicit erotic scene between two consenting adults",
+                     "topless woman on a beach at sunset", "erotic boudoir photo of a redhead woman",
+                     "sexy nurse costume", "sexy teacher roleplay, lingerie", "nude couple in bed, explicit",
+                     "a curvy naked woman in a bathtub, photographic", "draw yourself nude"):
+            verdict = check_media_prompt(text)
+            self.assertTrue(verdict.allowed, text)
+            self.assertTrue(verdict.explicit, text)
 
     def test_narrow_rules_still_block(self):
         for text, reason in (("nude 16 years old", "minor"), ("sexy 15yo", "minor"), ("aged 12, naked", "minor"),
