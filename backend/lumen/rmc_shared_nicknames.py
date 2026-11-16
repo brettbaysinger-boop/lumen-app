@@ -15,7 +15,7 @@ import re
 _ACCEPT = re.compile(
     r"(?:\b(?:yes|yeah|yep|absolutely|definitely|perfect|agreed)\b|"
     r"\b(?:i|we) (?:love|like|adore) (?:it|that|those|the name|that name|"
-    r"these names|those names)\b|"
+    r"these names|those names|that nickname|the nickname|our nickname|them all)\b|"
     r"\b(?:let'?s|we should) (?:use|keep|go with|stick with) (?:it|that|"
     r"this|them|those|the name|these names|that name)\b|"
     r"\b(?:that|those|this) (?:sounds?|is|are) (?:great|perfect|awesome)\b)",
@@ -35,8 +35,9 @@ _NAME_PROPOSAL = re.compile(
     r"let'?s call (?:you|me|us|ourselves)|"
     r"we(?:'ll| will| could| should) call ourselves|"
     r"we(?:'ll| will| could) be known as|"
+    r"we(?:'re| are) calling ourselves|"
     r"(?:our|your|my) (?:couple |duo |team |shared )?"
-    r"(?:nickname|name) (?:is|will be|would be|could be)|"
+    r"(?:nickname|name) (?:is|will be|would be|could be|to be|should be)|"
     r"our (?:nicknames|team name|duo name)|"
     r"(?:you(?:'re| are)|i(?:'m| am)|we(?:'re| are)) "
     r"(?:called|nicknamed))\b)",
