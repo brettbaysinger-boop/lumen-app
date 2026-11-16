@@ -149,6 +149,7 @@ apply() {
 rollback() {
   [ "${VIDEO_HOTFIX_CONFIRM:-}" = hotfix-rollback ] || die "Run: VIDEO_HOTFIX_CONFIRM=hotfix-rollback $0 rollback"
   [ -f "$STATE_DIR/hotfix" ] || die "Nothing recorded to roll back."
+  [ ! -f "$STATE_DIR/length" ] || die "The 120-second backend is applied. First: VIDEO_LENGTH_CONFIRM=backend-rollback scripts/video-length-release.sh rollback"
   restore_files "$(cat "$STATE_DIR/hotfix")"
   sudo systemctl restart lumen-api
   wait_health || die "lumen-api is not healthy after the restore. Backup: $(cat "$STATE_DIR/hotfix")"

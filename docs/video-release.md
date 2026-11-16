@@ -293,6 +293,70 @@ LUMEN_WEB_UPDATE_CONFIRM=update:7e7ec20 scripts/animated-web-update.sh update
 Way back: `LUMEN_WEB_UPDATE_CONFIRM=rollback scripts/animated-web-update.sh rollback`. It is safe while a video
 renders (nothing is restarted), but an open Chat page only changes when it is reloaded.
 
+## Clips of 1 to 120 seconds (owner request, 2026-11-16). Prepared, NOT deployed
+
+Today a clip is at most 10 s. 120 s is FramePack's own maximum. The default clip stays 5 s. "120 seconds"
+is the clip's length. Rendering it can take many hours: the 3 s canary took about 8.5 minutes.
+
+What changes (backend commit `648e8d0`, patch `a4c06b0 → 648e8d0`, 6 files, patch id `e09c9ad9a577`):
+* `VIDEO_MAX_SECONDS` may be up to 120. It stays 10 until the enable step sets it.
+* A request for more than the limit is refused and nothing is shortened. "two minutes", "a minute and a
+  half" and "half a minute" are understood.
+* Render budget per job: 600 s per clip second, at least the existing 4 h, at most 24 h. A 120 s clip gets
+  20 h. Polling every 20 s, restart recovery, one delivery and "never cancel or resubmit" are unchanged.
+* FramePack-Studio's own length slider maximum is read from `/config`. A longer clip is refused before upload.
+* A finished file over `VIDEO_MAX_BYTES` (50 MB, the same as the `chat-media` bucket) is refused whole, with
+  both sizes in the message. It is never cut. Uploads over 8 MB get a 10 minute timeout.
+* New migration `20261116210000_media_generation_jobs_120s.sql`: only the `duration_seconds` check, `<= 120`.
+  The applied migration is not edited. RLS, the other checks, the bucket and its limits are unchanged.
+
+**File size, not yet known.** The 3 s canary was 836,627 bytes at 512x768. At that rate a 120 s clip is
+about 33 MB, under the 50 MB limit, but that is an estimate from one clip. Raising the limit needs the
+bucket limit and Supabase's global storage limit (`supabase/config.toml`, a Supabase restart), so it is
+left as it is until a real long clip shows it is needed. Check sizes at 30 s and 60 s first.
+
+Tested:
+* 800 backend tests pass.
+* The migration was run on PostgreSQL 16: twice in a row, 120 accepted, 120.1 and 0 refused, RLS still on,
+  and the undo refuses while a long row exists.
+* `scripts/test-video-length-release.sh`: 14 checks, with and without pytest.
+
+Not tested: a real clip longer than 3 s on Heavy.
+
+**Steps (owner). Each STOPs while any video job is queued or running, so a render is never interrupted.**
+From a clean clone of `feat/local-media-generation-20261116`:
+1. `scripts/video-length-release.sh check` (read-only). It needs all of:
+   * the 6 live files equal `a4c06b0` byte for byte;
+   * no active video job;
+   * FramePack-Studio's slider allows 120 s (read through the existing 17863 route);
+   * the tests pass on a patched copy.
+2. `VIDEO_LENGTH_CONFIRM=backend:e09c9ad9a577 scripts/video-length-release.sh apply`.
+   It restarts lumen-api and the worker. The limit is still 10 s and `.env` is untouched.
+   Way back: `VIDEO_LENGTH_CONFIRM=backend-rollback scripts/video-length-release.sh rollback`.
+3. Migration, the same way as stage 2: `supabase migration list --local` must show only `20261116210000`
+   pending, then `supabase db push --local`. Verify (read-only):
+   ```sql
+   select pg_get_constraintdef(oid) from pg_constraint
+   where conrelid = 'public.media_generation_jobs'::regclass and conname like '%duration_seconds%';
+   ```
+   It should show `duration_seconds <= (120)::numeric`. The undo is in the migration file's header.
+4. `VIDEO_LENGTH_CONFIRM=enable-120 scripts/video-length-release.sh enable`. It sets only
+   `VIDEO_MAX_SECONDS=120` in `.env` and restarts both services.
+   Way back: `VIDEO_LENGTH_CONFIRM=enable-rollback scripts/video-length-release.sh enable-rollback`.
+5. Canary, one job at a time: 30 s, then 60 s, then 120 s. After each, note the file size and render time.
+   If step 4 runs before step 3, a long request is answered with "couldn't start the video" and no GPU job.
+
+No frontend change is needed: the web app and the phone show whatever length the job has.
+
+## S22 phone app
+
+The phone's Chat is native: a web update does not change it. It needs a new APK built from the frontend at
+`7e7ec20` (S22 fixes `7f63d52`, video routing `49b4a36`, discreet Public `7e7ec20`). The pinned build branch
+and the guarded `android-refresh.sh` steps are prepared in the S22 repair work (PR #50), not here. No build
+or USB install happens without the owner.
+
 ## Order of ways back
+120 s: enable-rollback → backend rollback → migration undo. Then:
+
 Hotfix rollback (if applied) → 6 enable-rollback → 5 web rollback → 4 worker-rollback → 3 backend-rollback → 2 undo SQL → 1 remove the
 forward. The images release stays as it is throughout.
