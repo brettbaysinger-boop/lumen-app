@@ -51,6 +51,7 @@ class CognitionRuntime:
         if document_id:
             await selected_document(self.db, companion_id, document_id)
 
+        is_new_conversation = not conversation_id
         conversation = await self.db.get_conversation(conversation_id, companion_id) if conversation_id else None
         if conversation_id and not conversation:
             raise ValueError("Conversation not found for this companion")
@@ -70,6 +71,32 @@ class CognitionRuntime:
         if rmc_memory is not None:
             rmc_read_status, memories = await rmc_memory.relevant(
                 companion, conversation_id, user_message)
+            # A newly started *Private* conversation should not rely on an
+            # unrelated greeting to retrieve the companion's established
+            # identity and shared history. Source-backed RMC only; no fallback.
+            if (is_new_conversation and rmc_read_status == "ok"
+                    and getattr(self, "privacy_mode", "private") == "private"):
+                topics = (
+                    "What names, nicknames and shared terms did the user and companion explicitly agree to use?",
+                    "What enduring facts about the user, close people or pets, preferences, ongoing projects and mutually accepted decisions should remain consistent across conversations?",
+                )
+                anchors = []
+                for query in topics:
+                    status, hits = await rmc_memory.relevant(companion, conversation_id, query)
+                    if status != "ok":
+                        continue
+                    anchors.extend(hits)
+                # Prefer continuity anchors, preserve topical matches, cap
+                # total prompt context and never manufacture missing evidence.
+                seen, selected = set(), []
+                for item in [*anchors, *memories]:
+                    key = item.get("id") or item.get("content")
+                    if key and key not in seen:
+                        selected.append(item)
+                        seen.add(key)
+                    if len(selected) >= 12:
+                        break
+                memories = selected
         else:
             memories = await self.db.get_relevant_memories(
                 companion_id,
@@ -320,13 +347,25 @@ class CognitionRuntime:
         # Only eligible ordinary text turns can be screened for automatic RMC
         # learning. Explicit saves, commands/actions, photos and documents are
         # never re-ingested by this background path. Companion preference wins.
+        from .rmc_shared_nicknames import agreed_nicknames
+        preceding_assistant = (
+            recent[0].get("content", "") if recent and
+            recent[0].get("role") == "assistant" else ""
+        )
+        accepted_name = agreed_nicknames(
+            user_message, preceding_assistant, result.get("content", ""),
+            companion.get("name", "Lumen")
+        ) if (rmc_memory is not None and conversational_model_reply and
+              getattr(self, "privacy_mode", "private") == "private") else None
         rmc_auto_eligible = (
             rmc_memory is not None
             and getattr(self.settings, "rmc_auto_ingest_enabled", False) is True
             and companion.get("auto_memory_enabled") is not False
             and not practice and not attachments and not document_id and not action
             and conversational_model_reply and memory_status == "none"
-            and 12 <= len(user_message.strip()) <= 2000
+            and getattr(self, "privacy_mode", "private") == "private"
+            and ((12 <= len(user_message.strip()) <= 2000)
+                 or accepted_name is not None)
         )
         user_row = await self.db.create_message({
             "conversation_id": conversation_id,
@@ -427,6 +466,8 @@ class CognitionRuntime:
         # Internal-only scheduling handle. Do not repurpose the Supabase
         # observation_message_id response field: it drives old UI workflows.
         self.rmc_auto_message_id = str(user_row["id"]) if rmc_auto_eligible else None
+        self.rmc_auto_companion_id = companion_id if rmc_auto_eligible else None
+        self.rmc_auto_assistant_text = result["content"] if rmc_auto_eligible else ""
         observation_message_id = None
         if (rmc_memory is None and not practice and not attachments and not action and memory_status == "none"
                 and getattr(self.settings, "memory_observations_enabled", False) is True):

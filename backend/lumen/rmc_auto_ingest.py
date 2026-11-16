@@ -22,6 +22,7 @@ from .memory_quality import subject_content_issue, transient_memory_candidate
 from .observations import Candidate, Candidates, automatic_candidate
 from .ollama import OllamaProvider, model_lock, observation_tasks
 from .rmc.adapter import LumenRmcMemory
+from .rmc_shared_nicknames import agreed_nicknames
 
 log = logging.getLogger(__name__)
 
@@ -136,7 +137,8 @@ async def _screen(settings, statement: str, companion: dict) -> list[Candidate]:
     return Candidates.model_validate_json(result).candidates
 
 
-async def auto_ingest_rmc_user_message(settings, token: str, user_id: str, message_id: str) -> None:
+async def auto_ingest_rmc_user_message(settings, token: str, user_id: str,
+                                       message_id: str, assistant_text: str = "") -> None:
     """An RMC-mode background task; each source assertion has stable replay ID."""
     if not (uses_rmc(settings) and getattr(settings, "rmc_auto_ingest_enabled", False)):
         return
@@ -150,11 +152,14 @@ async def auto_ingest_rmc_user_message(settings, token: str, user_id: str, messa
         if row.get("role") != "user" or not isinstance(row.get("metadata"), dict):
             return
         meta = dict(row["metadata"])
-        if meta.get("rmc_auto_state") != "pending":
+        if meta.get("rmc_auto_state") not in ("pending", "deferred"):
             return
-        # Public / Private mode (Issue #39), layer 3 of 3: a message written in Public mode is never
-        # screened or written to RMC, and no receipt is changed. Checked again before any write below.
+        # Public/Private isolation: no public-tagged message may be screened,
+        # stored or given RMC receipts. Never weaken this in continuity work.
         if meta.get("privacy_mode") is not None:
+            return
+        attempts = meta.get("rmc_auto_attempts", 0)
+        if type(attempts) is not int or not 0 <= attempts < 3:
             return
         companion = await db.get_companion(row.get("companion_id"))
         if (not companion or companion.get("owner_user_id") != user_id
@@ -162,29 +167,73 @@ async def auto_ingest_rmc_user_message(settings, token: str, user_id: str, messa
             return
         statement = row.get("content", "")
         if (not isinstance(statement, str) or len(statement) > 2000
-                or len(statement.strip()) < 12
+                or len(statement.strip()) < 2
                 or meta.get("attachments") or meta.get("document_id")):
             return
 
-        screening = asyncio.create_task(_screen(settings, statement, companion))
-        observation_tasks.add(screening)
-        try:
-            candidates = await screening
-        except asyncio.CancelledError:
-            state, saved_count = "deferred", 0
-            candidates = None
-        except Exception:
-            state, saved_count = "screen_unavailable", 0
-            candidates = None
-        finally:
-            observation_tasks.discard(screening)
+        # Nicknames are different from one-speaker facts: the assistant can
+        # suggest them, but only the user's explicit acceptance makes them
+        # a shared conversation agreement. Read exactly the preceding
+        # assistant turn, scoped by this conversation, via user-token RLS.
+        preceding = ""
+        if isinstance(row.get("created_at"), str):
+            try:
+                previous = await db._request(
+                    "GET", "messages",
+                    params={
+                        "select": "content,role",
+                        "conversation_id": "eq." + row["conversation_id"],
+                        "role": "eq.assistant",
+                        "created_at": "lt." + row["created_at"],
+                        "order": "created_at.desc,id.desc",
+                        "limit": "1",
+                    },
+                )
+                if (len(previous) == 1 and previous[0].get("role") == "assistant"
+                        and isinstance(previous[0].get("content"), str)):
+                    preceding = previous[0]["content"]
+            except Exception:
+                # A missing previous turn never authorizes a nickname.
+                preceding = ""
+
+        shared_agreement = agreed_nicknames(
+            statement, preceding, assistant_text, companion.get("name", "Companion")
+        )
+        if shared_agreement and _SENSITIVE.search(shared_agreement):
+            shared_agreement = None
+        # Short replies are eligible ONLY when they completed a verified
+        # naming agreement; don't screen ordinary "yes" as standalone facts.
+        if len(statement.strip()) < 12 and not shared_agreement:
+            return
+
+        if shared_agreement:
+            # The user explicitly accepted a proposed nickname. This
+            # source-backed agreement does not need an LLM classifier.
+            candidates = []
+        else:
+            screening = asyncio.create_task(_screen(settings, statement, companion))
+            observation_tasks.add(screening)
+            try:
+                candidates = await screening
+            except asyncio.CancelledError:
+                state, saved_count = "deferred", 0
+                candidates = None
+            except Exception:
+                state, saved_count = "screen_unavailable", 0
+                candidates = None
+            finally:
+                observation_tasks.discard(screening)
 
         # The owner can switch off automatic learning while screening is
         # running. Recheck their current RLS-protected companion preference
         # before issuing ANY durable RMC write.
         if candidates is not None:
+            # Re-evaluate privacy mode at write time, not only when queued.
+            # A public-tagged or missing source can never authorize RMC write.
             again = await db._request(
-                "GET", "messages", params={"id": "eq." + message_id, "select": "metadata", "limit": "1"})
+                "GET", "messages",
+                params={"id": "eq." + message_id, "select": "metadata", "limit": "1"}
+            )
             if (not again or not isinstance(again[0].get("metadata"), dict)
                     or again[0]["metadata"].get("privacy_mode") is not None):
                 return
@@ -197,7 +246,7 @@ async def auto_ingest_rmc_user_message(settings, token: str, user_id: str, messa
                 candidates = None
 
         if candidates is not None:
-            evidence = []
+            evidence = [shared_agreement] if shared_agreement else []
             for candidate in candidates:
                 value = approved_evidence(statement, candidate, companion.get("name", "Companion"))
                 if value and value not in evidence:
@@ -214,7 +263,8 @@ async def auto_ingest_rmc_user_message(settings, token: str, user_id: str, messa
                         # Stable source key across any retry of the same message.
                         outcome = await memory.remember(
                             companion, row["conversation_id"],
-                            "auto:" + message_id + ":" + str(i), quote
+                            ("auto-shared:" if shared_agreement else "auto:")
+                            + message_id + ":" + str(i), quote
                         )
                     except Exception:
                         outcome = "unconfirmed"
@@ -233,7 +283,10 @@ async def auto_ingest_rmc_user_message(settings, token: str, user_id: str, messa
         # Chat message metadata is a STATUS RECEIPT, not a second memory store.
         # Retain existing attachments and do not log user text.
         meta["rmc_auto_state"] = state
+        meta["rmc_auto_attempts"] = attempts + 1
         meta["rmc_auto_confirmed_count"] = saved_count
+        if shared_agreement and saved_count:
+            meta["rmc_auto_kind"] = "agreed_nickname"
         await db._request(
             "PATCH", "messages",
             params={"id": "eq." + message_id, "companion_id": "eq." + row["companion_id"]},
@@ -242,3 +295,57 @@ async def auto_ingest_rmc_user_message(settings, token: str, user_id: str, messa
     except Exception:
         # Never claim a successful save on exceptions or print memory contents.
         log.warning("RMC automatic ingestion could not finish; check the user's receipt")
+
+
+async def auto_ingest_rmc_with_deferred_retry(
+    settings, token: str, user_id: str, message_id: str,
+    companion_id: str | None, assistant_text: str = "",
+) -> None:
+    """Current source first, then retry at most ONE earlier deferred screen.
+
+    A 'deferred' screen was canceled before an RMC write by foreground chat.
+    NEVER retry 'unconfirmed' writes: the RMC ledger may have stored them.
+    Both current and retry paths validate account ownership and policy.
+    """
+    await auto_ingest_rmc_user_message(
+        settings, token, user_id, message_id, assistant_text
+    )
+    if (not companion_id or not uses_rmc(settings)
+            or not getattr(settings, "rmc_auto_ingest_enabled", False)):
+        return
+    db = SupabaseRepository(settings, token)
+    try:
+        companion = await db.get_companion(companion_id)
+        if (not companion or companion.get("owner_user_id") != user_id
+                or companion.get("auto_memory_enabled") is False):
+            return
+        rows = await db._request(
+            "GET", "messages",
+            params={
+                "select": "id,metadata",
+                "companion_id": "eq." + companion_id,
+                "role": "eq.user",
+                "metadata->>rmc_auto_state": "eq.deferred",
+                "order": "created_at.desc,id.desc",
+                "limit": "12",
+            },
+        )
+        if not isinstance(rows, list):
+            return
+        for row in rows:
+            if row.get("id") == message_id:
+                continue
+            meta = row.get("metadata")
+            if (not isinstance(meta, dict)
+                    or meta.get("rmc_auto_state") != "deferred"
+                    or type(meta.get("rmc_auto_attempts", 0)) is not int
+                    or not 0 <= meta.get("rmc_auto_attempts", 0) < 3):
+                continue
+            if not isinstance(row.get("id"), str):
+                continue
+            await auto_ingest_rmc_user_message(
+                settings, token, user_id, row["id"]
+            )
+            break
+    except Exception:
+        log.warning("RMC deferred screening retry unavailable")
