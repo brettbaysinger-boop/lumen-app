@@ -1,0 +1,19 @@
+{
+  "id": 892348123,
+  "node_id": "R_kgDONabcdef",
+  "name": "pest-control-platform",
+  "full_name": "brettbaysinger-boop/pest-control-platform",
+  "private": true,
+  "owner": {
+    "login": "brettbaysinger-boop",
+    "id": 12345678,
+    "type": "User"
+  },
+  "html_url": "https://github.com/brettbaysinger-boop/pest-control-platform",
+  "description": "PestTrails core operational platform",
+  "fork": false,
+  "default_branch": "main",
+  "created_at": "2026-09-01T12:00:00Z",
+  "updated_at": "2026-11-15T17:30:00Z",
+  "pushed_at": "2026-11-15T17:28:00Z"
+}

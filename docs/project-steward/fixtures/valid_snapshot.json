@@ -1,0 +1,127 @@
+{
+  "version": "1.0",
+  "generated_at": "2026-11-15T18:00:00Z",
+  "projects": [
+    {
+      "id": "pesttrails",
+      "name": "PestTrails",
+      "priority": "p0",
+      "state": "coded",
+      "deployment": "not_deployed",
+      "evidence_level": "git_verified",
+      "summary": "Owner's highest overall priority pest control management platform.",
+      "repositories": [
+        "brettbaysinger-boop/pest-control-platform"
+      ],
+      "blocked_by": [
+        "Security Issue #6 remains open",
+        "Owner operational field acceptance test pending"
+      ],
+      "sources": [
+        {
+          "kind": "git_repo",
+          "ref": "https://github.com/brettbaysinger-boop/pest-control-platform",
+          "observed_at": "2026-11-14T09:00:00Z",
+          "commit_sha": null
+        },
+        {
+          "kind": "git_issue",
+          "ref": "https://github.com/brettbaysinger-boop/pest-control-platform/issues/6",
+          "observed_at": "2026-11-14T09:00:00Z",
+          "commit_sha": null
+        }
+      ],
+      "observed_at": "2026-11-14T09:00:00Z"
+    },
+    {
+      "id": "chorusfall",
+      "name": "Chorusfall",
+      "priority": "p1",
+      "state": "coded",
+      "deployment": "unknown",
+      "evidence_level": "git_verified",
+      "summary": "Commercial dark-fantasy Godot RPG; first priority game project.",
+      "repositories": [
+        "brettbaysinger-boop/chorusfall"
+      ],
+      "blocked_by": [
+        "Godot RPG core mechanics and combat feel under active development"
+      ],
+      "sources": [
+        {
+          "kind": "git_repo",
+          "ref": "https://github.com/brettbaysinger-boop/chorusfall",
+          "observed_at": "2026-11-14T09:00:00Z",
+          "commit_sha": null
+        }
+      ],
+      "observed_at": "2026-11-14T09:00:00Z"
+    },
+    {
+      "id": "dreamvault",
+      "name": "DreamVault",
+      "priority": "p2",
+      "state": "coded",
+      "deployment": "unknown",
+      "evidence_level": "owner_report",
+      "summary": "Private character, image, and video generation application with active development history.",
+      "repositories": [],
+      "blocked_by": [
+        "Media ingestion pipeline optimization"
+      ],
+      "sources": [
+        {
+          "kind": "owner_report",
+          "ref": "owner://vault/dreamvault-runtime",
+          "observed_at": "2026-11-14T09:00:00Z",
+          "commit_sha": null
+        }
+      ],
+      "observed_at": "2026-11-14T09:00:00Z"
+    },
+    {
+      "id": "wisdom-of-the-crowd",
+      "name": "Wisdom of the Crowd",
+      "priority": "unranked",
+      "state": "planned",
+      "deployment": "not_deployed",
+      "evidence_level": "unverified",
+      "summary": "Consensus research and collective intelligence initiative; no standalone repository exists.",
+      "repositories": [],
+      "blocked_by": [
+        "Exploratory design phase only; unranked"
+      ],
+      "sources": [
+        {
+          "kind": "owner_report",
+          "ref": "owner://backlog/wisdom-of-the-crowd-concept",
+          "observed_at": "2026-11-14T09:00:00Z",
+          "commit_sha": null
+        }
+      ],
+      "observed_at": "2026-11-14T09:00:00Z"
+    },
+    {
+      "id": "bretts-games",
+      "name": "Brett's Games",
+      "priority": "p2",
+      "state": "planned",
+      "deployment": "not_deployed",
+      "evidence_level": "owner_report",
+      "summary": "Portfolio umbrella project representing multiple independent game modules.",
+      "repositories": [],
+      "blocked_by": [
+        "Portfolio umbrella; tracked via individual game projects"
+      ],
+      "sources": [
+        {
+          "kind": "owner_report",
+          "ref": "owner://portfolio/games-umbrella",
+          "observed_at": "2026-11-14T09:00:00Z",
+          "commit_sha": null
+        }
+      ],
+      "observed_at": "2026-11-14T09:00:00Z"
+    }
+  ]
+}

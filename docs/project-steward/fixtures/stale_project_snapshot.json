@@ -1,0 +1,30 @@
+{
+  "version": "1.0",
+  "generated_at": "2026-11-15T18:00:00Z",
+  "projects": [
+    {
+      "id": "stale-legacy-proj",
+      "name": "Stale Legacy Project",
+      "priority": "p3",
+      "state": "unknown",
+      "deployment": "not_deployed",
+      "evidence_level": "historical",
+      "summary": "[STALE] Historical prototype last observed over 30 days ago.",
+      "repositories": [
+        "brettbaysinger-boop/legacy-prototype"
+      ],
+      "blocked_by": [
+        "Evidence stale: last checked 2026-10-01T00:00:00Z (>72h ago)"
+      ],
+      "sources": [
+        {
+          "kind": "git_repo",
+          "ref": "https://github.com/brettbaysinger-boop/legacy-prototype",
+          "observed_at": "2026-10-01T00:00:00Z",
+          "commit_sha": "0123456789ab"
+        }
+      ],
+      "observed_at": "2026-10-01T00:00:00Z"
+    }
+  ]
+}

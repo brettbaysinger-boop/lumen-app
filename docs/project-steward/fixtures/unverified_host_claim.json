@@ -1,0 +1,6 @@
+{
+  "project_id": "dreamvault",
+  "claim_url": "https://unverified-external-host.example.com/receipt/123",
+  "verified": false,
+  "reason": "Host receipt lacks cryptographic signature from approved host node."
+}

@@ -1,0 +1,85 @@
+{
+  "version": "1.1",
+  "generated_at": "2026-11-15T18:00:00Z",
+  "stale_after_seconds": 172800,
+  "projects": [
+    {
+      "id": "pesttrails",
+      "name": "PestTrails",
+      "priority": "p0",
+      "state": "coded",
+      "deployment": "not_deployed",
+      "evidence_level": "git_verified",
+      "summary": "Owner's highest overall priority pest control management platform.",
+      "repositories": [
+        "brettbaysinger-boop/pest-control-platform"
+      ],
+      "blocked_by": [
+        "Security Issue #6 remains open",
+        "Owner operational field acceptance test pending"
+      ],
+      "sources": [
+        {
+          "kind": "git_repo",
+          "ref": "https://github.com/brettbaysinger-boop/pest-control-platform",
+          "observed_at": "2026-11-15T18:00:00Z",
+          "commit_sha": "d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3"
+        }
+      ],
+      "observed_at": "2026-11-15T18:00:00Z",
+      "insights": {
+        "observed_at": "2026-11-15T18:00:00Z",
+        "open_prs": {
+          "observed_at": "2026-11-15T18:00:00Z",
+          "items": [
+            {
+              "ref": "brettbaysinger-boop/pest-control-platform#14",
+              "title": "feat(core): dispatch routing optimization",
+              "review": "review_required",
+              "opened_at": "2026-11-14T10:00:00Z",
+              "updated_at": "2026-11-15T09:00:00Z",
+              "head_sha": "d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3"
+            }
+          ]
+        },
+        "last_commit": {
+          "at": "2026-11-15T09:00:00Z",
+          "branch": "main",
+          "ref": "https://github.com/brettbaysinger-boop/pest-control-platform/commit/d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3",
+          "commit_sha": "d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3",
+          "observed_at": "2026-11-15T18:00:00Z"
+        },
+        "last_deploy": null,
+        "ci": {
+          "state": "passing",
+          "branch": "main",
+          "run_ref": "https://github.com/brettbaysinger-boop/pest-control-platform/actions/runs/123456",
+          "commit_sha": "d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3",
+          "observed_at": "2026-11-15T18:00:00Z"
+        },
+        "next": [
+          {
+            "kind": "owner_decision",
+            "text": "Approve technician route field pilot",
+            "ref": "https://github.com/brettbaysinger-boop/pest-control-platform/issues/6"
+          }
+        ],
+        "activity": [
+          {
+            "at": "2026-11-15T09:00:00Z",
+            "kind": "pr",
+            "text": "PR #14: feat(core): dispatch routing optimization",
+            "ref": "https://github.com/brettbaysinger-boop/pest-control-platform/pull/14"
+          }
+        ],
+        "links": [
+          {
+            "kind": "repo",
+            "label": "pest-control-platform",
+            "url": "https://github.com/brettbaysinger-boop/pest-control-platform"
+          }
+        ]
+      }
+    }
+  ]
+}
