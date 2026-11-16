@@ -236,6 +236,9 @@ LUMEN_WEB_UPDATE_CONFIRM=update:49b4a36 scripts/animated-web-update.sh update
 Way back: `LUMEN_WEB_UPDATE_CONFIRM=rollback scripts/animated-web-update.sh rollback`. Afterwards, reload the
 app on desktop and on the S22, so each browser loads the new code.
 
+**Owner preflight (2026-11-16): `video-routing-hotfix.sh check` READY**, patch id `e707ac6b49c6`. The 3 live
+files equal `0b370fb`, the patched-copy unittest run passed 96 tests, and lumen-api is healthy. Not applied yet.
+
 **Optional later, not needed for this fix: the backend guard.** `/v0.2/images/generate` would refuse a video
 request (409), even from an app that has not been reloaded. Practice and document turns would say why no video.
 ```
