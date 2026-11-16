@@ -375,9 +375,13 @@ class FramePackProvider:
 # * /handle_start_button only ADDS a job to FP-Studio's queue and returns at once; output 1 is
 #   the new job's id (a uuid4). Output 0 (the video) is empty at that point.
 # * /monitor_job(job_id) streams (video, preview, top preview, desc, html, ...) until the job is
-#   Completed / Error / cancelled. It ALWAYS switches to whichever job is running, so a video is
-#   only accepted when its file name starts with "<our job id>_" (FP-Studio's own naming), and a
-#   switch to another job fails the request instead of reporting someone else's output.
+#   Completed / Error / cancelled. Its video value is job_queue.get_job(<our id>).result, which
+#   FP-Studio's queue sets only from that job's own output stream: that is the per-job mapping.
+#   The worker names files after its OWN run stamp, not the queue uuid:
+#   "<yymmdd_HHMMSS_mmm_rand>_<frames>.mp4" (worker.py generate_timestamp(); seen on Heavy as
+#   261116_095453_817_1084_19.mp4). monitor_job ALWAYS switches to whichever job is running, so a
+#   switch fails the request, every video must come from one run stamp, and any other name is
+#   ignored. Nothing is ever taken from a directory listing.
 # * There is no per-job cancel in the API. end_process / end_process_with_update cancel the
 #   CURRENT job globally, so Lumen never calls them. A Lumen timeout leaves the job in FP-Studio.
 
@@ -496,15 +500,18 @@ def studio_job_id(values: Any) -> str | None:
     return job_id if _UUID.match(job_id) else None
 
 
-def studio_video_for(values: Any, job_id: str) -> str | None:
-    """The video path from a monitor update, only if FP-Studio named it after this job."""
+_STUDIO_OUTPUT = re.compile(r"^(\d{6}_\d{6}_\d{3}_\d{1,4})_\d+\.mp4$")
+
+
+def studio_output(values: Any) -> tuple[str, str] | None:
+    """(path, worker run stamp) from a monitor update, only for FP-Studio's own output naming."""
     if not isinstance(values, list) or not values:
         return None
     path = framepack_video_path([_value(values[0])])
     if not path:
         return None
-    name = path.replace("\\", "/").rsplit("/", 1)[-1]
-    return path if name.startswith(f"{job_id}_") and name.endswith(".mp4") else None
+    match = _STUDIO_OUTPUT.match(path.replace("\\", "/").rsplit("/", 1)[-1])
+    return (path, match.group(1)) if match else None
 
 
 def studio_desc(values: Any) -> str:
@@ -680,13 +687,18 @@ class FramePackStudioProvider(FramePackProvider):
 
     async def _follow_job(self, client, root: str, job_id: str, seconds: float, on_progress: Progress,
                           deadline: float) -> str:
-        video = None
+        video, run = None, None
         last_desc, last_progress = "", None
         async for event, values in self._events(client, root, STUDIO_MONITOR, [job_id], deadline):
             if event not in ("generating", "complete"):
                 continue
-            video = studio_video_for(values, job_id) or video
             desc = studio_desc(values)
+            output = studio_output(values)
+            if output and not desc.startswith("Switching to current job"):
+                if run and output[1] != run:  # one job = one worker run; never mix in another's file
+                    raise ImageProviderError(f"FramePack-Studio reported videos from two different runs "
+                                             f"for job {job_id}; nothing was returned.")
+                video, run = output
             if desc.startswith("Switching to current job"):
                 raise ImageProviderError(f"FramePack-Studio switched to another job before job {job_id} finished.")
             if desc.startswith("Error"):
@@ -695,17 +707,18 @@ class FramePackStudioProvider(FramePackProvider):
                 raise ImageProviderError(f"FramePack-Studio stopped job {job_id} ({desc}).")
             if desc == "Completed":
                 if not video:
-                    # FP-Studio's worker reports a generation exception as ('error', ...), which its queue
-                    # loop ignores, then ('end', None): the job is marked Completed with no result file.
+                    # job.result was empty (or not FP-Studio's output naming). An exception in its worker
+                    # also ends this way: the queue ignores ('error', ...) and marks the job Completed.
                     raise ImageProviderError(
-                        f"FramePack-Studio marked job {job_id} Completed without a video for it "
-                        f"(last progress: {_short(last_desc) or 'none'}). FP-Studio does this when generation "
-                        "raised an error; its console shows 'Error during generation' with the traceback.")
+                        f"FramePack-Studio marked job {job_id} Completed without a result file "
+                        f"(last progress: {_short(last_desc) or 'none'}). Its queue.json entry for this id "
+                        "shows the result; its console shows any 'Error during generation'.")
                 return video
             if desc:
                 last_desc = desc
             percent = framepack_progress(values if isinstance(values, list) else [], seconds)
-            if percent is not None and percent != last_progress:  # only changes, not every 50 ms poll
+            if percent is not None and (last_progress is None or percent > last_progress):
+                # Only forward movement: never every 50 ms poll, never a bar flipping back and forth.
                 last_progress = percent
                 await on_progress(percent, "Animating…")
         raise ImageProviderError(f"FramePack-Studio stopped reporting before job {job_id} finished.")

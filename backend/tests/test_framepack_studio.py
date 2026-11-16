@@ -13,11 +13,14 @@ import httpx
 from lumen.images import ImageProviderError
 from lumen.video_providers import (STUDIO_INPUTS, FramePackNeedsAdapter, FramePackProvider,
                                    FramePackStudioProvider, framepack_provider, studio_arguments,
-                                   studio_contract, studio_job_id, studio_video_for)
+                                   studio_contract, studio_job_id, studio_output)
 from tests.test_media_generation import video_settings
 
 JOB = "1b4e28ba-2fa1-41d2-883f-0016d3cca427"
 OTHER = "6fa459ea-ee8a-4ca4-894e-db77e160355e"
+# FP-Studio's worker names outputs after its own run stamp (generate_timestamp()), not the queue uuid.
+RUN = "261116_095453_817_1084"  # the stamp of the owner's 2026-11-16 hardware canary output on Heavy
+RUN2 = "261116_101500_002_77"
 DEFAULTS = ["Original", None, None, None, 1.0, "", "", 2500, True, 6, 9, 25, 1.0, 10.0, 0.0, "MagCache",
             25, 0.15, 0.1, 2, 0.25, 4, "Noise", True, [], 640, 640, True, 5]
 COMPONENTS = ["Radio", "Image", "Video", "Image", "Slider", "Textbox", "Textbox", "Number", "Checkbox",
@@ -95,8 +98,8 @@ class FakeStudio:
         self.job_id = job_id
         self.monitor = monitor if monitor is not None else [
             (None, "Waiting in queue. Position: 1", ""),
-            (video(f"/fps/outputs/{JOB}_9.mp4"), "Sampling", "<div>40%</div>"),
-            (video(f"/fps/outputs/{JOB}_37.mp4"), "Completed", "<div>100%</div>"),
+            (video(f"/fps/outputs/{RUN}_9.mp4"), "Sampling", "<div>40%</div>"),
+            (video(f"/fps/outputs/{RUN}_19.mp4"), "Completed", "<div>100%</div>"),
         ]
         self.calls = []
         self.start_data = None
@@ -206,9 +209,11 @@ class StudioContractTests(unittest.TestCase):
         self.assertEqual(studio_job_id([None, {"__type__": "update", "value": JOB}]), JOB)
         self.assertIsNone(studio_job_id([None, "Job added"]))
         self.assertIsNone(studio_job_id([None, None]))
-        self.assertEqual(studio_video_for([video(f"/o/{JOB}_37.mp4")], JOB), f"/o/{JOB}_37.mp4")
-        self.assertIsNone(studio_video_for([video(f"/o/{OTHER}_37.mp4")], JOB))
-        self.assertIsNone(studio_video_for([video("/o/clip.mp4")], JOB))
+        self.assertEqual(studio_output([video(f"/o/{RUN}_19.mp4")]), (f"/o/{RUN}_19.mp4", RUN))
+        self.assertEqual(studio_output([video("C:\\fps\\outputs\\261116_095453_817_9_9.mp4")])[1],
+                         "261116_095453_817_9")
+        for name in (f"{JOB}_19.mp4", "clip.mp4", f"{RUN}_19.webm", f"{RUN}_combined.mp4", f"x{RUN}_19.mp4"):
+            self.assertIsNone(studio_output([video(f"/o/{name}")]), name)
 
     def test_selection_is_explicit(self):
         self.assertIsInstance(framepack_provider(video_settings(framepack_api_name="/handle_start_button")),
@@ -261,7 +266,7 @@ class StudioRunTests(unittest.IsolatedAsyncioTestCase):
     async def test_one_job_end_to_end(self):
         fake = FakeStudio()
         result, progress = await self.run_studio(fake)
-        self.assertEqual(result["bytes"], f"MP4:/fps/outputs/{JOB}_37.mp4".encode())
+        self.assertEqual(result["bytes"], f"MP4:/fps/outputs/{RUN}_19.mp4".encode())
         self.assertEqual(result["provider"], "framepack-studio")
         self.assertEqual(result["model"], "framepack-studio:Original")
         self.assertEqual(result["job_id"], JOB)
@@ -301,23 +306,23 @@ class StudioRunTests(unittest.IsolatedAsyncioTestCase):
         updates = [(None, "Sampling 1/25 (section 1)", progress_html[i % 2]) for i in range(2000)]
         fake = FakeStudio(monitor=[*updates, (None, "Completed", "<div>100%</div>")])
         with self.assertRaisesRegex(ImageProviderError,
-                                    f"marked job {JOB} Completed without a video.*last progress: Sampling 1/25"):
+                                    f"marked job {JOB} Completed without a result file.*last progress: Sampling 1/25"):
             await self.run_studio(fake)
         self.assertFalse(any(p.startswith("/gradio_api/file=") for _, p in fake.calls))
 
     async def test_identical_progress_is_reported_once_per_change(self):
         same = [(None, "Sampling", "<div>10%</div>")] * 500 + [(None, "Sampling", "<div>37%</div>")] * 500
-        fake = FakeStudio(monitor=[*same, (video(f"/fps/outputs/{JOB}_37.mp4"), "Completed", "")])
+        fake = FakeStudio(monitor=[*same, (video(f"/fps/outputs/{RUN}_19.mp4"), "Completed", "")])
         _, progress = await self.run_studio(fake)
         self.assertEqual(progress, [5, 10, 37, 97])  # start, the two changes, saving
 
     async def test_full_gradio_video_payload_shape_is_accepted(self):
-        payload = {"video": {"path": f"/tmp/gradio/3f9c/{JOB}_37.mp4", "url": f"http://127.0.0.1:7863/gradio_api/file=/tmp/gradio/3f9c/{JOB}_37.mp4",
-                             "size": 812345, "orig_name": f"{JOB}_37.mp4", "mime_type": None, "is_stream": False,
+        payload = {"video": {"path": f"/tmp/gradio/3f9c/{RUN}_19.mp4", "url": f"http://127.0.0.1:7863/gradio_api/file=/tmp/gradio/3f9c/{RUN}_19.mp4",
+                             "size": 812345, "orig_name": f"{RUN}_19.mp4", "mime_type": None, "is_stream": False,
                              "meta": {"_type": "gradio.FileData"}}, "subtitles": None}
         fake = FakeStudio(monitor=[(payload, "Completed", "")])
         result, _ = await self.run_studio(fake)
-        self.assertEqual(result["bytes"], f"MP4:/tmp/gradio/3f9c/{JOB}_37.mp4".encode())
+        self.assertEqual(result["bytes"], f"MP4:/tmp/gradio/3f9c/{RUN}_19.mp4".encode())
 
     async def test_busy_studio_is_refused_before_upload(self):
         fake = FakeStudio(current=OTHER)
@@ -334,16 +339,38 @@ class StudioRunTests(unittest.IsolatedAsyncioTestCase):
             await self.run_studio(fake)
         self.assertEqual([m for m, _ in fake.calls], ["GET"])
 
-    async def test_another_jobs_video_is_never_returned(self):
-        fake = FakeStudio(monitor=[(video(f"/fps/outputs/{OTHER}_37.mp4"), "Completed", "")])
-        with self.assertRaisesRegex(ImageProviderError, "Completed without a video"):
+    async def test_another_runs_video_is_never_returned(self):
+        fake = FakeStudio(monitor=[(video(f"/fps/outputs/{RUN}_9.mp4"), "Sampling", "<div>40%</div>"),
+                                   (video(f"/fps/outputs/{RUN2}_19.mp4"), "Completed", "")])
+        with self.assertRaisesRegex(ImageProviderError, f"two different runs for job {JOB}"):
             await self.run_studio(fake)
         self.assertFalse(any(p.startswith("/gradio_api/file=") for _, p in fake.calls))
 
+    async def test_names_that_are_not_fp_studio_outputs_are_ignored(self):
+        for name in (f"{OTHER}_19.mp4", "clip.mp4", "../../etc/passwd"):
+            fake = FakeStudio(monitor=[(video(f"/fps/outputs/{name}"), "Completed", "")])
+            with self.assertRaisesRegex(ImageProviderError, "Completed without a result file", msg=name):
+                await self.run_studio(fake)
+            self.assertFalse(any(p.startswith("/gradio_api/file=") for _, p in fake.calls))
+
+    async def test_regression_hardware_run_3_timestamp_output_is_this_jobs_result(self):
+        """2026-11-16 hardware canary (758c2b3): the job ran, FP-Studio wrote
+        outputs/261116_095453_817_1084_19.mp4 and the monitor reported it at Completed, but Lumen
+        required a "<uuid>_" prefix and failed. monitor_job(our id) yields that job's own job.result."""
+        heavy = "/data/ai-media-studio/FP-Studio/outputs"
+        updates = [(None, "Sampling", f"<div>{10 if i % 2 else 37}%</div>") for i in range(3000)]
+        fake = FakeStudio(monitor=[(None, "Waiting in queue. Position: 1", ""), *updates,
+                                   (video(f"{heavy}/{RUN}_9.mp4"), "Sampling", "<div>60%</div>"),
+                                   (video(f"{heavy}/{RUN}_19.mp4"), "Completed", "<div>100%</div>")])
+        result, progress = await self.run_studio(fake)
+        self.assertEqual(result["bytes"], f"MP4:{heavy}/{RUN}_19.mp4".encode())
+        self.assertEqual(result["job_id"], JOB)
+        self.assertEqual(progress, [5, 37, 60, 97])  # forward movement only, never every poll
+
     async def test_switch_to_another_job_fails_closed(self):
-        fake = FakeStudio(monitor=[(video(f"/fps/outputs/{JOB}_9.mp4"), "Sampling", "<div>30%</div>"),
-                                   (video(f"/fps/outputs/{JOB}_9.mp4"), "Switching to current job...", ""),
-                                   (video(f"/fps/outputs/{OTHER}_37.mp4"), "Completed", "")])
+        fake = FakeStudio(monitor=[(video(f"/fps/outputs/{RUN}_9.mp4"), "Sampling", "<div>30%</div>"),
+                                   (video(f"/fps/outputs/{RUN}_9.mp4"), "Switching to current job...", ""),
+                                   (video(f"/fps/outputs/{RUN2}_19.mp4"), "Completed", "")])
         with self.assertRaisesRegex(ImageProviderError, "switched to another job"):
             await self.run_studio(fake)
 
@@ -529,3 +556,64 @@ class OldFramePackTimeoutTests(unittest.IsolatedAsyncioTestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class StudioJobOutputScriptTests(unittest.TestCase):
+    """scripts/framepack-studio-job-output.py: read-only recovery of ONE job's recorded output."""
+
+    def setUp(self):
+        import importlib.util, os, tempfile, time
+        from pathlib import Path
+        script = Path(__file__).resolve().parents[2] / "scripts" / "framepack-studio-job-output.py"
+        spec = importlib.util.spec_from_file_location("fps_job_output", script)
+        self.mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(self.mod)
+        self.tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self.tmp.name)
+        (self.root / "outputs").mkdir()
+        self.started = time.time() - 600
+        self.file = self.root / "outputs" / f"{RUN}_19.mp4"
+        self.file.write_bytes(b"\x00\x00\x00\x18ftypmp42" + b"0" * 64)
+        os.utime(self.file, (self.started + 500, self.started + 500))
+        self.queue = {JOB: {"id": JOB, "status": "completed", "error": None, "result": str(self.file),
+                            "started_at": self.started, "completed_at": self.started + 510},
+                      OTHER: {"id": OTHER, "status": "completed", "error": None, "result": None,
+                              "started_at": self.started - 900, "completed_at": self.started - 800}}
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def run_script(self, *extra, job=JOB):
+        import io
+        from contextlib import redirect_stdout
+        (self.root / "queue.json").write_text(json.dumps(self.queue))
+        out = io.StringIO()
+        with redirect_stdout(out):
+            code = self.mod.main(["--queue-json", str(self.root / "queue.json"), "--job-id", job, *extra])
+        return code, json.loads(out.getvalue())
+
+    def test_timestamp_named_result_of_this_job_matches_and_copies(self):
+        code, summary = self.run_script("--copy-to", str(self.root / "copy"))
+        self.assertEqual((code, summary["result"]), (0, "MATCH"), summary)
+        self.assertEqual(summary["file"], str(self.file.resolve()))
+        self.assertEqual((self.root / "copy" / "lumen-fps-canary.mp4").read_bytes(), self.file.read_bytes())
+
+    def test_refusals_never_guess_from_the_folder(self):
+        cases = {
+            "other job with no result": dict(job=OTHER),
+            "unknown job": dict(job="00000000-0000-4000-8000-000000000000"),
+        }
+        for label, kw in cases.items():
+            code, summary = self.run_script(**kw)
+            self.assertEqual((code, summary["result"]), (1, "REFUSED"), label)
+        for label, change in {"failed": {"status": "failed"}, "error": {"error": "boom"},
+                              "outside outputs": {"result": "/etc/hosts"},
+                              "uuid name": {"result": str(self.root / "outputs" / f"{JOB}_19.mp4")},
+                              "before the run": {"started_at": self.started + 2000,
+                                                 "completed_at": self.started + 2100}}.items():
+            saved = dict(self.queue[JOB])
+            self.queue[JOB].update(change)
+            code, summary = self.run_script()
+            self.assertEqual((code, summary["result"]), (1, "REFUSED"), label)
+            self.queue[JOB] = saved
+        self.assertFalse((self.root / "copy").exists())
