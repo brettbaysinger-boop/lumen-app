@@ -51,3 +51,9 @@ test('the client video pattern matches the server video_request pattern',
   assert.match(server, /\{\{0,90\}\}/);
   assert.match(VIDEO_REQUEST.source, /\{0,90\}/);
 });
+
+test('Chat decides the image shortcut only through isImageRequest or an image-offer "yes"', () => {
+  const chat = fs.readFileSync('app/(tabs)/index.tsx', 'utf8');
+  assert.match(chat, /const wantsImage = !document && !images\.length &&\s+\(isImageRequest\(text\) \|\| followupImagePrompt !== null\);/);
+  assert.equal((chat.match(/generateImage\(/g) || []).length, 1);
+});
