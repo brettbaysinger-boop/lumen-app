@@ -4,7 +4,7 @@
 // job status is only requested in Private; Gallery shows videos in Private and reads nothing in Public.
 //   EXPO_PUBLIC_SUPABASE_URL=http://127.0.0.1:54321 EXPO_PUBLIC_SUPABASE_ANON_KEY=test \
 //   EXPO_PUBLIC_LUMEN_API_URL=http://127.0.0.1:8001 npx expo export --platform web --clear
-//   node scripts/test-media-generation-browser.cjs   (MEDIA_SHOTS=dir also saves screenshots)
+//   node scripts/test-animated-media-generation-browser.cjs   (MEDIA_SHOTS=dir also saves screenshots)
 const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path'),http=require('node:http');
 const {chromium}=require(process.env.LUMEN_PLAYWRIGHT_MODULE||'playwright');
 const server=require('./serve-web.cjs').createWebServer(path.resolve('dist'));

@@ -7,10 +7,11 @@ the live database or a phone. Not deployed.
 
 | Capability | Service on Heavy | How Lumen reaches it | State |
 |---|---|---|---|
-| Still images | ComfyUI (`COMFYUI_URL`, FLUX.2 Klein workflow) | `images.py`, `companion_images.py` (unchanged path) | Worked live 2026-10-09 |
+| Still images (default) | ComfyUI + **BigLust SDXL v1.6** (`backend/workflows/biglust-sdxl-v16-api.json`, `COMFYUI_CHECKPOINT`) | `images.py`, `companion_images.py` | Owner requirement 2026-11-16; checkpoint not yet confirmed on Heavy |
+| Still images (previous) | ComfyUI + FLUX.2 Klein (`flux2-klein-4b-fp8.json`) | same | Worked live 2026-10-09 |
 | Image to video | FramePack Gradio app (`demo_gradio.py`, port 7862 per Local Media Studio's inventory) | `video_providers.FramePackProvider` (Gradio HTTP API) | New, not run on Heavy |
 | Text to video | Wan2.2 ComfyUI workflow, if exported | `video_providers.run_comfy_video_workflow` | New; no Wan2.2 workflow found in any repo |
-| Text to video without Wan2.2 | FLUX still, then FramePack | `media_jobs.run_video_job` (`t2i2v`) | New, not run on Heavy |
+| Text to video without Wan2.2 | BigLust SDXL still, then FramePack | `media_jobs.run_video_job` (`t2i2v`) | New, not run on Heavy |
 
 Local Media Studio is a browser page that calls ComfyUI directly (AnimateDiff templates); it has no
 backend to reuse. Its `scripts/inventory_heavy_readonly.sh` is the read-only way to confirm the
@@ -50,6 +51,27 @@ identifiable people; non-consent; intimate video made from an uploaded photo. Al
 get an explicit adult-age line and an anti-minor negative prompt where the workflow supports one.
 Keyword checks are a backstop, not a classifier.
 
+## Still-image default: BigLust SDXL v1.6
+
+All still images (direct Chat requests, companion-initiated images, and the first frame of
+text-to-video) go through the one workflow named by `COMFYUI_WORKFLOW`. The SDXL graph is a
+standard checkpoint graph: `CheckpointLoaderSimple` (UNet, CLIP and VAE from the checkpoint),
+positive and negative `CLIPTextEncode`, `EmptyLatentImage` 832×1216, `KSampler` 30 steps,
+CFG 6, `dpmpp_2m_sde`/`karras`, `VAEDecode`, `SaveImage`. The checkpoint filename is not
+guessed: it is set in `COMFYUI_CHECKPOINT`, and a workflow with `{{LUMEN_CHECKPOINT}}` refuses
+to run without it. Each message records the loaded checkpoint as its image model (provenance).
+Sampler, steps and size can be tuned in the JSON after the canary.
+
+Read-only check on Heavy (queues nothing, loads nothing):
+
+```bash
+python3 scripts/check-comfyui-image-workflow.py --url http://127.0.0.1:8188 \
+  --workflow backend/workflows/biglust-sdxl-v16-api.json --checkpoint '<exact filename>'
+```
+
+It lists every checkpoint, flags BigLust candidates, and prints `RESULT: READY` only when the named
+checkpoint and every node exist.
+
 ## Host setup (owner, after review)
 
 1. Apply `supabase/migrations/20261116100000_media_generation_jobs.sql` (new table; `chat-media`
@@ -57,7 +79,8 @@ Keyword checks are a backstop, not a classifier.
 2. On Heavy, run Local Media Studio's `scripts/inventory_heavy_readonly.sh`. Confirm FramePack's port,
    that `/gradio_api/info` lists `/process`, and its input labels (Image, Prompt, Negative Prompt,
    Seed, Total Video Length (Seconds), …).
-3. Backend `.env`: `VIDEO_GENERATION_ENABLED=true`, `FRAMEPACK_URL=http://<heavy>:7862`.
+3. Backend `.env`: `COMFYUI_WORKFLOW=<repo>/backend/workflows/biglust-sdxl-v16-api.json`,
+   `COMFYUI_CHECKPOINT=<exact name from the check>`, `VIDEO_GENERATION_ENABLED=true`, `FRAMEPACK_URL=http://<heavy>:7862`.
    Optional: `COMFYUI_T2V_WORKFLOW=/path/wan22_t2v_api.json` exported with "Save (API)" and these
    exact string values: `{{LUMEN_PROMPT}}`, optionally `{{LUMEN_NEGATIVE}}`, `{{LUMEN_SEED}}`,
    `{{LUMEN_FRAMES}}` (4n+1), `{{LUMEN_FPS}}`; output through VideoHelperSuite or SaveVideo as MP4/WebM.
