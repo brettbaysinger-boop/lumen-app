@@ -57,7 +57,7 @@ Keyword checks are a backstop, not a classifier.
 
 ## Readiness (owner-supplied Heavy discovery, 2026-11-16)
 
-### BigLust still images: preflight verified, generation UNTESTED
+### BigLust still images: GPU canary PASSED, Chat/Gallery delivery UNTESTED
 * Verified (read-only, on Heavy): ComfyUI 0.39.0 at `127.0.0.1:8188`, RTX 5060 Ti;
   `CheckpointLoaderSimple` lists exactly one checkpoint, `bigLust_v16.safetensors`; all six nodes
   of `biglust-sdxl-v16-api.json` are installed.
@@ -67,8 +67,15 @@ Keyword checks are a backstop, not a classifier.
   answers `/system_stats` with ComfyUI 0.39.0. It is reused as is; no new ComfyUI route is needed.
   The live backend has `COMFYUI_URL` and `COMFYUI_WORKFLOW` set, `COMFYUI_CHECKPOINT` not yet set
   (the current workflow does not need it; the BigLust one does).
-* UNTESTED: any generation with the BigLust workflow; Chat and Gallery delivery; desktop and S22
-  display.
+* PASSED (owner, 2026-11-16): isolated GPU canary `canary-comfyui-image.py --run-gpu` through the
+  live `COMFYUI_URL`: model `bigLust_v16.safetensors`, 832x1216, about 23 s.
+* Next, owner-gated: the images-only backend release in PR #52 (`release/biglust-images-20261116`,
+  on the live S22 release). Steps, backup/rollback and the Private Chat → Gallery canary are in
+  `docs/biglust-images-release.md` on that branch. No migration, no frontend, video off.
+* UNTESTED: Chat and Gallery delivery with BigLust; desktop and S22 display.
+* UNTESTED, flagged: this PR's inline frontend video (`StoredVideo`, `MediaJobStatus`, Gallery video
+  playback and Public lock) has run only in a desktop browser against fakes. It is not in the images
+  release and must be tested independently before it ships.
 
 ### FramePack video: NOT READY
 * Verified: a FramePack-Studio Gradio app on Heavy `127.0.0.1:7863`. It has no `/process`; its
@@ -151,10 +158,11 @@ updater refuses its backend, migration and operator-script files by design
 Proposed order, each a separate owner go-ahead, after #50 is accepted on the S22:
 1. Read-only Heavy evidence: `check-comfyui-image-workflow.py` (BigLust checkpoint and nodes) and
    `check-framepack-endpoint.py` (operational FramePack install). Nothing changes.
-2. Migration only (new table, video MIME types). Nothing reads it until step 3.
-3. Backend with video off (`VIDEO_GENERATION_ENABLED=false`) and `COMFYUI_WORKFLOW`/`COMFYUI_CHECKPOINT`
-   set to BigLust; restart `lumen-api` only. Canary: one Private image appears in Chat and Gallery
-   with the checkpoint as its model.
+2. Migration only (new table, video MIME types), needed only for video. Nothing reads it until video.
+3. Images first, from PR #52 (prepared, not run): BigLust backend change only, no migration, video
+   off, `COMFYUI_WORKFLOW`/`COMFYUI_CHECKPOINT` set to BigLust; restart `lumen-api` only. Canary: one
+   Private image appears in Chat and Gallery with the checkpoint as its model. The rest of this PR's
+   backend (video jobs, runtime changes) follows later with `VIDEO_GENERATION_ENABLED=false`.
 4. Frontend web build (chat video player, progress, Gallery lock) through the existing guarded path.
 5. Turn video on; canary: a 3-second image-to-video in Private, then on the S22.
 Not production-ready until the S22 tests in step 5 pass.
@@ -164,5 +172,5 @@ Not production-ready until the S22 tests in step 5 pass.
 * Five-minute video (segmentation, continuity, stitching): separate capability.
 * Cancelling a running job from the app.
 * Jobs do not survive an API restart; unfinished ones are marked failed on next use.
-* No real hardware evidence yet: BigLust filename, a generated image, the operational FramePack
-  API/port and a video canary are all unverified.
+* BigLust filename and a generated image are verified on Heavy. The FramePack-Studio adapter, its
+  API labels and a video canary are not; FramePack-Studio stays a separate later step.
