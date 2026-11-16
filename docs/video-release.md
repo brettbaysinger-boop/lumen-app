@@ -70,7 +70,16 @@ and was rolled back. Nothing else changed: video is still off, and no backend, d
 was made. Do not reinstall or retest this route. Stage 6 uses `VIDEO_FRAMEPACK_URL=http://127.0.0.1:17863`.
 `scripts/video-release.sh route` stays available as a read-only check.
 
-## Stage 2: migration (owner applies). STOP if anything else is pending
+## Stage 2: migration. APPLIED (owner, 2026-11-16); post-apply check pending
+
+Applied by the owner with `supabase db push --local` (CLI v2.119.0). Before applying:
+* `comm` showed only `20261116100000` pending;
+* the prompt listed exactly that one migration;
+* `migration-check` had shown the table absent and `chat-media` at 10 MB, images only.
+
+The undo SQL is saved at `~/.local/state/lumen-video-release/migration-undo.sql`. Do not rerun `db push` or
+reset Supabase. Read-only post-apply check: `bash scripts/video-release.sh migration-check`. It should report
+`"table": "present"`, `bucket_limit` 52428800 and `video/mp4` in `bucket_types`.
 
 `scripts/video-release.sh migration-check` reports whether `media_generation_jobs` exists and what
 `chat-media` allows. Before the migration, it writes the undo SQL with today's bucket values to
