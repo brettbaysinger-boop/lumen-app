@@ -51,6 +51,7 @@ class CognitionRuntime:
         if document_id:
             await selected_document(self.db, companion_id, document_id)
 
+        new_conversation = not conversation_id
         conversation = await self.db.get_conversation(conversation_id, companion_id) if conversation_id else None
         if conversation_id and not conversation:
             raise ValueError("Conversation not found for this companion")
@@ -70,6 +71,26 @@ class CognitionRuntime:
         if rmc_memory is not None:
             rmc_read_status, memories = await rmc_memory.relevant(
                 companion, conversation_id, user_message)
+            # New chats need a small stable continuity anchor. Hindsight
+            # relevance to an unrelated first question cannot be relied upon
+            # to surface a previously agreed nickname.
+            if new_conversation and rmc_read_status == "ok":
+                continuity_status, continuity = await rmc_memory.relevant(
+                    companion, conversation_id,
+                    "Which nicknames and shared names have the user and companion explicitly agreed to use?"
+                )
+                if continuity_status == "ok":
+                    # Favor verified shared continuity over generic initial
+                    # matches when the prompt has only 12 memory slots.
+                    combined, seen = [], set()
+                    for item in [*continuity, *memories]:
+                        key = item.get("id") or item.get("content")
+                        if key and key not in seen:
+                            combined.append(item)
+                            seen.add(key)
+                        if len(combined) >= 12:
+                            break
+                    memories = combined
         else:
             memories = await self.db.get_relevant_memories(
                 companion_id,
@@ -320,13 +341,26 @@ class CognitionRuntime:
         # Only eligible ordinary text turns can be screened for automatic RMC
         # learning. Explicit saves, commands/actions, photos and documents are
         # never re-ingested by this background path. Companion preference wins.
+        # A short affirmative reply can close a genuine nickname agreement.
+        # Require a proposal in the immediately preceding assistant turn;
+        # assistant enthusiasm alone must not create a durable memory.
+        from .rmc_shared_nicknames import agreed_nicknames
+        previous_assistant = (
+            recent[0].get("content", "") if recent and
+            recent[0].get("role") == "assistant" else ""
+        )
+        nickname_agreement = agreed_nicknames(
+            user_message, previous_assistant,
+            result.get("content", ""), companion.get("name", "Lumen")
+        ) if (rmc_memory is not None and conversational_model_reply) else None
         rmc_auto_eligible = (
             rmc_memory is not None
             and getattr(self.settings, "rmc_auto_ingest_enabled", False) is True
             and companion.get("auto_memory_enabled") is not False
             and not practice and not attachments and not document_id and not action
             and conversational_model_reply and memory_status == "none"
-            and 12 <= len(user_message.strip()) <= 2000
+            and ((12 <= len(user_message.strip()) <= 2000)
+                 or nickname_agreement is not None)
         )
         user_row = await self.db.create_message({
             "conversation_id": conversation_id,
@@ -427,6 +461,8 @@ class CognitionRuntime:
         # Internal-only scheduling handle. Do not repurpose the Supabase
         # observation_message_id response field: it drives old UI workflows.
         self.rmc_auto_message_id = str(user_row["id"]) if rmc_auto_eligible else None
+        self.rmc_auto_companion_id = companion_id if rmc_auto_eligible else None
+        self.rmc_auto_assistant_text = result["content"] if rmc_auto_eligible else ""
         observation_message_id = None
         if (rmc_memory is None and not practice and not attachments and not action and memory_status == "none"
                 and getattr(self.settings, "memory_observations_enabled", False) is True):

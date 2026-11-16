@@ -7,6 +7,7 @@ from unittest.mock import AsyncMock, Mock, patch
 from lumen.observations import Candidate
 from lumen.rmc_auto_ingest import (
     approved_evidence, auto_ingest_rmc_user_message,
+    auto_ingest_rmc_with_deferred_retry,
     deterministic_safe_preference, _screen,
 )
 
@@ -147,9 +148,107 @@ class RmcAutoTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(write.args, ("PATCH", "messages"))
         self.assertEqual(write.kwargs["json"]["metadata"], {
             "rmc_auto_state": "saved",
-            "rmc_auto_confirmed_count": 1, "original": "preserve",
+            "rmc_auto_confirmed_count": 1, "rmc_auto_attempts": 1,
+            "original": "preserve",
         })
         self.assertEqual(self.repo_class.call_args.args[1], "fictional-user-token")
+
+    async def test_companion_proposes_and_user_accepts_saved_as_shared_nickname(self):
+        self.message["content"] = "Yes, I love that name!"
+        self.message["created_at"] = "2026-11-16T14:00:00Z"
+        proposal = "Let's call ourselves the Moonlight Crew."
+        async def operation(method, table, **kw):
+            if method == "GET" and table == "messages":
+                if "id" in kw.get("params", {}):
+                    return [self.message]
+                return [{"role": "assistant", "content": proposal}]
+            if method == "PATCH" and table == "messages":
+                return []
+            raise AssertionError("No other storage operations allowed")
+        self.repo._request.side_effect = operation
+        with patch("lumen.rmc_auto_ingest._screen", new=AsyncMock()) as screen:
+            await auto_ingest_rmc_user_message(
+                self.settings, "fictional-user-token", USER, MESSAGE,
+                "That sounds great.",
+            )
+            screen.assert_not_awaited()
+        self.engine.remember.assert_awaited_once()
+        args = self.engine.remember.call_args.args
+        self.assertEqual(args[2], "auto-shared:" + MESSAGE + ":0")
+        self.assertIn("Moonlight Crew", args[3])
+        self.assertIn("user agreed", args[3].lower())
+        metadata = self.repo._request.call_args.kwargs["json"]["metadata"]
+        self.assertEqual(metadata["rmc_auto_kind"], "agreed_nickname")
+        self.assertEqual(metadata["rmc_auto_confirmed_count"], 1)
+
+    async def test_unaccepted_proposal_does_not_enter_rmc(self):
+        self.message["content"] = "What should we do next?"
+        self.message["created_at"] = "2026-11-16T14:00:00Z"
+        async def operation(method, table, **kw):
+            if method == "GET" and table == "messages":
+                if "id" in kw.get("params", {}):
+                    return [self.message]
+                return [{"role": "assistant", "content":
+                         "Let's call ourselves the Solar Duo."}]
+            if method == "PATCH" and table == "messages":
+                return []
+            raise AssertionError("No other storage operations allowed")
+        self.repo._request.side_effect = operation
+        await self._run([])
+        self.engine.remember.assert_not_awaited()
+        metadata = self.repo._request.call_args.kwargs["json"]["metadata"]
+        self.assertEqual(metadata["rmc_auto_state"], "no_durable_fact")
+
+    async def test_user_suggests_and_companion_accepts(self):
+        self.message["content"] = "Let's call ourselves the Starfire Circle."
+        with patch("lumen.rmc_auto_ingest._screen", new=AsyncMock()) as screen:
+            await auto_ingest_rmc_user_message(
+                self.settings, "fictional-user-token", USER, MESSAGE,
+                "I love that name! Starfire Circle it is.",
+            )
+            screen.assert_not_awaited()
+        self.engine.remember.assert_awaited_once()
+        self.assertIn("Starfire Circle", self.engine.remember.call_args.args[-1])
+
+    async def test_uncertain_shared_nickname_never_claims_saved(self):
+        self.message["content"] = "Let's call ourselves the Starfire Circle."
+        self.engine.remember.return_value = "unconfirmed"
+        with patch("lumen.rmc_auto_ingest._screen", new=AsyncMock()) as screen:
+            await auto_ingest_rmc_user_message(
+                self.settings, "fictional-user-token", USER, MESSAGE,
+                "I love that name!",
+            )
+            screen.assert_not_awaited()
+        metadata = self.repo._request.call_args.kwargs["json"]["metadata"]
+        self.assertEqual(metadata["rmc_auto_state"], "unconfirmed")
+        self.assertEqual(metadata["rmc_auto_confirmed_count"], 0)
+        self.assertNotIn("rmc_auto_kind", metadata)
+
+    async def test_deferred_retry_is_bounded_and_never_retries_uncertain(self):
+        deferred = {
+            "id": "older",
+            "metadata": {"rmc_auto_state": "deferred", "rmc_auto_attempts": 1},
+        }
+        self.repo._request = AsyncMock(return_value=[deferred])
+        with patch("lumen.rmc_auto_ingest.auto_ingest_rmc_user_message",
+                   new=AsyncMock()) as ingest:
+            await auto_ingest_rmc_with_deferred_retry(
+                self.settings, "fictional-user-token", USER,
+                MESSAGE, COMPANION, "Great!",
+            )
+        self.assertEqual(ingest.await_count, 2)
+        self.assertEqual(ingest.await_args_list[0].args[-1], "Great!")
+        self.assertEqual(ingest.await_args_list[1].args[-1], "older")
+
+        self.repo._request.return_value = [
+            {"id": "uncertain", "metadata": {"rmc_auto_state": "unconfirmed"}}]
+        with patch("lumen.rmc_auto_ingest.auto_ingest_rmc_user_message",
+                   new=AsyncMock()) as ingest:
+            await auto_ingest_rmc_with_deferred_retry(
+                self.settings, "fictional-user-token", USER,
+                MESSAGE, COMPANION, "",
+            )
+        self.assertEqual(ingest.await_count, 1)
 
     async def test_uncertain_save_not_reported_as_confirmed(self):
         self.engine.remember.return_value = "unconfirmed"
