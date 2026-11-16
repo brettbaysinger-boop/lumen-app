@@ -23,6 +23,7 @@ from .observations import Candidate, Candidates, automatic_candidate
 from .ollama import OllamaProvider, model_lock, observation_tasks
 from .rmc.adapter import LumenRmcMemory
 from .rmc_shared_nicknames import agreed_nicknames
+from .rmc_continuity import durable_continuity_evidence
 
 log = logging.getLogger(__name__)
 
@@ -197,14 +198,21 @@ async def auto_ingest_rmc_user_message(settings, token: str, user_id: str,
         )
         if shared_agreement and _SENSITIVE.search(shared_agreement):
             shared_agreement = None
+        # Store only verbatim, owner-asserted lasting continuity facts here.
+        # The native RMC/Hindsight pipeline does the extraction; this path is
+        # a conservative host approval gate, not a second memory engine.
+        continuity = None if shared_agreement else durable_continuity_evidence(statement)
+        if continuity and (_SENSITIVE.search(continuity) or
+                           classify_natural_evidence(statement, continuity).action != "allow"):
+            continuity = None
         # Short replies are eligible ONLY when they completed a verified
         # naming agreement; don't screen ordinary "yes" as standalone facts.
         if len(statement.strip()) < 12 and not shared_agreement:
             return
 
-        if shared_agreement:
-            # The user explicitly accepted a proposed nickname. This
-            # source-backed agreement does not need an LLM classifier.
+        if shared_agreement or continuity:
+            # Evidence is already approved by a bounded deterministic gate,
+            # so no classifier may hallucinate additional memory content.
             candidates = []
         else:
             screening = asyncio.create_task(_screen(settings, statement, companion))
@@ -233,7 +241,7 @@ async def auto_ingest_rmc_user_message(settings, token: str, user_id: str,
                 candidates = None
 
         if candidates is not None:
-            evidence = [shared_agreement] if shared_agreement else []
+            evidence = [shared_agreement or continuity] if (shared_agreement or continuity) else []
             for candidate in candidates:
                 value = approved_evidence(statement, candidate, companion.get("name", "Companion"))
                 if value and value not in evidence:
@@ -274,6 +282,8 @@ async def auto_ingest_rmc_user_message(settings, token: str, user_id: str,
         meta["rmc_auto_confirmed_count"] = saved_count
         if shared_agreement and saved_count:
             meta["rmc_auto_kind"] = "agreed_nickname"
+        elif continuity and saved_count:
+            meta["rmc_auto_kind"] = "durable_continuity"
         await db._request(
             "PATCH", "messages",
             params={"id": "eq." + message_id, "companion_id": "eq." + row["companion_id"]},
