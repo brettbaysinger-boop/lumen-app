@@ -18,6 +18,7 @@ from .config import get_settings
 from .ollama import OllamaProvider
 from .runtime import CognitionRuntime
 from .memory_backend import memory_backend, supabase_memory_enabled
+from .rmc_auto_ingest import auto_ingest_rmc_user_message
 from .rmc.memory_routes import router as rmc_memory_router
 from .schemas import (
     HealthResponse,
@@ -111,11 +112,21 @@ async def respond(request: RespondRequest, background_tasks: BackgroundTasks, us
                 document_id=str(request.document_id) if request.document_id else None,
             )
         queue_supabase_memory_work(background_tasks, user, request.companion_id, response.observation_message_id)
+        queue_rmc_memory_work(background_tasks, user, instance)
         return response
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except Exception as exc:
         raise HTTPException(status_code=502, detail="Lumen could not complete this request. Check the API logs.") from exc
+
+
+def queue_rmc_memory_work(background_tasks: BackgroundTasks, user: AuthUser, instance: CognitionRuntime):
+    """Schedule a scoped RMC ingest *after* a completed persisted reply."""
+    message_id = getattr(instance, "rmc_auto_message_id", None)
+    if message_id and getattr(settings, "rmc_auto_ingest_enabled", False):
+        background_tasks.add_task(
+            auto_ingest_rmc_user_message, settings, user.token, user.id, message_id
+        )
 
 
 def queue_supabase_memory_work(background_tasks: BackgroundTasks, user: AuthUser, companion_id: str,
@@ -350,6 +361,7 @@ async def respond_stream(request: RespondRequest, background_tasks: BackgroundTa
                         emit=queue.put,
                     )
                 queue_supabase_memory_work(background_tasks, user, request.companion_id, result.observation_message_id)
+                queue_rmc_memory_work(background_tasks, user, instance)
                 await queue.put({"type": "done", "response": result.model_dump()})
             except Exception:
                 await queue.put({"type": "error", "text": "Lumen could not finish this reply. Reload before retrying."})
