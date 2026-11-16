@@ -36,9 +36,9 @@ function fakeRtc({user,embedded}){
   };
 }
 let offers=0;
-async function open(browser,{width,height,query='?room=live&conversation='+I,embedded=true}){
+async function open(browser,{width,height,query='?room=live&conversation='+I,embedded=true,before=null}){
   const page=await browser.newPage({viewport:{width,height}}),errors=[];page.on('pageerror',error=>errors.push(error.message));
-  await page.addInitScript(fakeRtc,{user,embedded});
+  await page.addInitScript(fakeRtc,{user,embedded});if(before)await page.addInitScript(before);
   await page.route('http://127.0.0.1:54321/**',async route=>{const req=route.request(),resource=new URL(req.url()).pathname.split('/').pop();let data=[];
     if(resource==='user')data=user;if(resource==='ensure_my_companion')data=C;
     if(resource==='companions')data=req.headers()['accept']?.includes('object')?companion:[companion];
@@ -73,7 +73,7 @@ const whole32=(m,what)=>{assert.ok(Math.abs(m.video.width/m.video.height-1.5)<0.
 const oneSession=(m,what)=>{assert.equal(m.tag,'first',`${what}: still the very same <video> element`);assert.equal(m.sameStream,true,`${what}: still the same stream`);assert.deepEqual(m.rtc,{created:1,closed:0},`${what}: one connection, never closed`);assert.equal(offers,1,`${what}: one offer to the server, no reconnection`);};
 
 (async()=>{await new Promise(resolve=>server.listen(8765,'127.0.0.1',resolve));const browser=await chromium.launch({headless:true,args:['--no-sandbox']});try{
-  for(const [width,height] of [[320,568],[360,660],[390,844],[412,915]]){
+  for(const [width,height] of [[320,568],[360,660],[360,780],[390,844],[412,915]]){   // 360x780: Galaxy S22
     offers=0;const {page,errors}=await open(browser,{width,height});const at=`${width}x${height}`;
     const shot=async name=>{if(SHOTS)await page.screenshot({path:path.join(SHOTS,`${width}-${name}.png`)});};
     // --- Video Chat: opened by the room itself, once ---
@@ -100,6 +100,12 @@ const oneSession=(m,what)=>{assert.equal(m.tag,'first',`${what}: still the very 
     assert.equal(await page.evaluate(()=>{let node=document.querySelector('textarea');while(node){const colour=getComputedStyle(node).backgroundColor;if(colour!=='rgba(0, 0, 0, 0)'&&node.getBoundingClientRect().height>=innerHeight-1)return colour;node=node.parentElement;}return null;}),CHARCOAL,`${at}: the room uses the account's background`);
     assert.equal(await page.locator('[aria-label="Live video"]').evaluate(node=>getComputedStyle(node).backgroundColor),AMBER,`${at}: the room uses the account's accent`);
     assert.deepEqual(await page.evaluate(()=>window.__posted.filter(word=>word!=='chat')),['ready']);
+    // Android S22 fix: no control over the companion's face. The switch is in the button row on tall
+    // windows, or in the picture's lower corner on short ones; never in its upper half.
+    const privacyBox=await page.locator('[aria-label="Who might be nearby"]').first().boundingBox();
+    assert.ok(privacyBox,`${at}: the Private / Public switch is shown in Video Chat`);
+    if(height>=680)assert.ok(privacyBox.y>=m.live.top-0.5&&privacyBox.y+privacyBox.height<=m.video.top+0.5,`${at}: the switch is in the button row, above the picture ${JSON.stringify(privacyBox)}`);
+    else assert.ok(privacyBox.y>=m.video.top+m.video.height/2,`${at}: the switch stays in the lower half of the picture ${JSON.stringify(privacyBox)}`);
     oneSession(m,`${at} Video Chat`);await shot('1-video-chat');
 
     // --- The keyboard takes half the window: video shrinks, message box stays ---
@@ -117,6 +123,11 @@ const oneSession=(m,what)=>{assert.equal(m.tag,'first',`${what}: still the very 
     for(const name of ['back','theater','more','live','documents','practice','composer'])assert.equal(m[name],null,`${at} Theater: ${name} is out of the way`);
     assert.equal(m.tabs,0);inside(m.leave,m,`${at} Theater: back to Video Chat`);assert.ok(m.leave.height>=44);
     const toggle=page.getByRole('button',{name:'Show the conversation'});assert.equal(await toggle.getAttribute('aria-expanded'),'false');await shot('3-theater');
+    // Theater's controls step aside after a few quiet seconds, leaving the whole picture, and a tap on
+    // the picture brings them back (Android S22 fix: they covered the companion's face).
+    await page.waitForTimeout(4400);assert.equal(await page.getByRole('button',{name:'Leave Companion Theater and return to Video Chat'}).count(),0,`${at} Theater: the controls step aside`);
+    await shot('3b-theater-clear');oneSession(await measure(page),`${at} Theater, controls hidden`);
+    await page.getByRole('button',{name:'Show video controls'}).click();await page.getByRole('button',{name:'Leave Companion Theater and return to Video Chat'}).waitFor();
     // The messages panel opens under the picture, not over it, with the same message box.
     await toggle.click();await page.getByRole('button',{name:'Hide the conversation'}).waitFor();await page.waitForTimeout(300);
     m=await measure(page);whole32(m,`${at} Theater + messages`);inside(m.video,m,`${at} Theater + messages video`);inside(m.composer,m,`${at} Theater + messages: message box`);
@@ -187,6 +198,20 @@ const oneSession=(m,what)=>{assert.equal(m.tag,'first',`${what}: still the very 
     assert.equal(await page.getByRole('button',{name:'Close live video and return to the chat'}).count(),1);assert.equal((await measure(page)).rtc.created,1);
     assert.deepEqual(errors,[],`${at}: no page errors`);await page.close();
   }
+  // Android S22 fix: inside the phone app the room shows the colours the app states (the native chat's
+  // dark grey), even when the account's saved copy says otherwise; and it is never zoomed.
+  {offers=0;const {page,errors}=await open(browser,{width:360,height:780,before:'window.__lumenRoomAppearance={schemeId:"gold-dark",appearance:{background:"#202124",text:"#eeeeee",accent:"#e8893a"}};'});
+    await page.locator('video').waitFor();await page.waitForTimeout(400);
+    assert.equal(await page.evaluate(()=>{let node=document.querySelector('textarea');while(node){const colour=getComputedStyle(node).backgroundColor;if(colour!=='rgba(0, 0, 0, 0)'&&node.getBoundingClientRect().height>=innerHeight-1)return colour;node=node.parentElement;}return null;}),'rgb(32, 33, 36)','the room uses the phone app\'s background, not the account copy');
+    assert.equal(await page.locator('[aria-label="Live video"]').evaluate(node=>getComputedStyle(node).backgroundColor),'rgb(232, 137, 58)','the room uses the phone app\'s accent');
+    assert.match(await page.evaluate(()=>document.querySelector('meta[name=viewport]').content),/maximum-scale=1, user-scalable=no/);
+    assert.ok((await measure(page)).back.top<=4,'no empty band above the room header');
+    assert.deepEqual(errors,[]);await page.close();}
+  // An ordinary browser tab ignores any such value and keeps the account's colours and normal zoom.
+  {offers=0;const {page,errors}=await open(browser,{width:390,height:844,query:'?conversation='+I,embedded:false,before:'window.__lumenRoomAppearance={schemeId:"gold-dark",appearance:{background:"#202124"}};'});
+    await page.waitForTimeout(400);assert.doesNotMatch(await page.evaluate(()=>document.querySelector('meta[name=viewport]').content),/user-scalable=no/);
+    assert.equal(await page.evaluate(()=>getComputedStyle(document.querySelector('textarea').closest('[data-testid=conversation-panel]')?.parentElement??document.body).backgroundColor==='rgb(32, 33, 36)'),false);
+    assert.deepEqual(errors,[]);await page.close();}
   // Outside the room the website is as it was: its tabs, its header, its size choices.
   offers=0;const {page,errors}=await open(browser,{width:390,height:844,query:'?conversation='+I,embedded:false});
   assert.ok(await page.locator('[role=tab]').count()>=3,'the ordinary website keeps its tab bar');

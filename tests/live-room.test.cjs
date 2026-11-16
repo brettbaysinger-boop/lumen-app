@@ -70,7 +70,16 @@ test('the phone app screen: one header at a time, room words handled narrowly, k
   const screen=read('app/live-video.tsx');
   assert.match(screen,/const showingRoom = !!WebView && active && room !== null;/);
   assert.match(screen,/\{!showingRoom && <View[\s\S]{0,400}‹ Chat[\s\S]{0,300}Browser ↗/);     // its own bar returns whenever the room's header is not there
-  assert.match(screen,/onLoadStart=\{\(\) => setRoom\(null\)\}/);                         // a page load (sign-in, an older web build) starts from the bar
+  // A real page load (sign-in, an older web build) starts from the bar; Android's in-page address
+  // changes (also reported as "load start") no longer drop the room (Android S22 fix: two headers).
+  assert.match(screen,/onLoadStart=\{\(event: \{ nativeEvent: \{ loading\?: boolean \} \}\) => \{ if \(event\.nativeEvent\.loading !== false\) setRoom\(null\); \}\}/);
+  assert.match(screen,/else if \(word === 'chat' \|\| word === 'theater'\) setRoom\(word\);/);
+  assert.match(screen,/scalesPageToFit=\{false\} textZoom=\{100\}/);                       // no overview zoom kept across turning the phone
+  // The native chat: the keyboard-avoiding view keeps the screen's width, and starts afresh after Live Video.
+  const chat=read('app/(tabs)/index.tsx');
+  assert.match(chat,/<KeyboardAvoidingView key=\{`kav-\$\{keyboardEpoch\}`\}[^\n]*Platform\.OS !== 'web' && !\(showSidebar && !isMobile\) \? \{ width: '100%' as const \}/);
+  assert.match(chat,/if \(Platform\.OS !== 'web' && takeRoomLeft\(\)\) setKeyboardEpoch/);
+  assert.match(screen,/useEffect\(\(\) => \(\) => noteRoomLeft\(\), \[\]\);/);
   assert.match(screen,/if \(report\) \{ setProbe\(report\); return; \}/);                 // the capability probe is untouched
   assert.match(screen,/word === 'close'\) close\(\);\s+else if \(word === 'browser'\) browser\(\);/);
   assert.match(screen,/<KeyboardAvoidingView behavior="padding" style=\{\{ flex: 1 \}\}><WebView/);
@@ -114,7 +123,13 @@ test('appearance: the account synchronization reports where it stands, and nothi
   assert.match(theme,/void queue\.flush\(\)\.then\(saved => report\(saved \? 'synced' : 'failed'\)\)/);
   assert.equal((theme.match(/from\('user_appearance_preferences'\)/g)||[]).length,2);   // the same one read and one write as before
   assert.match(controls,/Not saved to your account/);assert.match(controls,/Saved to your account/);
-  for(const file of ['app/live-video.tsx','lib/live-room.ts','components/LiveRoom.tsx'])assert.doesNotMatch(read(file),/appearance|schemeId|scheme_id/i,file);   // no second theme path through the web view
+  for(const file of ['lib/live-room.ts','components/LiveRoom.tsx'])assert.doesNotMatch(read(file),/appearance|schemeId|scheme_id/i,file);
+  // Android S22 fix: the phone app states its own colours to its room, once, before the page starts.
+  // One path, display only: the room never writes them to the account (still one read, one write above).
+  const video=read('app/live-video.tsx');
+  assert.match(video,/roomAppearanceScript\(schemeId, appearance\) \+ IN_APP_PROBE/);
+  assert.match(video,/injectedJavaScriptBeforeContentLoaded=\{beforeContent\}/);
+  assert.match(theme,/!roomEmbedded\(\) \|\| !isLiveRoom\(\)\) return null;/);   // only the phone app's own room, never a browser tab
 });
 test('the guarded web updater accepts this change as it stands: its allowlist is not widened',()=>{
   const updater=read('scripts/animated-web-update.sh');

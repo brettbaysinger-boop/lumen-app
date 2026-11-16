@@ -50,3 +50,27 @@ export function readAppearance(value: unknown): Appearance {
     portraitOpacity: typeof input.portraitOpacity === 'number' && Number.isFinite(input.portraitOpacity) ? Math.max(.5, Math.min(1, input.portraitOpacity)) : .92,
   };
 }
+
+// --- The phone app's appearance, handed to its own Live Room view (Android S22 fix) ---------------
+// The room inside the phone app used to find its colours on its own, through a second sign-in in
+// the web view and the account's saved copy. Whenever that copy was missing, stale or unreadable
+// ("Not saved" in Settings → Appearance) the room fell back to other colours than the app around it.
+// Now the app states the colours it is showing, before the page starts, and the room shows exactly
+// those. Display only: nothing is saved, and no other page or browser tab is affected.
+export const ROOM_APPEARANCE_GLOBAL = '__lumenRoomAppearance';
+export type RoomAppearance = { schemeId: string; appearance: Appearance };
+
+/** App side: one line that leaves the colours where the room can read them. Data is validated JSON only. */
+export function roomAppearanceScript(schemeId: string, appearance: Appearance): string {
+  const value = JSON.stringify({ schemeId: String(schemeId).slice(0, 40), appearance: readAppearance(appearance) });
+  // JSON is a valid JS expression; '<' is escaped so nothing in it can end a script element.
+  return `window.${ROOM_APPEARANCE_GLOBAL}=${value.replace(/</g, '\\u003c')};true;`;
+}
+
+/** Page side: what the phone app stated, or null in an ordinary browser or with anything malformed. */
+export function readRoomAppearance(source: unknown): RoomAppearance | null {
+  if (!source || typeof source !== 'object') return null;
+  const value = source as Record<string, unknown>;
+  if (typeof value.schemeId !== 'string' || !value.appearance || typeof value.appearance !== 'object') return null;
+  return { schemeId: value.schemeId, appearance: readAppearance(value.appearance) };
+}

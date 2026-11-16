@@ -18,8 +18,11 @@ import {
   DEFAULT_APPEARANCE,
   readAppearance,
   appearanceColors,
+  readRoomAppearance,
+  ROOM_APPEARANCE_GLOBAL,
   type Appearance,
 } from './appearance';
+import { isLiveRoom, roomEmbedded } from './live-room';
 import {
   getThemeColors,
   SCHEMES,
@@ -398,20 +401,29 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     return true;
   }, [update]);
 
+  // Inside the phone app's Live Room the app's own colours win (see lib/appearance.ts), so the room
+  // and the native chat around it always match. Read once: the app states them before the page starts.
+  const roomPrefs = useMemo<Preferences | null>(() => {
+    if (Platform.OS !== 'web' || typeof window === 'undefined' || !roomEmbedded() || !isLiveRoom()) return null;
+    const stated = readRoomAppearance((window as any)[ROOM_APPEARANCE_GLOBAL]);
+    return stated ? { schemeId: validScheme(stated.schemeId), appearance: stated.appearance } : null;
+  }, []);
+  const shown = roomPrefs ?? prefs;
+
   const colors = useMemo(
-    () => appearanceColors(prefs.schemeId, prefs.appearance),
-    [prefs]
+    () => appearanceColors(shown.schemeId, shown.appearance),
+    [shown]
   );
 
-  const mode = prefs.schemeId.includes('light') ? 'light' : 'dark';
+  const mode = shown.schemeId.includes('light') ? 'light' : 'dark';
 
   return (
     <ThemeContext.Provider value={{
       colors,
-      schemeId: prefs.schemeId,
+      schemeId: shown.schemeId,
       setSchemeId,
       mode,
-      appearance: prefs.appearance,
+      appearance: shown.appearance,
       setAppearance,
       resetAppearance,
       importDeviceAppearance,

@@ -69,7 +69,7 @@ test('opening hands the browser the bare address: no token, cookie or account de
 });
 test('the chat screen always shows the action in the phone app, checks on each tap, and keeps the web toggle web-only',()=>{
   const screen=fs.readFileSync('app/(tabs)/index.tsx','utf8');
-  assert.match(screen,/\{Platform\.OS !== 'web' && <TouchableOpacity accessibilityRole="link" accessibilityLabel="Open live video in your browser"/);   // not hidden when video is down
+  assert.match(screen,/\{Platform\.OS !== 'web' \? <>\s*<Pill c=\{colors\} label=\{liveVideoChecking \? 'Checking…' : 'Live video'\} hint="Open live video"/);   // not hidden when video is down; a real button
   assert.doesNotMatch(screen,/liveVideoOnWeb|setLiveVideoWeb/);                       // no remembered availability that could go stale
   assert.match(screen,/const status = url \? await liveVideoStatus\(\) : 'unknown';[\s\S]{0,300}liveVideoPrompt\(url, status, inAppVideoSupported\(\)\)[\s\S]{0,900}Alert\.alert\(prompt\.title, prompt\.message/);
   assert.match(screen,/text: 'Check again', onPress: \(\) => \{ void check\(\); \}/);

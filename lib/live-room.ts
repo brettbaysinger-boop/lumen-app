@@ -120,3 +120,19 @@ export function liveRoomBox(view: RoomMode, availableWidth: number, availableHei
   const height = Math.max(0, Math.floor(Math.max(floor, fits) / 2) * 2);
   return { width: height * ROOM_ASPECT, height };
 }
+
+// --- No page zoom inside the phone app (Android S22 fix) -----------------------------------------
+// Android's web view scaled the room to fit ("overview" mode) and kept that scale across turning
+// the phone, so after landscape the conversation came back zoomed and cut off at the side. Inside
+// the phone app the room is a fixed app screen: one scale, the width of the phone, no pinch zoom.
+// An ordinary browser keeps its normal zoom.
+export const ROOM_VIEWPORT = 'width=device-width, initial-scale=1, minimum-scale=1, maximum-scale=1, user-scalable=no';
+export function lockRoomViewport(): void {
+  if (typeof document === 'undefined' || !roomEmbedded()) return;
+  let meta = document.querySelector('meta[name="viewport"]');
+  if (!meta) { meta = document.createElement('meta'); meta.setAttribute('name', 'viewport'); document.head.appendChild(meta); }
+  meta.setAttribute('content', ROOM_VIEWPORT);
+  // Nothing in the room may widen the page itself: anything too wide is cut inside its own box.
+  document.documentElement.style.overflowX = 'hidden';
+  document.body.style.overflowX = 'hidden';
+}
