@@ -125,7 +125,14 @@ It is enabled and started; with video off it logs "nothing to do" and exits 0. T
 sets `SUPABASE_*`/`VIDEO_*`/`FRAMEPACK_*`/`COMFYUI_*` inline, because the worker would not see them.
 Way back: `VIDEO_RELEASE_CONFIRM=worker-rollback scripts/video-release.sh worker-rollback`.
 
-## Stage 5: web app (Gallery Public lock, chat video, progress)
+## Stage 5: web app (Gallery Public lock, chat video, progress). Preflight READY (owner, 2026-11-16); update pending
+
+`check` from a clean worktree at `9ed4737` gave:
+* one fast-forward from `7f63d520f561`;
+* 8 frontend-only files;
+* 13 live local edits kept: the 11 tracked backend files the images and video patches change, plus 2 other existing edits;
+* HTTP 200 on 8081.
+
 From a clean clone of `release/video-frontend-20261116`:
 ```
 scripts/animated-web-update.sh check
