@@ -64,6 +64,9 @@ class Settings(BaseSettings):
     rmc_gateway_socket: str = ""
     rmc_host_key_file: str = ""
     rmc_timeout_seconds: float = Field(default=10.0, ge=1.0, le=60.0)
+    # D01-63: guarded host-side auto-ingestion through the EXISTING RMC gateway.
+    # Off until separately owner-authorized for the active app installation.
+    rmc_auto_ingest_enabled: bool = False
 
     # Optional Animated Companion mode. Empty avatar_url (the default) keeps
     # the mode off and every /v0.1/avatar route reports it as unavailable.

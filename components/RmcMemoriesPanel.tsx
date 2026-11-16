@@ -13,7 +13,12 @@ type Evidence = { id: string; content: string; kind: string };
 type Receipt = { id: string; at: string; status: string; message: string };
 type SearchReply = { backend: 'rmc'; scope: 'relevant_evidence'; complete_inventory: false; memories: Evidence[] };
 type SaveReply = { backend: 'rmc'; status: string; confirmed: boolean };
-type ReceiptsReply = { backend: 'rmc'; receipts: Receipt[] };
+type AutoReceipt = { id: string; at: string; status: string; confirmed_count: number };
+type ReceiptsReply = {
+  backend: 'rmc'; receipts: Receipt[];
+  automatic_learning_enabled: boolean;
+  auto_receipts: AutoReceipt[];
+};
 type PendingSave = { text: string; id: string };
 
 function statusLabel(status: string) {
@@ -48,6 +53,8 @@ export function RmcMemoriesPanel({ companion }: { companion: { id: string; name:
   const [saveNotice, setSaveNotice] = useState('');
   const [pendingSave, setPendingSave] = useState<PendingSave | null>(null);
   const [receipts, setReceipts] = useState<Receipt[]>([]);
+  const [autoReceipts, setAutoReceipts] = useState<AutoReceipt[]>([]);
+  const [autoLearningOn, setAutoLearningOn] = useState<boolean | null>(null);
   const [receiptsError, setReceiptsError] = useState('');
   const [receiptsBusy, setReceiptsBusy] = useState(false);
 
@@ -102,6 +109,8 @@ export function RmcMemoriesPanel({ companion }: { companion: { id: string; name:
     setHasSearched(false);
     setSearchError('');
     setReceipts([]);
+    setAutoReceipts([]);
+    setAutoLearningOn(null);
     setReceiptsError('');
     setPendingSave(null);
     setSaveNotice('');
@@ -161,10 +170,21 @@ export function RmcMemoriesPanel({ companion }: { companion: { id: string; name:
         !row || typeof row.status !== 'string' || typeof row.message !== 'string')) {
         throw new Error('Unexpected save receipt response.');
       }
+      if (typeof reply.automatic_learning_enabled !== 'boolean' ||
+          !Array.isArray(reply.auto_receipts) || reply.auto_receipts.some(item =>
+            !item || typeof item.status !== 'string' ||
+            !Number.isInteger(item.confirmed_count) ||
+            item.confirmed_count < 0 || item.confirmed_count > 2)) {
+        throw new Error('Unexpected automatic learning status response.');
+      }
       setReceipts(reply.receipts.slice(0, 20));
+      setAutoLearningOn(reply.automatic_learning_enabled);
+      setAutoReceipts(reply.auto_receipts.slice(0, 20));
     } catch (error) {
       if (currentUser.current === expected) {
         setReceipts([]);
+        setAutoReceipts([]);
+        setAutoLearningOn(null);
         setReceiptsError(error instanceof Error ? error.message : 'Could not load save receipts.');
       }
     } finally {
@@ -249,7 +269,13 @@ export function RmcMemoriesPanel({ companion }: { companion: { id: string; name:
         </View>
         <View style={box}>
           <Text style={heading}>How memory works</Text>
-          <Text style={body}>RMC is the active long-term memory store. Explicit “remember that” commands and saves here are supported. Automatic long-term extraction from ordinary conversations is currently off in RMC mode.</Text>
+          <Text style={body}>RMC is the active long-term memory store. Explicit “remember that” commands and saves here are supported.</Text>
+          <Text style={{ ...body, color: c.primary[300] }}>
+            {autoLearningOn === null ? 'Checking automatic learning status…' :
+              autoLearningOn ? 'Automatic long-term learning: ON for eligible lasting facts.' :
+              'Automatic long-term learning: OFF. Enable it in Lumen settings or the RMC integration.'}
+          </Text>
+          {autoLearningOn && <Text style={subtle}>Lumen screens each ordinary user statement and sends only approved, non-sensitive evidence to RMC. RMC performs extraction and can still refuse storage under its privacy policy. Not every message becomes a memory.</Text>}
           <Text style={subtle}>The previous Supabase memories are preserved separately, but are not shown here. Search returns relevant evidence, not every saved memory.</Text>
         </View>
 
@@ -303,6 +329,34 @@ export function RmcMemoriesPanel({ companion }: { companion: { id: string; name:
           </TouchableOpacity>
           {!!saveNotice && <Text selectable style={{ ...body, color: c.primary[300] }}>{saveNotice}</Text>}
           {pendingSave && <Text style={subtle}>An earlier save is unconfirmed. Retrying here reuses the same idempotent request ID; it does not issue a new save request.</Text>}
+        </View>
+
+        <View style={box}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+            <Text style={heading}>Automatic memory activity</Text>
+            <TouchableOpacity accessibilityRole="button" onPress={() => { void loadReceipts(); }} disabled={receiptsBusy}>
+              <RefreshCw size={19} color={c.primary[300]} />
+            </TouchableOpacity>
+          </View>
+          <Text style={subtle}>Recent ordinary chat statements screened for lasting memories. Only confirmed RMC writes count as saved. A pending or unavailable result is not a save.</Text>
+          {receiptsBusy && <ActivityIndicator color={c.primary[400]} />}
+          {!!receiptsError && <Text selectable style={{ ...subtle, color: c.error[200] }}>{receiptsError}</Text>}
+          {!receiptsBusy && !receiptsError && autoReceipts.length === 0 &&
+            <Text style={body}>No automatic-learning activity recorded yet. This list will populate after ordinary chats are processed.</Text>}
+          {autoReceipts.map((item, index) => (
+            <View key={item.id + ':' + index} style={{ paddingTop: Spacing.sm, borderTopWidth: 1, borderTopColor: c.neutral[700], gap: 4 }}>
+              <Text style={{ ...subtle, color: item.confirmed_count > 0 ? c.primary[300] : c.neutral[400] }}>
+                {item.confirmed_count > 0 ? 'RMC confirmed ' + item.confirmed_count + ' saved fact(s)' :
+                  item.status === 'pending' ? 'Screening in progress' :
+                  item.status === 'no_durable_fact' ? 'No lasting fact identified' :
+                  item.status === 'deferred' ? 'Screening deferred for a new chat' :
+                  item.status === 'memory_off' ? 'RMC learning disabled by privacy policy' :
+                  item.status === 'unconfirmed' ? 'Save not confirmed' :
+                  item.status === 'screen_unavailable' ? 'Screening unavailable' :
+                  'Not saved'} · {shortDate(item.at)}
+              </Text>
+            </View>
+          ))}
         </View>
 
         <View style={box}>

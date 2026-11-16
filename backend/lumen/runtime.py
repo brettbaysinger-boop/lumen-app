@@ -317,12 +317,24 @@ class CognitionRuntime:
             await emit({"type": "reset", "text": ""})
             await emit({"type": "delta", "text": result["content"]})
 
+        # Only eligible ordinary text turns can be screened for automatic RMC
+        # learning. Explicit saves, commands/actions, photos and documents are
+        # never re-ingested by this background path. Companion preference wins.
+        rmc_auto_eligible = (
+            rmc_memory is not None
+            and getattr(self.settings, "rmc_auto_ingest_enabled", False) is True
+            and companion.get("auto_memory_enabled") is not False
+            and not practice and not attachments and not document_id and not action
+            and conversational_model_reply and memory_status == "none"
+            and 12 <= len(user_message.strip()) <= 2000
+        )
         user_row = await self.db.create_message({
             "conversation_id": conversation_id,
             "companion_id": companion_id,
             "role": "user",
             "content": user_message,
-            "metadata": {**({"attachments": [a.model_dump() for a in attachments]} if attachments else {}),
+            "metadata": {**({"rmc_auto_state": "pending"} if rmc_auto_eligible else {}),
+                         **({"attachments": [a.model_dump() for a in attachments]} if attachments else {}),
                          **({"document_id": document_id, "document_title": action.get("document_title")} if document_id else {})},
         })
         # Register photos only after their user chat message has been saved.
@@ -412,6 +424,9 @@ class CognitionRuntime:
 
         await self.db.touch_conversation(conversation_id, 2)
 
+        # Internal-only scheduling handle. Do not repurpose the Supabase
+        # observation_message_id response field: it drives old UI workflows.
+        self.rmc_auto_message_id = str(user_row["id"]) if rmc_auto_eligible else None
         observation_message_id = None
         if (rmc_memory is None and not practice and not attachments and not action and memory_status == "none"
                 and getattr(self.settings, "memory_observations_enabled", False) is True):

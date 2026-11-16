@@ -144,6 +144,35 @@ class MemoryPanelTests(unittest.TestCase):
         self.assertEqual(self.repo._request.call_args.args, ("GET", "messages"))
         self.assertIn("not a complete inventory", reply.json()["notice"])
 
+    def test_auto_receipts_are_owner_scoped_and_do_not_include_memory_content(self):
+        self.settings.rmc_auto_ingest_enabled = True
+        self.repo._request.side_effect = [
+            [],  # assistant save receipts
+            [
+                {"id": "u1", "created_at": "2026-11-15T12:00:00Z",
+                 "metadata": {"rmc_auto_state": "saved",
+                              "rmc_auto_confirmed_count": 1}},
+                {"id": "u2", "created_at": "2026-11-15T12:01:00Z",
+                 "metadata": {"rmc_auto_state": "unconfirmed",
+                              "rmc_auto_confirmed_count": 0}},
+                {"id": "old", "created_at": "2026-11-14T12:01:00Z",
+                 "metadata": {"memory_status": "saved"}},
+            ],
+        ]
+        response = self.client.get("/v0.2/rmc/receipts",
+                                   params={"companion_id": COMPANION})
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        self.assertIs(body["automatic_learning_enabled"], True)
+        self.assertEqual(body["auto_receipts"], [
+            {"id": "u1", "at": "2026-11-15T12:00:00Z",
+             "status": "saved", "confirmed_count": 1},
+            {"id": "u2", "at": "2026-11-15T12:01:00Z",
+             "status": "unconfirmed", "confirmed_count": 0},
+        ])
+        for call in self.repo._request.call_args_list:
+            self.assertEqual(call.args[:2], ("GET", "messages"))
+
 
 if __name__ == "__main__":
     unittest.main()

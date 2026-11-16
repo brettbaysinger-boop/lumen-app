@@ -95,7 +95,7 @@ async def rmc_chat_receipts(
     user: AuthUser = Depends(require_user),
 ):
     settings = _rmc_settings()
-    await _owned_companion(settings, user, companion_id)
+    companion = await _owned_companion(settings, user, companion_id)
     # Chat messages, not Supabase memory tables. Only RMC-tagged assistant
     # acknowledgements are shown; earlier Supabase-era receipts are excluded.
     rows = await SupabaseRepository(settings, user.token)._request(
@@ -125,5 +125,45 @@ async def rmc_chat_receipts(
         })
         if len(receipts) >= 20:
             break
-    return {"backend": "rmc", "scope": "chat_acknowledgements", "receipts": receipts,
-            "notice": "Past chat acknowledgements; not a complete inventory or current retention proof."}
+    # Automatic learning receipts live on USER CHAT MESSAGE metadata. They
+    # are read via the account's RLS token and do not reintroduce a second
+    # memory store. A historical acknowledgement is not retention proof.
+    auto_rows = await SupabaseRepository(settings, user.token)._request(
+        "GET", "messages",
+        params={
+            "select": "id,created_at,metadata",
+            "companion_id": "eq." + str(companion_id),
+            "role": "eq.user",
+            "order": "created_at.desc",
+            "limit": "100",
+        },
+    )
+    auto_receipts = []
+    valid_states = {"pending", "saved", "no_durable_fact", "deferred",
+                    "screen_unavailable", "unconfirmed", "memory_off", "not_saved"}
+    for row in auto_rows:
+        metadata = row.get("metadata")
+        if not isinstance(metadata, dict):
+            continue
+        state = metadata.get("rmc_auto_state")
+        if state not in valid_states:
+            continue
+        count = metadata.get("rmc_auto_confirmed_count", 0)
+        if type(count) is not int or not 0 <= count <= 2:
+            count = 0
+        auto_receipts.append({
+            "id": row.get("id"),
+            "at": row.get("created_at"),
+            "status": state,
+            "confirmed_count": count,
+        })
+        if len(auto_receipts) >= 20:
+            break
+    enabled = (getattr(settings, "rmc_auto_ingest_enabled", False) is True
+               and companion.get("auto_memory_enabled") is not False)
+    return {
+        "backend": "rmc", "scope": "chat_acknowledgements", "receipts": receipts,
+        "automatic_learning_enabled": enabled,
+        "auto_receipts": auto_receipts,
+        "notice": "Past chat acknowledgements; not a complete inventory or current retention proof.",
+    }
