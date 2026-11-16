@@ -35,8 +35,18 @@ Same screen, same avatar session, same `<video>` element; no second video path.
 - Two controls over the picture: `‹ Video Chat` and `Messages`. Messages opens a panel **under**
   the picture with the same conversation and message box; tap again to collapse it.
 - Android Back in Theater returns to Video Chat. Back in Video Chat leaves the screen, as before.
-- This is **near-fullscreen**: Android's status and navigation bars stay visible. Hiding them needs
-  a native configuration change in the protected build tree and is not made here.
+- **Full screen** (third control, shown where the browser can do it): the whole page goes into the
+  browser's own full screen. Inside the phone app, the app's web view then hides Android's status and
+  navigation bars and **lets the phone be turned sideways**; in landscape the frame fills the screen
+  height, with black at the sides, because the whole 3:2 frame is kept. Leaving full screen (the
+  control, Android Back, or leaving Theater) puts the bars and portrait back. Back is two steps: out
+  of full screen first, then to Video Chat.
+- This needs **no native change**: no orientation unlock in `app.json`, no new native module. It uses
+  what `react-native-webview` 13.15.0 already does for a full-screen page (`allowsFullscreenVideo`,
+  on since PR #20). The rest of the app stays portrait. Without Full screen, Theater is
+  near-fullscreen: Android's bars stay visible and the phone does not rotate.
+- The frame is never cropped. Filling a landscape screen edge to edge would cut the top and bottom
+  of the picture; that is an owner decision and is not made here.
 - No Mini button: floating Lumen is not built.
 
 **One session.** Switching views changes styles only. `setRoomMode` never calls connect or close; the
@@ -104,6 +114,12 @@ Write down what you see for each. If any step restarts the video, that is a FAIL
    frame visible (check all four corners of the scene). The video did not blink, restart or go
    silent. Speak to Lumen first and switch during the reply: the speech continues uninterrupted.
 8. **Messages** in Theater: the panel opens under the picture; type and send from there. Collapse it.
+8a. **Full screen and sideways.** In Theater tap Full screen. Android's status and navigation bars
+    disappear. Turn the phone sideways: the picture rotates and fills the height, whole frame visible,
+    black at the sides. The video did not restart; speech continues. Check that the three controls are
+    not under the camera cut-out. Open Messages sideways and type. Turn back upright. Android Back:
+    first leaves full screen (bars return, portrait), second returns to Video Chat. Also swipe from
+    the edge while full screen: the bars show briefly and hide again.
 9. **Back.** Android Back in Theater → Video Chat (video still running). `‹ Video Chat` does the
    same. Switch back and forth five times: no reconnection, no "Connecting…".
 10. **Live off / on.** Tap Live: video stops, the button reads "Live · Off", Theater is greyed out.
@@ -121,18 +137,19 @@ Write down what you see for each. If any step restarts the video, that is a FAIL
 ## Not proven here
 
 - Anything on the phone: the native screen, the keyboard inside Android System WebView, the system
-  bars, sound, TalkBack. The native keyboard handling (`KeyboardAvoidingView` around the web view) is
+  bars, sound, TalkBack. **Full screen on Android 16 in particular**: that the bars hide and the
+  phone rotates is read from the web view's source, not seen on the S22. The native keyboard handling (`KeyboardAvoidingView` around the web view) is
   the least certain part and is step 6.
 - The real avatar. The browser test uses a stand-in WebRTC connection that delivers a 768x512 picture.
 - The cause of the color mismatch (see above).
 
 ## Tests
 
-- `node --test tests/*.test.cjs`: 122 pass (113 before; `tests/live-room.test.cjs` is new).
+- `node --test tests/*.test.cjs`: 123 pass (113 before; `tests/live-room.test.cjs` is new).
 - `scripts/test-live-room-browser.cjs` (new; headless Chromium against the web build, at 320x568,
   360x660, 390x844 and 412x915): no tab bar, header / buttons / video / conversation / message box
   inside the window and not overlapping, real buttons, whole 3:2 frame in both views, keyboard-height
-  window, Theater and its messages panel, Back, the account's colors, only the fixed words posted,
+  window, Theater and its messages panel, a sideways window, full screen, Back, the account's colors, only the fixed words posted,
   and one `<video>` element, one connection and one offer throughout. Also that the ordinary website
   (no `?room=live`) keeps its tabs, header and size choices.
 - `scripts/test-animated-size-component.cjs` (extended): the room's views on the same element with

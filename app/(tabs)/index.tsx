@@ -382,11 +382,33 @@ export default function ChatScreen() {
   // Theater needs the video. If the video ends, the room falls back to Video Chat by itself.
   useEffect(() => { if (room && roomMode === 'theater' && animatedState !== 'ready') setRoomMode('chat'); }, [room, roomMode, animatedState]);
   useEffect(() => { if (room) postRoomEvent(theater ? 'theater' : 'chat'); }, [room, theater]);
+  // Full screen, offered in Theater: the browser's own full screen for the whole page, so the layout,
+  // the <video> element and the session stay exactly as they are. Inside the phone app this is also
+  // what hides Android's bars and lets the phone be turned sideways: the app's web view does both
+  // while a page is full screen, and puts both back afterwards. No native change is involved.
+  const [fullScreen, setFullScreen] = useState(false);
+  const canFullScreen = room && typeof document !== 'undefined' && document.fullscreenEnabled === true;
+  useEffect(() => {
+    if (!room) return;
+    const changed = () => setFullScreen(!!document.fullscreenElement);
+    document.addEventListener('fullscreenchange', changed);
+    return () => document.removeEventListener('fullscreenchange', changed);
+  }, [room]);
+  const leaveFullScreen = useCallback(() => { try { if (document.fullscreenElement) void document.exitFullscreen().catch(() => {}); } catch {} }, []);
+  const toggleFullScreen = useCallback(() => {
+    try {
+      if (document.fullscreenElement) void document.exitFullscreen().catch(() => {});
+      else void document.documentElement.requestFullscreen({ navigationUI: 'hide' }).catch(() => {});
+    } catch {}
+  }, []);
+  // Full screen belongs to Theater: leaving Theater, by any route, leaves full screen too.
+  useEffect(() => { if (room && !theater) leaveFullScreen(); }, [room, theater, leaveFullScreen]);
   // While this screen shows, the phone app hides its own bar: the room's header has Back in it.
   useFocusEffect(useCallback(() => {
     if (!room) return;
     postRoomEvent('ready');
-    const back = () => setRoomMode('chat');   // Android Back while in Theater
+    // Android Back while in Theater: out of full screen first, then back to Video Chat.
+    const back = () => { if (document.fullscreenElement) void document.exitFullscreen().catch(() => {}); else setRoomMode('chat'); };
     window.addEventListener(ROOM_BACK_EVENT, back);
     return () => { window.removeEventListener(ROOM_BACK_EVENT, back); postRoomEvent('gone'); };
   }, [room]));
@@ -1048,7 +1070,8 @@ export default function ChatScreen() {
       {/* One element in one place for both room views: Theater only changes the box around it. */}
       {animatedState === 'ready' && <View testID="live-video-area" style={theater ? { flex: 1, minHeight: 0, backgroundColor: '#000' } : { alignItems: 'center', paddingVertical: room ? 4 : 8 }}>
         <AnimatedCompanion session={animated} borderColor={colors.primary[400]} controlColor={colors.primary[300]} room={room ? (theater ? 'theater' : 'chat') : undefined} />
-        {theater && <LiveRoomTheaterBar messagesOpen={theaterMessages} onChat={() => setRoomMode('chat')} onMessages={() => setTheaterMessages(open => !open)} />}
+        {theater && <LiveRoomTheaterBar messagesOpen={theaterMessages} onChat={() => setRoomMode('chat')} onMessages={() => setTheaterMessages(open => !open)}
+          fullScreen={fullScreen} onFullScreen={canFullScreen ? toggleFullScreen : undefined} />}
       </View>}
       {/* The conversation and the message box. In Theater this is the collapsible messages panel:
           the same elements, so nothing is reloaded and no text is drawn over the picture. */}

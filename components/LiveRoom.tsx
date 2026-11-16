@@ -73,8 +73,13 @@ export function LiveRoomActions({ c, live, offered, onLive, onDocuments, onPract
   </View>;
 }
 
-/** Theater: the only controls over the video. Back to Video Chat, and the messages panel. */
-export function LiveRoomTheaterBar({ messagesOpen, onChat, onMessages }: { messagesOpen: boolean; onChat: () => void; onMessages: () => void }) {
+/**
+ * Theater: the only controls over the video. Back to Video Chat, the messages panel, and full screen
+ * (given only where the browser can do it; inside the phone app it also allows turning the phone).
+ */
+export function LiveRoomTheaterBar({ messagesOpen, onChat, onMessages, fullScreen, onFullScreen }: {
+  messagesOpen: boolean; onChat: () => void; onMessages: () => void; fullScreen?: boolean; onFullScreen?: () => void;
+}) {
   const control = (label: string, hint: string, onPress: () => void, expanded?: boolean) =>
     <Pressable accessibilityRole="button" accessibilityLabel={hint} accessibilityState={expanded === undefined ? {} : { expanded }} {...(expanded === undefined ? {} : { 'aria-expanded': expanded })} onPress={onPress} hitSlop={6}
       style={({ pressed }) => [styles.overlay, { opacity: pressed ? 0.7 : 1 }]}>
@@ -82,7 +87,10 @@ export function LiveRoomTheaterBar({ messagesOpen, onChat, onMessages }: { messa
     </Pressable>;
   return <View pointerEvents="box-none" style={styles.theaterBar}>
     {control('‹ Video Chat', 'Leave Companion Theater and return to Video Chat', onChat)}
-    {control(messagesOpen ? 'Hide messages' : 'Messages', messagesOpen ? 'Hide the conversation' : 'Show the conversation', onMessages, messagesOpen)}
+    <View pointerEvents="box-none" style={styles.theaterGroup}>
+      {control(messagesOpen ? 'Hide messages' : 'Messages', messagesOpen ? 'Hide the conversation' : 'Show the conversation', onMessages, messagesOpen)}
+      {onFullScreen && control(fullScreen ? 'Exit full screen' : 'Full screen', fullScreen ? 'Leave full screen' : 'Show the video full screen', onFullScreen)}
+    </View>
   </View>;
 }
 
@@ -99,7 +107,8 @@ const styles = StyleSheet.create({
   menu: { marginTop: 56, marginRight: 8, minWidth: 230, maxWidth: '92%', borderWidth: 1, borderRadius: 14, paddingVertical: 6 },
   menuItem: { minHeight: 48, justifyContent: 'center', paddingHorizontal: 16 },
   menuExtra: { borderTopWidth: 1, paddingHorizontal: 16, paddingVertical: 8 },
-  theaterBar: { position: 'absolute', top: 8, left: 8, right: 8, flexDirection: 'row', justifyContent: 'space-between', gap: 8 },
+  theaterBar: { position: 'absolute', top: 8, left: 8, right: 8, flexDirection: 'row', flexWrap: 'wrap', alignItems: 'flex-start', justifyContent: 'space-between', gap: 8 },
+  theaterGroup: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'flex-end', gap: 8, flexShrink: 1 },
   // Over the picture, so fixed colours that stay readable on any frame.
   overlay: { minHeight: 44, paddingHorizontal: 14, borderRadius: 999, backgroundColor: 'rgba(0,0,0,0.62)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.28)', alignItems: 'center', justifyContent: 'center' },
   overlayText: { color: '#ffffff', fontSize: 14, fontFamily: 'Inter-Medium' },

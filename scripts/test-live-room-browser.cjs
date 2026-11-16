@@ -124,6 +124,30 @@ const oneSession=(m,what)=>{assert.equal(m.tag,'first',`${what}: still the very 
     oneSession(m,`${at} Theater + messages`);await shot('4-theater-messages');
     await page.getByRole('button',{name:'Hide the conversation'}).click();await page.waitForTimeout(200);
     assert.equal((await measure(page)).composer,null,`${at} Theater: the panel collapses again`);
+    // Full screen is the whole page in the browser's own full screen (in the phone app that is what hides
+    // Android's bars and frees rotation). The phone turned sideways: the frame fills the height, uncropped.
+    const full=()=>page.evaluate(()=>document.fullscreenElement===document.documentElement);
+    for(const name of ['Leave Companion Theater and return to Video Chat','Show the conversation','Show the video full screen']){
+      const box=await page.getByRole('button',{name}).boundingBox();assert.ok(box&&box.x>=0&&box.x+box.width<=width+0.5&&box.height>=44,`${at} Theater: "${name}" is inside the window`);}
+    // The phone turned sideways (what full screen allows in the phone app): the frame fills the height, uncropped.
+    await page.setViewportSize({width:height,height:width});await page.waitForTimeout(300);
+    m=await measure(page);whole32(m,`${at} sideways`);inside(m.video,m,`${at} sideways video`);oneSession(m,`${at} sideways`);
+    assert.ok(m.video.height>=m.height-2,`${at} sideways: the frame is as tall as the screen (${m.video.height} of ${m.height})`);
+    inside(m.leave,m,`${at} sideways: back to Video Chat`);await shot('5-sideways');
+    await page.getByRole('button',{name:'Show the conversation'}).click();await page.waitForTimeout(300);
+    m=await measure(page);whole32(m,`${at} sideways + messages`);inside(m.composer,m,`${at} sideways + messages: message box`);assert.ok(m.video.bottom<=m.composer.top+0.5);
+    await page.getByRole('button',{name:'Hide the conversation'}).click();
+    await page.setViewportSize({width,height});await page.waitForTimeout(300);
+    await page.getByRole('button',{name:'Show the video full screen'}).click();await page.getByRole('button',{name:'Leave full screen'}).waitFor();assert.equal(await full(),true);
+    m=await measure(page);whole32(m,`${at} full screen`);inside(m.video,m,`${at} full screen video`);oneSession(m,`${at} full screen`);
+    // Android Back: first out of full screen (still Theater), and only then to Video Chat.
+    await page.evaluate(()=>window.dispatchEvent(new Event('lumenroomback')));await page.getByRole('button',{name:'Show the video full screen'}).waitFor();assert.equal(await full(),false);
+    await page.waitForTimeout(300);m=await measure(page);assert.ok(m.leave,`${at}: Back from full screen stays in Theater`);oneSession(m,`${at} out of full screen`);
+    // Leaving Theater while full screen leaves full screen too.
+    await page.getByRole('button',{name:'Show the video full screen'}).click();await page.getByRole('button',{name:'Leave full screen'}).waitFor();
+    await page.getByRole('button',{name:'Leave Companion Theater and return to Video Chat'}).click();await page.getByRole('button',{name:'Switch to Companion Theater'}).waitFor();
+    await page.waitForFunction(()=>!document.fullscreenElement);oneSession(await measure(page),`${at} Video Chat from full screen`);
+    await page.getByRole('button',{name:'Switch to Companion Theater'}).click();await page.getByRole('button',{name:'Leave Companion Theater and return to Video Chat'}).waitFor();
     // Android Back in Theater (the phone app's one fixed line) returns to Video Chat.
     await page.evaluate(()=>window.dispatchEvent(new Event('lumenroomback')));await page.getByRole('button',{name:'Switch to Companion Theater'}).waitFor();await page.waitForTimeout(300);
     m=await measure(page);oneSession(m,`${at} back in Video Chat`);whole32(m,`${at} back in Video Chat`);inside(m.composer,m,`${at} back: message box`);
@@ -136,7 +160,7 @@ const oneSession=(m,what)=>{assert.equal(m.tag,'first',`${what}: still the very 
     await page.getByRole('button',{name:'More actions'}).click();await page.getByRole('button',{name:'Conversations',exact:true}).waitFor();
     await page.getByRole('button',{name:'Open in browser ↗',exact:true}).click();
     await page.getByRole('button',{name:'Close live video and return to the chat'}).click();
-    assert.deepEqual(await page.evaluate(()=>window.__posted),['chat','ready','theater','chat','theater','chat','theater','chat','theater','chat','browser','close'],`${at}: only the fixed words reach the phone app`);
+    assert.deepEqual(await page.evaluate(()=>window.__posted),['chat','ready','theater','chat','theater','chat','theater','chat','theater','chat','theater','chat','browser','close'],`${at}: only the fixed words reach the phone app`);
     // Live off is a real, distinct state; Theater is then unavailable.
     await page.getByRole('switch',{name:'Live video'}).click();await page.getByText('Live · Off',{exact:true}).waitFor();
     m=await measure(page);assert.equal(m.video,null);assert.equal(m.rtc.closed,1);inside(m.composer,m,`${at} live off: message box`);
@@ -150,5 +174,5 @@ const oneSession=(m,what)=>{assert.equal(m.tag,'first',`${what}: still the very 
   await page.getByRole('switch',{name:'Animated companion'}).click();await page.getByText('Animated: on',{exact:true}).waitFor();
   await page.getByRole('button',{name:'Expand animated companion'}).waitFor();assert.equal(offers,1);
   assert.deepEqual(errors,[]);await page.close();
-  console.log('Live Room: Video Chat, keyboard, Theater, messages panel and Back passed at 320, 360, 390 and 412 px with one video element and one connection; the ordinary website is unchanged.');
+  console.log('Live Room: Video Chat, keyboard, Theater, messages panel, sideways full screen and Back passed at 320, 360, 390 and 412 px with one video element and one connection; the ordinary website is unchanged.');
 }finally{await browser.close();await new Promise(resolve=>server.close(resolve));}})().catch(error=>{console.error(error);process.exit(1);});

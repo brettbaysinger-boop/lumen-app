@@ -88,6 +88,16 @@ test('switching views is layout only: one video element in one place, and nothin
   assert.match(screen,/testID="conversation-panel" style=\{!theater \? \{ flex: 1, minHeight: 0 \}/);   // the conversation is the same elements in both views
   assert.match(companion,/\{!room && <View style=\{\{ flexDirection: 'row', alignItems: 'center', gap: 14, marginTop: 6 \}\}>/);   // no size choices in the room
 });
+test('full screen and sideways: the browser\'s own full screen for the page, and nothing native',()=>{
+  const screen=read('app/(tabs)/index.tsx'),native=read('app/live-video.tsx');
+  assert.match(screen,/document\.documentElement\.requestFullscreen\(\{ navigationUI: 'hide' \}\)/);   // the whole page: same layout, same <video>, same session
+  assert.match(screen,/if \(room && !theater\) leaveFullScreen\(\);/);                    // full screen belongs to Theater
+  assert.match(screen,/if \(document\.fullscreenElement\) void document\.exitFullscreen\(\)\.catch\(\(\) => \{\}\); else setRoomMode\('chat'\);/);   // Back: full screen first, then Video Chat
+  assert.match(screen,/onFullScreen=\{canFullScreen \? toggleFullScreen : undefined\}/);   // no dead button where the browser cannot
+  assert.match(native,/allowsFullscreenVideo/);                                        // already on since PR #20: the web view hides the bars and frees rotation itself
+  assert.equal(JSON.parse(read('app.json')).expo.orientation,'portrait');             // the app stays portrait everywhere else
+  assert.doesNotMatch(read('package.json'),/expo-screen-orientation|expo-navigation-bar/);   // no new native part, so the signed build is as it was
+});
 test('the room has no website tab bar, and nothing that is not built: no Mini, no floating video',()=>{
   const tabs=read('app/(tabs)/_layout.tsx'),chrome=read('components/LiveRoom.tsx');
   assert.match(tabs,/const room = Platform\.OS === 'web' && isLiveRoom\(\);/);
