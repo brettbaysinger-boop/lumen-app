@@ -7,13 +7,11 @@ Fails closed when auth dependencies or owner configuration are missing.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
 import asyncio
 import time
-import httpx
+import httpx  # retained for isolated existing auth-matrix test fixtures
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, status
-from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from .models import Project, ProjectSnapshot
 from .insights import ProjectInsights
@@ -21,97 +19,9 @@ from .config import ProjectStewardSettings, get_steward_settings
 from .registry import ProjectRegistry
 from .github_client import ReadOnlyGitHubCollector
 
-bearer = HTTPBearer(auto_error=False)
-
-
-@dataclass(frozen=True)
-class AuthUser:
-    """Verified authenticated user from Supabase session."""
-    id: str
-    token: str
-
-
-# Attempt to import production Lumen auth if installed
-_has_production_lumen_auth = False
-try:
-    from lumen.auth import require_user as _prod_require_user, AuthUser as _ProdAuthUser  # type: ignore
-    _has_production_lumen_auth = True
-except ImportError:
-    _prod_require_user = None
-
-
-async def require_user(
-    credentials: Optional[HTTPAuthorizationCredentials] = Depends(bearer),
-    settings: ProjectStewardSettings = Depends(get_steward_settings),
-) -> AuthUser:
-    """Verify bearer token against Supabase Auth API; fails closed on missing service or invalid token."""
-    if _has_production_lumen_auth and _prod_require_user:
-        prod_user = await _prod_require_user(credentials)
-        return AuthUser(id=prod_user.id, token=prod_user.token)
-
-    if not credentials or credentials.scheme.lower() != "bearer" or not credentials.credentials:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Sign in to Lumen first.",
-        )
-
-    # Fail closed if Supabase auth service configuration is missing
-    if not settings.supabase_url or not settings.supabase_service_role_key:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Local login service is unavailable (Supabase unconfigured).",
-        )
-
-    try:
-        async with httpx.AsyncClient(timeout=settings.request_timeout_seconds) as client:
-            resp = await client.get(
-                settings.supabase_url.rstrip("/") + "/auth/v1/user",
-                headers={
-                    "apikey": settings.supabase_service_role_key,
-                    "Authorization": f"Bearer {credentials.credentials}",
-                },
-            )
-            if resp.status_code in (401, 403):
-                raise HTTPException(
-                    status_code=status.HTTP_401_UNAUTHORIZED,
-                    detail="Your session expired. Sign in again.",
-                )
-            resp.raise_for_status()
-            user_data = resp.json()
-            if not isinstance(user_data, dict) or not user_data.get("id") or user_data.get("is_anonymous"):
-                raise HTTPException(
-                    status_code=status.HTTP_401_UNAUTHORIZED,
-                    detail="A registered account is required.",
-                )
-            return AuthUser(id=user_data["id"], token=credentials.credentials)
-    except HTTPException:
-        raise
-    except (httpx.HTTPError, ValueError) as exc:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Local login service is unavailable.",
-        ) from exc
-
-
-async def require_steward_owner(
-    user: AuthUser = Depends(require_user),
-    settings: ProjectStewardSettings = Depends(get_steward_settings),
-) -> AuthUser:
-    """Enforce that caller is the explicitly configured workspace owner.
-
-    FAILS CLOSED if owner identity is unconfigured or if caller does not match.
-    """
-    if not settings.owner_user_id or not settings.owner_user_id.strip():
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Project Steward owner identity is not configured. Access denied.",
-        )
-    if user.id != settings.owner_user_id:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Forbidden: Project Steward access is restricted to the workspace owner.",
-        )
-    return user
+# Production-only integration: use the exact authentication dependency already
+# used by Lumen chat and RMC Memories. No fallback or private token verifier.
+from lumen.auth import AuthUser, require_user
 
 
 _registry_instance: Optional[ProjectRegistry] = None
