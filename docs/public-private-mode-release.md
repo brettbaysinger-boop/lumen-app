@@ -52,11 +52,12 @@ for `a2148d8`).
 1. backs up the 7 files with their sha256 under `~/.local/state/lumen-animated/privacy-release/backend-*`
    (the 3 new files are recorded as absent);
 2. copies the live `backend/` and `scripts/` (no `.venv`, no `.env`) to a throwaway directory, applies the
-   reviewed patch there, checks every patched file equals the reviewed commit, and adds the reviewed copy of
-   any backend test file the live checkout lacks (the copy only; the live checkout has no
-   `test_rmc_auto_ingest.py` or `test_rmc_memory_routes.py`). With the live venv's Python it then runs, by
-   test discovery, the **whole backend suite**, then the Public / Private tests (exactly 26) and the D01-63E
-   automatic-learning tests (exactly 14). Each must say OK with the expected number of tests run. Any failure
+   reviewed patch there and checks every patched file equals the reviewed commit. With the live venv's
+   Python it runs the **whole backend suite** as the live checkout has it (`unittest discover -s tests`),
+   then, by discovery, the Public / Private tests (`-p 'test_privacy_mode*.py'`, exactly 26) and the D01-63E
+   automatic-learning tests (`-p 'test_rmc_auto_ingest.py'`, exactly 14). The live checkout has no
+   `test_rmc_auto_ingest.py`, so the reviewed copy is added to the throwaway copy only, after the whole
+   suite. Each run must say OK with the expected number of tests; zero tests or any error is a stop. Any failure
    stops here: nothing live has changed;
 3. applies the same patch to the live working files only (no index, no HEAD, no other file) and checks the
    result byte for byte;
