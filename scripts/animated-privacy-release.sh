@@ -168,19 +168,19 @@ backend_apply() {
   while read -r path; do [ "$(git hash-object --no-filters -- "$copy/$path")" = "$(blob_of "$BACKEND_COMMIT" "$path")" ] || die "the patched copy of $path is not the reviewed file. Nothing was changed."; done < <(backend_files)
   local run=(env -i PATH="$PATH" HOME="$HOME" LANG=C.UTF-8 PYTHONPATH="$copy/backend" SUPABASE_URL=http://127.0.0.1:9 SUPABASE_SERVICE_ROLE_KEY=fictional "$PYTHON" -B)
   [[ "$(cd "$copy/backend" && "${run[@]}" -c 'import lumen; print(lumen.__file__)')" == "$copy/backend/"* ]] || die "the tests would not use the patched copy. Nothing was changed."
-  # The live checkout may lack some of PR #38's test files (tests are not deployed code). Add the reviewed
-  # copies of missing test files to the throwaway copy only; a test file the live checkout has is never replaced.
   : > "$record/tests.log"
-  while read -r path; do
-    [ -e "$copy/$path" ] && continue
-    mkdir -p "$copy/$(dirname "$path")"; repo show "$BACKEND_COMMIT:$path" > "$copy/$path"
-    echo "added reviewed test file missing from the live checkout (copy only): $path" | tee -a "$record/tests.log"
-  done < <(repo ls-tree -r --name-only "$BACKEND_COMMIT" -- backend/tests)
+  echo "Running the backend tests on the patched copy (log: $record/tests.log) ..."
+  suite "whole backend suite" 'test*.py' any      # the live checkout's own tests, as they are
+  # The targeted suites. The live checkout lacks some of PR #38's test files (tests are not deployed code), so
+  # the reviewed copy of a missing targeted test file is added to the throwaway copy only, after the whole suite ran;
+  # a test file the live checkout has is never replaced.
   for path in backend/tests/test_privacy_mode.py backend/tests/test_privacy_mode_rmc.py backend/tests/test_rmc_auto_ingest.py; do
+    if [ ! -e "$copy/$path" ]; then
+      repo show "$BACKEND_COMMIT:$path" > "$copy/$path"
+      echo "added reviewed test file missing from the live checkout (copy only): $path" | tee -a "$record/tests.log"
+    fi
     [ "$(git hash-object --no-filters -- "$copy/$path")" = "$(blob_of "$BACKEND_COMMIT" "$path")" ] || die "$path in the copy is not the reviewed file. Nothing was changed."
   done
-  echo "Running the backend tests on the patched copy (log: $record/tests.log) ..."
-  suite "whole backend suite" 'test*.py' any
   suite "Public / Private mode" 'test_privacy_mode*.py' "$(test_count backend/tests/test_privacy_mode.py backend/tests/test_privacy_mode_rmc.py)"
   suite "RMC automatic learning (D01-63E)" 'test_rmc_auto_ingest.py' "$(test_count backend/tests/test_rmc_auto_ingest.py)"
 

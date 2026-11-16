@@ -140,9 +140,9 @@ out=$(rel backend-rollback PRIVACY_RELEASE_CONFIRM=backend-rollback) && [ "$(sna
 # --- As found on the real host: the live checkout lacks two of PR #38's test files --------------------
 rm "$L/backend/tests/test_rmc_auto_ingest.py" "$L/backend/tests/test_rmc_memory_routes.py"; NOTESTS=$(snap)
 out=$(rel backend PRIVACY_RELEASE_CONFIRM=backend:$PATCH_ID) || { bad "backend without live test files"; echo "$out"; }
-[ "$(grep -c 'added reviewed test file missing from the live checkout (copy only)' <<<"$out")" = 2 ] && grep -q 'RMC automatic learning (D01-63E): 14 tests pass' <<<"$out" \
+[ "$(grep -c 'added reviewed test file missing from the live checkout (copy only)' <<<"$out")" = 1 ] && grep -q 'copy only): backend/tests/test_rmc_auto_ingest.py' <<<"$out" && grep -q 'RMC automatic learning (D01-63E): 14 tests pass' <<<"$out" \
   && backend_is "$BACKEND" && [ ! -e "$L/backend/tests/test_rmc_auto_ingest.py" ] \
-  && ok "live without PR #38's 2 test files: reviewed copies added to the throwaway copy only, all suites run, live gets only the 7 files" || { bad "missing test files"; echo "$out"; }
+  && ok "live without PR #38's 2 test files (as on the host): whole suite on the live tests, reviewed test_rmc_auto_ingest.py added to the copy only, targeted suites 26 + 14, live gets only the 7 files" || { bad "missing test files"; echo "$out"; }
 out=$(rel baseline-check) || true; grep -q 'differ from the reviewed commit' <<<"$out" && grep -q 'test_rmc_auto_ingest.py' <<<"$out" \
   && ok "baseline-check refuses while those 2 test files are missing (open item for gate 2a)" || { bad "baseline missing files"; echo "$out"; }
 out=$(rel backend-rollback PRIVACY_RELEASE_CONFIRM=backend-rollback) && [ "$(snap)" = "$NOTESTS" ] || { bad "rollback without test files"; echo "$out"; }
