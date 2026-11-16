@@ -59,7 +59,11 @@ def check(queue_json: Path, job_id: str, outputs: Path | None) -> dict:
         raise ValueError("queue entry has no started_at/completed_at to correlate with")
     if not started - SLACK <= mtime <= completed + SLACK:
         raise ValueError(f"{path.name} was written outside job {job_id}'s run window")
-    return {"job_id": job_id, "status": status, "file": str(path), "bytes": len(data),
+    # FP-Studio's own saved job properties, to compare with the canary (3 s, its prompt and seed).
+    saved = {key: entry.get(key) for key in ("model_type", "generation_type", "prompt", "seed",
+                                              "total_second_length", "input_image_path", "created_at",
+                                              "started_at", "completed_at") if key in entry}
+    return {"job_id": job_id, "status": status, "job": saved, "file": str(path), "bytes": len(data),
             "sha256": hashlib.sha256(data).hexdigest(), "written_s_after_start": round(mtime - started, 1),
             "run_s": round(completed - started, 1)}
 

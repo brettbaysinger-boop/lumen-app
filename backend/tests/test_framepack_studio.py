@@ -596,6 +596,7 @@ class StudioJobOutputScriptTests(unittest.TestCase):
         code, summary = self.run_script("--copy-to", str(self.root / "copy"))
         self.assertEqual((code, summary["result"]), (0, "MATCH"), summary)
         self.assertEqual(summary["file"], str(self.file.resolve()))
+        self.assertEqual(summary["job"]["started_at"], self.started)
         self.assertEqual((self.root / "copy" / "lumen-fps-canary.mp4").read_bytes(), self.file.read_bytes())
 
     def test_refusals_never_guess_from_the_folder(self):
