@@ -2,7 +2,7 @@ import { useKeyboardVisible } from '@/hooks/useKeyboardVisible';
 import { useEffect, useState } from 'react';
 import { View, Text, Pressable, StyleSheet, useWindowDimensions, Modal, ScrollView } from 'react-native';
 import type { BottomTabBarProps } from '@react-navigation/bottom-tabs';
-import { MessageCircle, Brain, User, Settings, Images, CalendarCheck, MoreHorizontal, X } from 'lucide-react-native';
+import { MessageCircle, Brain, User, Settings, Images, CalendarCheck, FolderKanban, MoreHorizontal, X } from 'lucide-react-native';
 import { useTheme } from '@/lib/theme-context';
 import { RaialumeLogo } from '@/components/RaialumeLogo';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -12,6 +12,7 @@ const items = {
   'my-day': { label: 'My Day', icon: CalendarCheck },
   gallery: { label: 'Gallery', icon: Images },
   memories: { label: 'Memories', icon: Brain },
+  projects: { label: 'Projects', icon: FolderKanban },
   companion: { label: 'Companion', icon: User },
   settings: { label: 'Settings', icon: Settings },
 };

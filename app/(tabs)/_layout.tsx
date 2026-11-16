@@ -24,6 +24,7 @@ export default function TabLayout() {
     <Tabs.Screen name="my-day" options={{ title: 'My Day' }} />
     <Tabs.Screen name="gallery" options={{ title: 'Gallery' }} />
     <Tabs.Screen name="memories" options={{ title: 'Memories' }} />
+    <Tabs.Screen name="projects" options={{ title: 'Projects' }} />
     <Tabs.Screen name="companion" options={{ title: 'Companion' }} />
     <Tabs.Screen name="settings" options={{ title: 'Settings' }} />
   </Tabs></View>;
