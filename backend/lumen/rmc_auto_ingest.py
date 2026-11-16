@@ -160,7 +160,7 @@ async def auto_ingest_rmc_user_message(settings, token: str, user_id: str,
             return
         statement = row.get("content", "")
         if (not isinstance(statement, str) or len(statement) > 2000
-                or len(statement.strip()) < 12
+                or len(statement.strip()) < 2
                 or meta.get("attachments") or meta.get("document_id")):
             return
 
@@ -194,6 +194,10 @@ async def auto_ingest_rmc_user_message(settings, token: str, user_id: str,
         )
         if shared_agreement and _SENSITIVE.search(shared_agreement):
             shared_agreement = None
+        # Short replies are eligible ONLY when they completed a verified
+        # naming agreement; don't screen ordinary "yes" as standalone facts.
+        if len(statement.strip()) < 12 and not shared_agreement:
+            return
 
         if shared_agreement:
             # The user explicitly accepted a proposed nickname. This
