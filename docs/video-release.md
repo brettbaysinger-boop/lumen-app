@@ -265,6 +265,34 @@ Offline test: `scripts/test-video-routing-hotfix.sh`, 11 checks, with and withou
 Then repeat the stage 6 canary from step 1. One request only. If it is not queued as a video, stop and paste
 `journalctl -u lumen-api -u lumen-media-worker`; do not retry.
 
+## Discreet Public mode (owner request, 2026-11-16). Frontend only, NOT deployed
+
+Branch `release/discreet-privacy-20261116` at `7e7ec20`: one commit on the routing hotfix `49b4a36`, 7 frontend
+and test files. No backend, worker, database or route change, and no service restart.
+* Chat in Public leaves Private messages out of the list entirely: no "Hidden" bubble, count, position or
+  screen-reader node. A Private reply still on its way shows nothing. Switching back to Private shows the
+  same history at once. Nothing is deleted.
+* The big amber switch and the banner are gone. One small chip (`🔒 Private` / `👥 Public`) sits at the right of
+  the Chat header; one tap switches. Its touch target is 44 px. Video Chat and Theater keep their places
+  for it.
+* What Public covers ("Chat and Live Room only… Other tabs are not covered") is behind the ⓘ next to the chip
+  and in the chip's screen-reader hint.
+* Gallery in Public is one quiet line and the chip. It still reads nothing.
+
+Tested: 158 node tests; browser checks for Public/Private, media and the Live Room on the web build. The
+Public/Private check confirms no private text in the page, the DOM or the accessibility tree, and the chip's
+size and place at 360, 390 and 1280 px. Not tested: the phone app's native Chat header on a real S22.
+
+Apply (owner), from a clean clone of `release/discreet-privacy-20261116`, after the routing hotfix `49b4a36`
+is live (or instead of it: this commit contains it, as a 3-commit fast-forward from `9ed4737`):
+```
+npm ci
+scripts/animated-web-update.sh check
+LUMEN_WEB_UPDATE_CONFIRM=update:7e7ec20 scripts/animated-web-update.sh update
+```
+Way back: `LUMEN_WEB_UPDATE_CONFIRM=rollback scripts/animated-web-update.sh rollback`. It is safe while a video
+renders (nothing is restarted), but an open Chat page only changes when it is reloaded.
+
 ## Order of ways back
 Hotfix rollback (if applied) → 6 enable-rollback → 5 web rollback → 4 worker-rollback → 3 backend-rollback → 2 undo SQL → 1 remove the
 forward. The images release stays as it is throughout.
