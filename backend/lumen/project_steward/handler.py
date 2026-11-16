@@ -48,7 +48,7 @@ def get_collector(
 # after returning the current cached/historical snapshot. The browser never
 # receives or supplies the GitHub token, and no request blocks for 23 repos.
 _refresh_lock = asyncio.Lock()
-_last_refresh_queued = 0.0
+_last_refresh_queued: Optional[float] = None
 _AUTO_REFRESH_SECONDS = 900
 _MANUAL_REFRESH_MIN_SECONDS = 60
 
@@ -71,7 +71,9 @@ def _schedule_git_read(
         return
     now = time.monotonic()
     interval = _MANUAL_REFRESH_MIN_SECONDS if force else _AUTO_REFRESH_SECONDS
-    if now - _last_refresh_queued < interval:
+    # The very first authenticated page load must schedule a refresh,
+    # even when the host was booted less than 15 minutes ago.
+    if _last_refresh_queued is not None and now - _last_refresh_queued < interval:
         return
     _last_refresh_queued = now
     background_tasks.add_task(_collect_background, registry, collector)
