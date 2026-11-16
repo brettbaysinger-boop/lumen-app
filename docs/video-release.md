@@ -111,7 +111,11 @@ backup.
 Canary: a Private BigLust image still reaches Chat and Gallery.
 Way back: `VIDEO_RELEASE_CONFIRM=backend-rollback scripts/video-release.sh backend-rollback`.
 
-## Stage 4: worker service, video still OFF
+## Stage 4: worker service, video still OFF. PASSED (owner, 2026-11-16 12:39 MST)
+
+Installed and enabled. With video off it logged "VIDEO_GENERATION_ENABLED is false: nothing to do" and
+exited (`ActiveState=inactive`, `UnitFileState=enabled`, `Result=success`). Do not rerun stages 1–4.
+
 `VIDEO_RELEASE_CONFIRM=worker scripts/video-release.sh worker` installs `lumen-media-worker.service`:
 * the same user, WorkingDirectory and EnvironmentFile as lumen-api;
 * `Restart=on-failure`;
