@@ -22,6 +22,7 @@ from .memory_quality import subject_content_issue, transient_memory_candidate
 from .observations import Candidate, Candidates, automatic_candidate
 from .ollama import OllamaProvider, model_lock, observation_tasks
 from .rmc.adapter import LumenRmcMemory
+from .rmc_shared_nicknames import agreed_nicknames
 
 log = logging.getLogger(__name__)
 
@@ -136,7 +137,8 @@ async def _screen(settings, statement: str, companion: dict) -> list[Candidate]:
     return Candidates.model_validate_json(result).candidates
 
 
-async def auto_ingest_rmc_user_message(settings, token: str, user_id: str, message_id: str) -> None:
+async def auto_ingest_rmc_user_message(settings, token: str, user_id: str,
+                                       message_id: str, assistant_text: str = "") -> None:
     """An RMC-mode background task; each source assertion has stable replay ID."""
     if not (uses_rmc(settings) and getattr(settings, "rmc_auto_ingest_enabled", False)):
         return
@@ -162,18 +164,54 @@ async def auto_ingest_rmc_user_message(settings, token: str, user_id: str, messa
                 or meta.get("attachments") or meta.get("document_id")):
             return
 
-        screening = asyncio.create_task(_screen(settings, statement, companion))
-        observation_tasks.add(screening)
-        try:
-            candidates = await screening
-        except asyncio.CancelledError:
-            state, saved_count = "deferred", 0
-            candidates = None
-        except Exception:
-            state, saved_count = "screen_unavailable", 0
-            candidates = None
-        finally:
-            observation_tasks.discard(screening)
+        # Nicknames are different from one-speaker facts: the assistant can
+        # suggest them, but only the user's explicit acceptance makes them
+        # a shared conversation agreement. Read exactly the preceding
+        # assistant turn, scoped by this conversation, via user-token RLS.
+        preceding = ""
+        if isinstance(row.get("created_at"), str):
+            try:
+                previous = await db._request(
+                    "GET", "messages",
+                    params={
+                        "select": "content,role",
+                        "conversation_id": "eq." + row["conversation_id"],
+                        "role": "eq.assistant",
+                        "created_at": "lt." + row["created_at"],
+                        "order": "created_at.desc,id.desc",
+                        "limit": "1",
+                    },
+                )
+                if (len(previous) == 1 and previous[0].get("role") == "assistant"
+                        and isinstance(previous[0].get("content"), str)):
+                    preceding = previous[0]["content"]
+            except Exception:
+                # A missing previous turn never authorizes a nickname.
+                preceding = ""
+
+        shared_agreement = agreed_nicknames(
+            statement, preceding, assistant_text, companion.get("name", "Companion")
+        )
+        if shared_agreement and _SENSITIVE.search(shared_agreement):
+            shared_agreement = None
+
+        if shared_agreement:
+            # The user explicitly accepted a proposed nickname. This
+            # source-backed agreement does not need an LLM classifier.
+            candidates = []
+        else:
+            screening = asyncio.create_task(_screen(settings, statement, companion))
+            observation_tasks.add(screening)
+            try:
+                candidates = await screening
+            except asyncio.CancelledError:
+                state, saved_count = "deferred", 0
+                candidates = None
+            except Exception:
+                state, saved_count = "screen_unavailable", 0
+                candidates = None
+            finally:
+                observation_tasks.discard(screening)
 
         # The owner can switch off automatic learning while screening is
         # running. Recheck their current RLS-protected companion preference
@@ -188,7 +226,7 @@ async def auto_ingest_rmc_user_message(settings, token: str, user_id: str, messa
                 candidates = None
 
         if candidates is not None:
-            evidence = []
+            evidence = [shared_agreement] if shared_agreement else []
             for candidate in candidates:
                 value = approved_evidence(statement, candidate, companion.get("name", "Companion"))
                 if value and value not in evidence:
@@ -205,7 +243,8 @@ async def auto_ingest_rmc_user_message(settings, token: str, user_id: str, messa
                         # Stable source key across any retry of the same message.
                         outcome = await memory.remember(
                             companion, row["conversation_id"],
-                            "auto:" + message_id + ":" + str(i), quote
+                            ("auto-shared:" if shared_agreement else "auto:")
+                            + message_id + ":" + str(i), quote
                         )
                     except Exception:
                         outcome = "unconfirmed"
@@ -225,6 +264,8 @@ async def auto_ingest_rmc_user_message(settings, token: str, user_id: str, messa
         # Retain existing attachments and do not log user text.
         meta["rmc_auto_state"] = state
         meta["rmc_auto_confirmed_count"] = saved_count
+        if shared_agreement and saved_count:
+            meta["rmc_auto_kind"] = "agreed_nickname"
         await db._request(
             "PATCH", "messages",
             params={"id": "eq." + message_id, "companion_id": "eq." + row["companion_id"]},
