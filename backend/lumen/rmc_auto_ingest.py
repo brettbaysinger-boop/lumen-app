@@ -11,6 +11,7 @@ This worker is best-effort, background-only; chat always wins the model lock.
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import re
 
@@ -88,7 +89,7 @@ async def _screen(settings, statement: str, companion: dict) -> list[Candidate]:
             OllamaProvider(settings).structured(
                 model, [
                     {"role": "system", "content": _PROMPT},
-                    {"role": "user", "content": __import__("json").dumps(payload)},
+                    {"role": "user", "content": json.dumps(payload)},
                 ], Candidates.model_json_schema(),
                 max_tokens=900, timeout=50, think=False,
             ),
@@ -135,6 +136,18 @@ async def auto_ingest_rmc_user_message(settings, token: str, user_id: str, messa
             candidates = None
         finally:
             observation_tasks.discard(screening)
+
+        # The owner can switch off automatic learning while screening is
+        # running. Recheck their current RLS-protected companion preference
+        # before issuing ANY durable RMC write.
+        if candidates is not None:
+            latest = await db.get_companion(row["companion_id"])
+            if (not latest or latest.get("owner_user_id") != user_id
+                    or latest.get("auto_memory_enabled") is False
+                    or not (uses_rmc(settings) and
+                            getattr(settings, "rmc_auto_ingest_enabled", False))):
+                state, saved_count = "memory_off", 0
+                candidates = None
 
         if candidates is not None:
             evidence = []
