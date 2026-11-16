@@ -36,7 +36,7 @@ from .images import (
     create_image_provider,
 )
 from .media_safety import check_media_prompt, refusal_text
-from .media_jobs import router as media_router
+from .media_jobs import router as media_router, video_request
 from .portrait_creation import router as portrait_router
 from .push import router as push_router
 from .voice import router as voice_router
@@ -220,6 +220,11 @@ async def generate_image(
         )
         if not conversation:
             raise HTTPException(status_code=404, detail="Conversation not found")
+
+    # A video ask never becomes a still, even from an app that sent it here by mistake.
+    if video_request(request.user_message or "") or video_request(request.prompt):
+        raise HTTPException(status_code=409, detail="That sounds like a video request, so I haven't made an "
+                            "image. Send it again as a chat message to start the video.")
 
     verdict = check_media_prompt(request.prompt)
     if not verdict.allowed:

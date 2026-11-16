@@ -12,6 +12,7 @@ from lumen import media_jobs as mj
 from lumen import privacy_mode as pm
 from lumen.images import ImageProviderError, ImageProviderNotConfigured
 from lumen.media_safety import check_media_prompt
+from lumen.runtime import VIDEO_NOT_HERE
 from lumen.schemas import Attachment
 from lumen.video_providers import (FramePackProvider, find_video_output, frame_count, framepack_arguments,
                                    framepack_progress, framepack_video_path, run_comfy_video_workflow)
@@ -454,7 +455,7 @@ class JobAwareSupabase(FakeSupabase):
         return super().handler(request)
 
 
-class ChatTurnTests(unittest.IsolatedAsyncioTestCase):
+class ChatTurnHarness(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
         self.supabase = JobAwareSupabase()
         original = httpx.AsyncClient
@@ -465,7 +466,7 @@ class ChatTurnTests(unittest.IsolatedAsyncioTestCase):
     async def asyncTearDown(self):
         self.patch.stop()
 
-    async def turn(self, mode, message, reply="Sure!"):
+    async def turn(self, mode, message, reply="Sure!", **kwargs):
         runtime = pm.runtime_for(mode)(video_settings(), "user-token", USER_ID)
         runtime.provider = FakeModel(reply)
         runtime.request_key = "req-1"
@@ -473,11 +474,14 @@ class ChatTurnTests(unittest.IsolatedAsyncioTestCase):
                 patch("lumen.runtime.create_companion_image", AsyncMock(return_value={
                     "attachments": [{"path": f"{USER_ID}/i.png", "mime_type": "image/png"}],
                     "generation_prompt": "p", "image_model": "flux"})) as image:
-            response = await runtime.respond(COMPANION_ID, CONVERSATION_ID, message)
+            response = await runtime.respond(COMPANION_ID, CONVERSATION_ID, message, **kwargs)
         return response, start, image
 
     def jobs_written(self):
         return [body for method, table, body in self.supabase.requests if table == mj.JOB_TABLE and method == "POST"]
+
+
+class ChatTurnTests(ChatTurnHarness):
 
     async def test_private_video_request_records_and_starts_a_job(self):
         response, start, _ = await self.turn("private", "Make a short video of you waving")
@@ -521,6 +525,107 @@ class ChatTurnTests(unittest.IsolatedAsyncioTestCase):
         response, _, image = await self.turn("private", "surprise me", reply)
         image.assert_not_awaited()
         self.assertIn("minor", response.content)
+
+
+# Live failure 2026-11-16 (Private, desktop): this exact message produced a new still image.
+LIVE_VIDEO_ASK = "Make a 3-second video animating the image you just generated. Use gentle, natural movement."
+MODEL_IMAGE_ACTION = ('Here you go. <lumen_image_action>{"action":"generate_image","action_input":'
+                      '"orange and yellow triangles","subject":"other"}</lumen_image_action>')
+GENERATED = {"id": "m-gen", "role": "assistant", "created_at": "2026-11-16T19:58:00Z", "content": "Here you go.",
+             "metadata": {"generated_image": True,
+                          "attachments": [{"path": f"{USER_ID}/biglust.png", "mime_type": "image/png"}]}}
+
+
+class LiveVideoAskTests(ChatTurnHarness):
+    """The exact live message, with a model that answers with an image action (or with nothing)."""
+
+    async def asyncSetUp(self):
+        await super().asyncSetUp()
+        self.supabase.messages.insert(0, dict(GENERATED))
+
+    def practice(self):
+        rows = self.supabase.rows
+
+        def with_goal(table):
+            found = rows(table)
+            if table == "conversations":
+                return [{**found[0], "goal_item_id": "44444444-4444-4444-4444-444444444444"}]
+            return found
+        self.supabase.rows = with_goal
+        context = patch("lumen.runtime.practice_context",
+                        AsyncMock(return_value={"role": "system", "content": "practice"}))
+        context.start()
+        self.addCleanup(context.stop)
+
+    async def test_detectors(self):
+        self.assertTrue(mj.video_request(LIVE_VIDEO_ASK))
+        self.assertFalse(mj.image_request(LIVE_VIDEO_ASK))
+
+    async def test_private_chat_queues_one_i2v_job_from_the_image_just_made(self):
+        for reply in (MODEL_IMAGE_ACTION, "Sure!"):
+            with self.subTest(reply=reply[:20]):
+                self.supabase.requests.clear()
+                response, start, image = await self.turn("private", LIVE_VIDEO_ASK, reply)
+                image.assert_not_awaited()
+                jobs = self.jobs_written()
+                self.assertEqual(len(jobs), 1)
+                self.assertEqual((jobs[0]["mode"], jobs[0]["source_path"]), ("i2v", f"{USER_ID}/biglust.png"))
+                self.assertEqual(jobs[0]["duration_seconds"], 3.0)
+                start.assert_called_once()
+                assistant = self.supabase.messages[0]
+                self.assertEqual(assistant["metadata"]["media_job"]["id"], jobs[0]["id"])
+                self.assertNotIn("attachments", assistant["metadata"])
+                self.assertIn("video", response.content)
+
+    async def test_practice_session_says_why_and_makes_nothing(self):
+        self.practice()
+        for reply in (MODEL_IMAGE_ACTION, "Sure!"):
+            with self.subTest(reply=reply[:20]):
+                response, start, image = await self.turn("private", LIVE_VIDEO_ASK, reply)
+                image.assert_not_awaited()
+                start.assert_not_called()
+                self.assertEqual(self.jobs_written(), [])
+                self.assertEqual(response.content, VIDEO_NOT_HERE)
+
+    async def test_selected_document_makes_no_image_and_no_job(self):
+        response, start, image = await self.turn("private", LIVE_VIDEO_ASK, MODEL_IMAGE_ACTION, document_id="doc1")
+        image.assert_not_awaited()
+        start.assert_not_called()
+        self.assertEqual(self.jobs_written(), [])
+        self.assertEqual(response.content, VIDEO_NOT_HERE)
+
+
+class ImageRouteVideoGuardTests(unittest.TestCase):
+    """POST /v0.2/images/generate refuses a video ask before any image work."""
+
+    def setUp(self):
+        from fastapi.testclient import TestClient
+        from lumen.auth import AuthUser, require_user
+        from lumen.main import app
+        app.dependency_overrides[require_user] = lambda: AuthUser(id=USER_ID, token="user-token")
+        self.addCleanup(app.dependency_overrides.pop, require_user, None)
+        self.supabase = FakeSupabase()
+        original = httpx.AsyncClient
+        client = patch("lumen.db.httpx.AsyncClient",
+                       side_effect=lambda **kw: original(transport=httpx.MockTransport(self.supabase.handler), **kw))
+        provider = patch("lumen.main.create_image_provider")
+        client.start(), self.addCleanup(client.stop)
+        self.provider = provider.start(), self.addCleanup(provider.stop)
+        self.client = TestClient(app)
+
+    def post(self, prompt, user_message=None):
+        return self.client.post("/v0.2/images/generate", json={
+            "companion_id": COMPANION_ID, "conversation_id": CONVERSATION_ID, "prompt": prompt,
+            **({"user_message": user_message} if user_message else {}), "privacy_mode": "private"})
+
+    def test_live_video_ask_is_refused_without_an_image(self):
+        for prompt, said in ((LIVE_VIDEO_ASK, None),
+                             (f"Create an image based on this request: {LIVE_VIDEO_ASK}", "yes")):
+            result = self.post(prompt, said)
+            self.assertEqual(result.status_code, 409)
+            self.assertIn("video", result.json()["detail"])
+        self.provider[0].assert_not_called()
+        self.assertFalse([r for r in self.supabase.requests if r[0] == "POST"])
 
 
 class JobRouteTests(unittest.IsolatedAsyncioTestCase):

@@ -31,6 +31,10 @@ from .memory_backend import uses_rmc
 from .rmc.adapter import LumenRmcMemory
 
 
+VIDEO_NOT_HERE = ("I can't make videos during a practice session or while a document is selected, "
+                  "so I haven't made a video or an image. Ask again in a regular chat in 🔒 Private.")
+
+
 class CognitionRuntime:
     def __init__(self, settings: Settings, access_token: str | None = None, user_id: str | None = None):
         self.settings = settings
@@ -110,7 +114,12 @@ class CognitionRuntime:
         # Short video jobs (Private only). Planning never runs GPU work; the job starts
         # after the reply is saved and delivers the clip to this message later.
         video_plan = None
-        if (not document_id and not practice and getattr(self, "privacy_mode", "private") == "private"
+        if (getattr(self, "privacy_mode", "private") == "private" and video_request(user_message)
+                and (document_id or practice)):
+            # An explicit video ask never falls through to the model, which could answer it
+            # with a still image. Practice and document turns keep their boundary and say why.
+            action = {"content": VIDEO_NOT_HERE, "model": "media-job"}
+        elif (not document_id and not practice and getattr(self, "privacy_mode", "private") == "private"
                 and video_request(user_message)):
             if emit:
                 await emit({"type": "activity", "text": "Getting a video ready…"})

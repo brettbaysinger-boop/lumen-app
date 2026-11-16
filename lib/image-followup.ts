@@ -6,6 +6,9 @@ const CONFIRMATION =
 const IMAGE_OFFER =
   /\b(?:generate|create|make|draw|paint|render|illustrate)\b[^.!?]{0,110}\b(?:image|picture|pic|photo|drawing|painting|illustration|artwork|portrait)\b|\b(?:image|picture|portrait)\b[^.!?]{0,90}\b(?:generate|create|make|draw|paint|render)\b/i;
 
+const VIDEO_OFFER =
+  /\b(?:video|vid|clip|animation|movie|gif|cinemagraph)s?\b|\banimat(?:e|ed|ing|ion)\b|\bto life\b/i;
+
 const OFFER_LANGUAGE =
   /\b(?:want|would you like|shall i|should i|can i|could i|let me|i can|i could|how about|if you.d like)\b/i;
 
@@ -19,6 +22,9 @@ export function imagePromptFromConfirmation(
   if (!last || last.role !== 'assistant') return null;
 
   const offer = last.content.trim();
+
+  // "Want me to make a video of this image?" is a video offer, never a still.
+  if (VIDEO_OFFER.test(offer)) return null;
 
   if (!IMAGE_OFFER.test(offer) || !OFFER_LANGUAGE.test(offer)) {
     return null;
