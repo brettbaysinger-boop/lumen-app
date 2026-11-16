@@ -147,7 +147,12 @@ for media, Public/Private and the live room, all pass.
 Canary: Gallery in Public reads nothing and says it is hidden. In Private it shows everything as before.
 Way back: `LUMEN_WEB_UPDATE_CONFIRM=rollback scripts/animated-web-update.sh rollback`.
 
-## Stage 6: enable video, then the live canary
+## Stage 6: enable video, then the live canary. ENABLED (owner, 2026-11-16); canary pending
+
+Before enabling, `check` showed every earlier stage in place. `enable` then reported "video on (clips up to the
+existing 10 s), worker running, render budget 14400s". Not yet accepted end to end. If the canary fails,
+inspect `journalctl -u lumen-media-worker` and do not queue another GPU job.
+
 ```
 VIDEO_FRAMEPACK_URL=http://127.0.0.1:17863 VIDEO_RELEASE_CONFIRM=enable scripts/video-release.sh enable
 ```
