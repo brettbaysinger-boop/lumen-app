@@ -129,6 +129,19 @@ backend_restore() {  # $1 = record; puts every backed-up file back exactly, then
   echo "Backend files are exactly as before step 1, and lumen-api was restarted."
 }
 
+# Runs one discovery pattern on the patched copy (uses $copy, $record and run from backend_apply). Fails closed:
+# it needs OK and, unless "any", exactly the expected number of tests, so a missing or unloadable file stops.
+suite() {
+  local label="$1" pattern="$2" expected="$3" out ran ok
+  out=$(cd "$copy/backend" && "${run[@]}" -m unittest discover -s tests -p "$pattern" -q 2>&1) && ok=1 || ok=0
+  printf '== %s (%s)\n%s\n' "$label" "$pattern" "$out" >> "$record/tests.log"
+  ran=$(sed -n 's/^Ran \([0-9][0-9]*\) tests\{0,1\} in .*/\1/p' <<< "$out" | tail -1)
+  [ "$ok" = 1 ] && [ -n "$ran" ] && [ "$ran" -gt 0 ] && { [ "$expected" = any ] || [ "$ran" = "$expected" ]; } && tail -1 <<< "$out" | grep -q '^OK' \
+    || die "$label: tests failed or did not all run on the patched copy (ran ${ran:-0}, expected $expected; see $record/tests.log). Nothing was changed."
+  pass "$label: $ran tests pass on the patched copy"
+}
+test_count() { local f n=0; for f in "$@"; do n=$((n + $(repo show "$BACKEND_COMMIT:$f" | grep -cE '^[[:space:]]+(async )?def test_'))); done; echo "$n"; }
+
 backend_apply() {
   local id; id=$(patch_id)
   [ "${PRIVACY_RELEASE_CONFIRM:-}" = "backend:$id" ] || die "Owner confirmation missing. After reviewing 'backend-check', run: PRIVACY_RELEASE_CONFIRM=backend:$id $0 backend"
@@ -155,12 +168,21 @@ backend_apply() {
   while read -r path; do [ "$(git hash-object --no-filters -- "$copy/$path")" = "$(blob_of "$BACKEND_COMMIT" "$path")" ] || die "the patched copy of $path is not the reviewed file. Nothing was changed."; done < <(backend_files)
   local run=(env -i PATH="$PATH" HOME="$HOME" LANG=C.UTF-8 PYTHONPATH="$copy/backend" SUPABASE_URL=http://127.0.0.1:9 SUPABASE_SERVICE_ROLE_KEY=fictional "$PYTHON" -B)
   [[ "$(cd "$copy/backend" && "${run[@]}" -c 'import lumen; print(lumen.__file__)')" == "$copy/backend/"* ]] || die "the tests would not use the patched copy. Nothing was changed."
+  # The live checkout may lack some of PR #38's test files (tests are not deployed code). Add the reviewed
+  # copies of missing test files to the throwaway copy only; a test file the live checkout has is never replaced.
+  : > "$record/tests.log"
+  while read -r path; do
+    [ -e "$copy/$path" ] && continue
+    mkdir -p "$copy/$(dirname "$path")"; repo show "$BACKEND_COMMIT:$path" > "$copy/$path"
+    echo "added reviewed test file missing from the live checkout (copy only): $path" | tee -a "$record/tests.log"
+  done < <(repo ls-tree -r --name-only "$BACKEND_COMMIT" -- backend/tests)
+  for path in backend/tests/test_privacy_mode.py backend/tests/test_privacy_mode_rmc.py backend/tests/test_rmc_auto_ingest.py; do
+    [ "$(git hash-object --no-filters -- "$copy/$path")" = "$(blob_of "$BACKEND_COMMIT" "$path")" ] || die "$path in the copy is not the reviewed file. Nothing was changed."
+  done
   echo "Running the backend tests on the patched copy (log: $record/tests.log) ..."
-  (cd "$copy/backend" && "${run[@]}" -m unittest discover -s tests -q) > "$record/tests.log" 2>&1 \
-    || die "backend tests failed on the patched copy (see $record/tests.log). Nothing was changed."
-  (cd "$copy/backend" && "${run[@]}" -m unittest tests.test_privacy_mode tests.test_privacy_mode_rmc tests.test_rmc_auto_ingest -q) >> "$record/tests.log" 2>&1 \
-    || die "the privacy or automatic-learning tests failed on the patched copy. Nothing was changed."
-  pass "backend tests pass on the patched copy: $(grep -m1 '^Ran ' "$record/tests.log")"
+  suite "whole backend suite" 'test*.py' any
+  suite "Public / Private mode" 'test_privacy_mode*.py' "$(test_count backend/tests/test_privacy_mode.py backend/tests/test_privacy_mode_rmc.py)"
+  suite "RMC automatic learning (D01-63E)" 'test_rmc_auto_ingest.py' "$(test_count backend/tests/test_rmc_auto_ingest.py)"
 
   echo "$record" > "$STATE_DIR/backend-current"
   trap 'echo "Step 1 failed; restoring the backed-up files." >&2; trap - ERR; backend_restore "$record"; rm -rf "$copy"; exit 1' ERR

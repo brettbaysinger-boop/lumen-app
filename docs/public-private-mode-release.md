@@ -49,9 +49,12 @@ for `a2148d8`).
 1. backs up the 7 files with their sha256 under `~/.local/state/lumen-animated/privacy-release/backend-*`
    (the 3 new files are recorded as absent);
 2. copies the live `backend/` and `scripts/` (no `.venv`, no `.env`) to a throwaway directory, applies the
-   reviewed patch there, checks every patched file equals the reviewed commit, and runs the **whole
-   backend suite** with the live venv's Python on that copy, plus the privacy and automatic-learning tests
-   by name. Any failure stops here: nothing live has changed;
+   reviewed patch there, checks every patched file equals the reviewed commit, and adds the reviewed copy of
+   any backend test file the live checkout lacks (the copy only; the live checkout has no
+   `test_rmc_auto_ingest.py` or `test_rmc_memory_routes.py`). With the live venv's Python it then runs, by
+   test discovery, the **whole backend suite**, then the Public / Private tests (exactly 26) and the D01-63E
+   automatic-learning tests (exactly 14). Each must say OK with the expected number of tests run. Any failure
+   stops here: nothing live has changed;
 3. applies the same patch to the live working files only (no index, no HEAD, no other file) and checks the
    result byte for byte;
 4. restarts lumen-api only (`sudo systemctl restart lumen-api`), waits for `/health`, checks the running
@@ -89,6 +92,10 @@ staged. Then it fetches the commit into the live repository, moves HEAD (the bra
 `a2148d8` with `git update-ref`, and sets the index entries of exactly those files. It writes no working
 file, resets nothing, discards nothing: afterwards `git status` is clean because the files already were
 that commit. Any other local edit stays as it is.
+
+**Open item before 2a:** the owner's Gate 1 run showed the live checkout lacks PR #38's
+`backend/tests/test_rmc_auto_ingest.py` and `backend/tests/test_rmc_memory_routes.py`, so `baseline-check`
+will refuse (correctly) until that is decided. Nothing here adds them to the live checkout.
 
 **Undo:** `PRIVACY_RELEASE_CONFIRM=baseline-undo scripts/animated-privacy-release.sh baseline-undo` puts
 HEAD and those index entries back to `f23d112`; the files stay untouched. It refuses while the new web

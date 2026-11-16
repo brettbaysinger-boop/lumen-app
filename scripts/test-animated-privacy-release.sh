@@ -82,14 +82,15 @@ out=$(rel backend-check) && grep -q '^READY' <<<"$out" && [ "$(snap)" = "$START"
 grep -q "PRIVACY_RELEASE_CONFIRM=backend:$PATCH_ID" <<<"$out" && ok "backend token is the reviewed patch's sha256 ($PATCH_ID)" || bad "token"
 out=$(rel backend) || true; grep -q 'Owner confirmation missing' <<<"$out" && [ "$(snap)" = "$START" ] && ok "backend refuses without confirmation" || bad "backend confirmation"
 touch "$S/tests_fail"; out=$(rel backend PRIVACY_RELEASE_CONFIRM=backend:$PATCH_ID) || true; rm "$S/tests_fail"
-grep -q 'tests failed on the patched copy' <<<"$out" && [ "$(snap)" = "$START" ] && [ "$(restarts)" = 0 ] && ok "failing tests on the patched copy: nothing live changed, nothing restarted" || { bad "tests fail"; echo "$out"; }
+grep -q 'tests failed or did not all run on the patched copy' <<<"$out" && [ "$(snap)" = "$START" ] && [ "$(restarts)" = 0 ] && ok "failing tests on the patched copy: nothing live changed, nothing restarted" || { bad "tests fail"; echo "$out"; }
 rm -f "$H/state/lumen-animated/privacy-release/backend-current"
 touch "$S/health_broken"; out=$(rel backend PRIVACY_RELEASE_CONFIRM=backend:$PATCH_ID) || true; rm "$S/health_broken"
 grep -q 'restoring the backed-up files' <<<"$out" && [ "$(snap)" = "$START" ] && [ "$(restarts)" = 2 ] && [ ! -f "$S/serving_privacy" ] \
   && ok "unhealthy after restart: files restored byte for byte and lumen-api restarted on the old code" || { bad "auto rollback"; echo "$out"; }
 : > "$S/calls"
 out=$(rel backend PRIVACY_RELEASE_CONFIRM=backend:$PATCH_ID) || { bad "backend run"; echo "$out"; }
-grep -q 'Ran [0-9]* tests' <<<"$out" && ok "real backend suite passed on the patched copy: $(grep -o 'Ran [0-9]* tests' <<<"$out" | head -1)" || { bad "suite"; echo "$out"; }
+grep -q 'whole backend suite: [0-9]* tests pass' <<<"$out" && grep -q 'Public / Private mode: 26 tests pass' <<<"$out" && grep -q 'RMC automatic learning (D01-63E): 14 tests pass' <<<"$out" \
+  && ok "real backend suites passed on the patched copy: $(grep -o 'whole backend suite: [0-9]* tests' <<<"$out"), privacy 26, automatic learning 14" || { bad "suite"; echo "$out"; }
 backend_is "$BACKEND" && [ "$(git -C "$L" rev-parse HEAD)" = "$LIVE_BASE" ] && [ -z "$(git -C "$L" diff --cached --name-only)" ] \
   && ok "backend: the 7 files are the reviewed ones; HEAD and index untouched" || bad "backend files"
 [ "$(git -C "$L" status --porcelain | wc -l)" = 17 ] && ok "backend: the 12 PR #38 local edits are still there (plus schemas.py, voice.py and 3 new privacy files)" || { bad "local edits"; git -C "$L" status --porcelain; }
@@ -135,6 +136,18 @@ out=$(upd rollback LUMEN_WEB_UPDATE_CONFIRM=rollback) && [ "$(snap)" = "$AFTER2"
 out=$(rel baseline-undo PRIVACY_RELEASE_CONFIRM=baseline-undo) && [ "$(snap)" = "$AFTER1" ] || { bad "undo 2a"; echo "$out"; }
 out=$(rel backend-rollback PRIVACY_RELEASE_CONFIRM=backend-rollback) && [ "$(snap)" = "$START" ] \
   && ok "all the way back: live HEAD, index, every file and the served build are exactly as at the start" || { bad "full rollback"; echo "$out"; }
+
+# --- As found on the real host: the live checkout lacks two of PR #38's test files --------------------
+rm "$L/backend/tests/test_rmc_auto_ingest.py" "$L/backend/tests/test_rmc_memory_routes.py"; NOTESTS=$(snap)
+out=$(rel backend PRIVACY_RELEASE_CONFIRM=backend:$PATCH_ID) || { bad "backend without live test files"; echo "$out"; }
+[ "$(grep -c 'added reviewed test file missing from the live checkout (copy only)' <<<"$out")" = 2 ] && grep -q 'RMC automatic learning (D01-63E): 14 tests pass' <<<"$out" \
+  && backend_is "$BACKEND" && [ ! -e "$L/backend/tests/test_rmc_auto_ingest.py" ] \
+  && ok "live without PR #38's 2 test files: reviewed copies added to the throwaway copy only, all suites run, live gets only the 7 files" || { bad "missing test files"; echo "$out"; }
+out=$(rel baseline-check) || true; grep -q 'differ from the reviewed commit' <<<"$out" && grep -q 'test_rmc_auto_ingest.py' <<<"$out" \
+  && ok "baseline-check refuses while those 2 test files are missing (open item for gate 2a)" || { bad "baseline missing files"; echo "$out"; }
+out=$(rel backend-rollback PRIVACY_RELEASE_CONFIRM=backend-rollback) && [ "$(snap)" = "$NOTESTS" ] || { bad "rollback without test files"; echo "$out"; }
+for p in backend/tests/test_rmc_auto_ingest.py backend/tests/test_rmc_memory_routes.py; do git -C "$SRC" show "$RMC_BASE:$p" > "$L/$p"; done
+[ "$(snap)" = "$START" ] || bad "restore test files"
 
 # --- Refusals ---------------------------------------------------------------------------------------
 echo "# drift" >> "$L/backend/lumen/main.py"
