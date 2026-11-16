@@ -81,7 +81,8 @@ test('every chat, image and voice request carries the mode as a fixed word, neve
   assert.match(cognition,/request_id: turnKey \|\| requestKey\(\), privacy_mode: privacyMode \}\)/);
   assert.match(cognition,/privacy_mode: privacyMode,\n\s+\}\),/);
   const screen=read('app/(tabs)/index.tsx');
-  assert.equal((screen.match(/getPrivacyMode\(\),\n\s+\);/g)||[]).length,2);   // respondToMessage and generateImage
+  assert.match(screen,/const sentMode = getPrivacyMode\(\);/);
+  assert.equal((screen.match(/sentMode,\n\s+\);/g)||[]).length,2);   // respondToMessage and generateImage use the mode the turn was sent in
   assert.match(screen,/privacy: \{ mode: getPrivacyMode\(\), messageId: message\.id \}/);
   assert.match(read('lib/voice.ts'),/\.\.\.speechPrivacy\(options\.privacy\)/);
   assert.match(read('lib/reply-audio.native.ts'),/\.\.\.speechPrivacy\(options\.privacy\)/);
@@ -110,4 +111,27 @@ test('the switch is in Chat, Video Chat and Theater, and flipping it never touch
   // Public stops audible speech at once; nothing else changes with the mode.
   assert.match(screen,/if \(privacy\.mode === 'public'\) \{ playbackRef\.current\?\.abort\(\); autoSpeak\.cancel\(\); \}/);
   assert.doesNotMatch(screen,/privacy\.mode[^\n]*animated\.(close|connect)/);
+});
+
+test('a Private reply is hidden the moment the switch says Public, and later text is dropped',()=>{
+  const {turnHidden}=load();
+  assert.equal(turnHidden('public','private'),true);assert.equal(turnHidden('public',null),true);
+  assert.equal(turnHidden('public','public'),false);assert.equal(turnHidden('private','private'),false);assert.equal(turnHidden('private','public'),false);
+  const screen=read('app/(tabs)/index.tsx');
+  assert.match(screen,/if \(turnHidden\(getPrivacyMode\(\), sentMode\)\) return;\n\s+if \(event\.type === 'delta'\)/);   // checked per streamed line, before it is kept
+  assert.match(screen,/ListFooterComponent=\{sending && hideTurn \?/);                                                      // pending question, activity and partial reply
+  assert.match(screen,/getPrivacyMode\(\) === sentMode \? autoSpeak\.claim/);                                              // no auto-speech across a switch
+  assert.match(screen,/activeConversation\?\.handoff && !theater && privacy\.mode === 'private' && <HandoffCard/);
+  assert.match(screen,/privacy\.mode === 'private' && memoryQuestions\.map/);
+  assert.match(screen,/memoryNotice && privacy\.mode === 'private' &&/);
+  assert.match(screen,/privacy\.mode === 'private' \? `Using document: \$\{pendingDocument\.title\}`/);
+});
+
+test('the browser check follows the protected updater\'s file naming, which is not widened',()=>{
+  assert.ok(fs.existsSync('scripts/test-animated-privacy-mode-browser.cjs'));
+  assert.ok(!fs.existsSync('scripts/test-privacy-mode-browser.cjs'));
+  const updater=read('scripts/animated-web-update.sh');
+  const rule=updater.match(/^FRONTEND_ONLY='(.+)'$/m)[1];
+  assert.equal(rule,"^(app/|components/|lib/|hooks/|types/|tests/|docs/|scripts/(test-)?(animated[-_][A-Za-z0-9_.-]+|android-refresh\\.sh)$)");
+  assert.match('scripts/test-animated-privacy-mode-browser.cjs',new RegExp(rule));
 });

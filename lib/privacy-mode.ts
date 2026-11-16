@@ -96,6 +96,14 @@ export function messageVisible(mode: PrivacyMode, message: { metadata?: Record<s
   return mode === 'private' || message?.metadata?.privacy_mode === 'public';
 }
 
+/**
+ * Whether the reply on its way must be hidden: it was asked for in Private (or before the mode was
+ * known) and the switch now says Public. A turn sent in Public is always shown.
+ */
+export function turnHidden(now: PrivacyMode, sentIn: PrivacyMode | null): boolean {
+  return now === 'public' && sentIn !== 'public';
+}
+
 /** Conversation names can say a lot. In Public mode the list shows only a neutral name. */
 export function conversationLabel(mode: PrivacyMode, title: string, lastMessageAt?: string | null): string {
   if (mode === 'private') return title;

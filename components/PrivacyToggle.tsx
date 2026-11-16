@@ -10,8 +10,8 @@ import { choosePrivacyMode, usePrivacyMode, type PrivacyMode } from '@/lib/priva
 const FILL: Record<PrivacyMode, string> = { private: '#3ac7be', public: '#f5a524' };
 const LABEL: Record<PrivacyMode, string> = { private: '🔒 Private', public: '👥 Public' };
 const HINT: Record<PrivacyMode, string> = {
-  private: 'Private mode: just you. Lumen can use your memories, documents and earlier chats.',
-  public: 'Public mode: people may be nearby. Lumen keeps personal things to herself.',
+  private: 'Private mode: just you. In Chat and Live Room, Lumen can use your memories, documents and earlier chats.',
+  public: 'Public mode for Chat and Live Room: people may be nearby. Lumen keeps personal things to herself here. Other tabs are not covered.',
 };
 
 /** Two-segment switch. `overlay` is the style used over the live video, readable on any frame. */
@@ -43,7 +43,7 @@ export function PrivacyBar({ c }: { c: ExtendedThemeColors }) {
     <PrivacyToggle c={c} />
     {mode === 'public' && <Text accessibilityLiveRegion="polite" numberOfLines={2}
       style={{ color: c.isDark ? '#f7c76b' : '#8a5300', fontSize: 12, textAlign: 'center' }}>
-      {restored ? 'Still in Public mode from before. ' : ''}Personal things stay private, and earlier private messages are hidden.
+      {restored ? 'Still in Public mode from before. ' : ''}Chat and Live Room only: personal things stay private here and earlier private messages are hidden. Other tabs are not covered.
     </Text>}
   </View>;
 }

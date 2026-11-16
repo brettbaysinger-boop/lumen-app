@@ -46,7 +46,7 @@ import { CompanionPortrait } from '@/components/CompanionPortrait';
 import { AnimatedCompanion } from '@/components/AnimatedCompanion';
 import { LiveRoomActions, LiveRoomHeader, LiveRoomTheaterBar } from '@/components/LiveRoom';
 import { PrivacyBar, PrivacyToggle } from '@/components/PrivacyToggle';
-import { conversationLabel, getPrivacyMode, listenForAppPrivacy, messageVisible, usePrivacyMode } from '@/lib/privacy-mode';
+import { conversationLabel, getPrivacyMode, listenForAppPrivacy, messageVisible, turnHidden, usePrivacyMode, type PrivacyMode } from '@/lib/privacy-mode';
 import { ROOM_BACK_EVENT, ROOM_LANDSCAPE_EVENT, ROOM_PORTRAIT_EVENT, getRoomMode, isLiveRoom, postRoomEvent, roomEmbedded, setRoomMode, turnRoom, useRoomMode, type RoomView } from '@/lib/live-room';
 import { AnimatedCompanionSession, animatedCompanionAvailable, type AnimatedState } from '@/lib/animated-companion';
 import { AutoSpeak } from '@/lib/animated-companion-core';
@@ -107,6 +107,10 @@ export default function ChatScreen() {
 
   // 🔒 Private | 👥 Public (Issue #39). Requests read the current choice with getPrivacyMode().
   const privacy = usePrivacyMode();
+  // The mode the reply now on its way was asked for in. A Private turn is hidden the moment the
+  // switch says Public, including anything that arrives after (lib/privacy-mode.ts turnHidden).
+  const [turnMode, setTurnMode] = useState<PrivacyMode | null>(null);
+  const hideTurn = turnHidden(privacy.mode, turnMode);
   const [companion, setCompanion] = useState<Companion | null>(null);
   const { state: companionState } = useCompanionState(companion?.id);
   const [conversations, setConversations] = useState<Conversation[]>([]);
@@ -695,6 +699,8 @@ export default function ChatScreen() {
     ) return;
     playbackRef.current?.abort();
     const speakTurn = autoSpeak.begin(activeConversation?.id ?? null, messages.map(message => message.id));
+    const sentMode = getPrivacyMode();
+    setTurnMode(sentMode);
 
     sendBusyRef.current = true;
     memoryWindowRef.current = new Date().toISOString();
@@ -731,7 +737,7 @@ export default function ChatScreen() {
           activeConversation?.id ?? null,
           followupImagePrompt ?? text,
           followupImagePrompt ? text : undefined,
-          getPrivacyMode(),
+          sentMode,
         );
       } else {
         for (const image of images) {
@@ -748,6 +754,8 @@ export default function ChatScreen() {
           attachments,
           (event) => {
             if (event.type === 'activity') setActivity(event.text || `${companion.name} thinking…`);
+            // Text from a Private turn that arrives while the switch says Public is never kept.
+            if (turnHidden(getPrivacyMode(), sentMode)) return;
             if (event.type === 'delta') {
               setActivity(`${companion.name} thinking…`);
               setLiveReply(reply => reply + event.text);
@@ -757,7 +765,7 @@ export default function ChatScreen() {
           turnKey.current.id,
           document?.id,
           effort,
-          getPrivacyMode(),
+          sentMode,
         );
       }
       const { data, error: refreshError } = await supabase
@@ -777,7 +785,8 @@ export default function ChatScreen() {
         if (conversation) setActiveConversation(conversation as Conversation);
       }
       const loaded = await loadMessages(response.conversation_id);
-      const newReply = autoSpeak.claim(speakTurn, response.conversation_id, loaded ?? [], animated.state === 'ready');
+      // A reply is read aloud only if the switch has not changed since it was asked for.
+      const newReply = getPrivacyMode() === sentMode ? autoSpeak.claim(speakTurn, response.conversation_id, loaded ?? [], animated.state === 'ready') : (autoSpeak.cancel(), null);
       if (newReply) setPendingSpeak(newReply);
       if (cacheRef.current) {
         cacheRef.current = { ...cacheRef.current, drafts: { ...cacheRef.current.drafts, [draftKey]: '' } };
@@ -797,6 +806,7 @@ export default function ChatScreen() {
       setPendingQuestion('');
       setLiveReply('');
       setActivity('');
+      setTurnMode(null);
       setCreatingImage(false);
     }
   }, [inputText, pendingImages, pendingDocument, documentBusy, companion, session?.user.id, sending, activeConversation, loadMessages, messages, autoSpeak, animated]);
@@ -1100,7 +1110,7 @@ export default function ChatScreen() {
         }} />}
       <ChatManagement collections={collections} key={managedChat?.id ?? 'closed'} chat={managedChat} busy={managementBusy}
         error={managementError} onClose={() => { if (!managementBusyRef.current) setManagedChat(null); }} onChange={changeChat} />
-      {activeConversation?.handoff && !theater && <HandoffCard key={activeConversation.id}
+      {activeConversation?.handoff && !theater && privacy.mode === 'private' && <HandoffCard key={activeConversation.id}
         chat={activeConversation} chats={conversations}
         disabled={sending || voiceBusy || managementBusy || documentBusy}
         onOpen={chat => setActiveConversation(chat)} />}
@@ -1118,7 +1128,9 @@ export default function ChatScreen() {
       <ConversationList
         ref={flatListRef}
         data={messages}
-        ListFooterComponent={sending ? <View style={{ gap: 12, padding: 16 }}>
+        ListFooterComponent={sending && hideTurn ? <View style={{ gap: 12, padding: 16 }}>
+          <Text accessibilityLiveRegion="polite" style={{ color: colors.neutral[300], fontStyle: 'italic' }}>{companion?.name || 'Lumen'} is finishing a reply that's hidden while 👥 Public is on.</Text>
+        </View> : sending ? <View style={{ gap: 12, padding: 16 }}>
           <Text style={{ color: colors.neutral[100], textAlign: 'right' }}>{pendingQuestion}</Text>
           <View style={{ flexDirection: 'row', gap: 12, alignItems: 'flex-start' }}>
             <CompanionPortrait colors={colors} size={isMobile ? 36 : 46} portraitUrl={companion?.portrait_url} mood="thinking" />
@@ -1153,7 +1165,7 @@ export default function ChatScreen() {
           <Text style={styles.errorBannerText}>{error}</Text>
         </View>
       )}
-      {memoryQuestions.map(question => <View key={question.id} style={styles.errorBanner}>
+      {privacy.mode === 'private' && memoryQuestions.map(question => <View key={question.id} style={styles.errorBanner}>
         <Text style={styles.errorBannerText}>Should I remember this? {question.content} (About: {question.subject})</Text>
         <Text style={styles.errorBannerText}>You can edit the wording and ownership in Memories.</Text>
         <View style={{ flexDirection: 'row', gap: 20 }}>
@@ -1165,7 +1177,7 @@ export default function ChatScreen() {
           }}><Text style={{ color: colors.primary[300] }}>{action === 'approve' ? 'Yes, remember' : 'Skip'}</Text></TouchableOpacity>)}
         </View>
       </View>)}
-      {memoryNotice && <View style={styles.errorBanner}>
+      {memoryNotice && privacy.mode === 'private' && <View style={styles.errorBanner}>
         <Text style={styles.errorBannerText}>Memory saved: {memoryNotice.content}</Text>
         <TouchableOpacity disabled={!supabaseMemories} onPress={async () => {
           if (!(await authorizeMemoryMutation())) { setError(MUTATION_BLOCKED_MESSAGE); return; }
@@ -1227,7 +1239,7 @@ export default function ChatScreen() {
             </TouchableOpacity>
           </View>}
           {pendingDocument && <View style={{ padding: 12, borderRadius: 12, backgroundColor: colors.neutral[900], gap: 8 }}>
-            <Text style={{ color: colors.neutral[100] }}>Using document: {pendingDocument.title}</Text>
+            <Text style={{ color: colors.neutral[100] }}>{privacy.mode === 'private' ? `Using document: ${pendingDocument.title}` : 'Using a document (name hidden while 👥 Public is on)'}</Text>
             <Text style={{ color: colors.neutral[400], fontSize: 12 }}>Your next questions use this document. Remove it to return to ordinary chat. Extracted text is saved in your document library.</Text>
             <View style={{ flexDirection: 'row', gap: 24 }}>
               <TouchableOpacity accessibilityRole="button" disabled={sending || documentBusy} onPress={() => setInputText('Explain this document in plain language.')}>
