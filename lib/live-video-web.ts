@@ -36,6 +36,16 @@ export function liveVideoWebUrl(): string | null {
   return lumenWebUrl(process.env.EXPO_PUBLIC_LUMEN_WEB_URL, process.env.EXPO_PUBLIC_LUMEN_API_URL);
 }
 
+/**
+ * The address the in-app view loads: the same web app, with the static word that asks it for the
+ * Live Room layout. No sign-in detail is added. An older web build ignores the word and shows the
+ * full website, as before.
+ */
+export function liveRoomWebUrl(): string | null {
+  const url = liveVideoWebUrl();
+  return url ? `${url}?room=live` : null;
+}
+
 export type LiveVideoStatus = 'available' | 'unavailable' | 'unknown';
 const STATUS_TIMEOUT_MS = 8_000;
 

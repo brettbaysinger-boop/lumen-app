@@ -37,7 +37,16 @@ interface ThemeContextValue {
   resetAppearance: () => void;
   importDeviceAppearance: () => Promise<boolean>;
   hasDeviceAppearance: boolean;
+  /** Where the appearance on screen stands against the account: see AccountAppearanceSync. */
+  accountSync: AccountAppearanceSync;
 }
+
+/**
+ * 'checking': the account has not answered yet. 'synced': what is on screen is what the account holds.
+ * 'pending': a change made here is on its way. 'failed': the account could not be read or written, so
+ * this device shows its own saved copy and other devices (and the Live Room) may show something else.
+ */
+export type AccountAppearanceSync = 'checking' | 'synced' | 'pending' | 'failed';
 
 type Preferences = {
   schemeId: SchemeId;
@@ -64,6 +73,7 @@ const ThemeContext = createContext<ThemeContextValue>({
   resetAppearance: () => {},
   importDeviceAppearance: async () => false,
   hasDeviceAppearance: false,
+  accountSync: 'checking',
 });
 
 function validScheme(value: unknown): SchemeId {
@@ -112,6 +122,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
 
   const [prefs, setPrefs] = useState<Preferences>(DEFAULT_PREFERENCES);
   const [hasDeviceAppearance, setHasDeviceAppearance] = useState(false);
+  const [accountSync, setAccountSync] = useState<AccountAppearanceSync>('checking');
 
   const prefsRef = useRef<Preferences>(DEFAULT_PREFERENCES);
   const userRef = useRef<string | null>(null);
@@ -154,10 +165,14 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     queueRef.current = null;
 
     publish(DEFAULT_PREFERENCES);
+    setAccountSync('checking');
 
     if (!userId) return;
 
     let active = true;
+    // Reporting only: the synchronization itself is unchanged.
+    const report = (state: AccountAppearanceSync) => { if (active && generationRef.current === generation) setAccountSync(state); };
+    const send = () => { report('pending'); void queue.flush().then(saved => report(saved ? 'synced' : 'failed')); };
 
     const queue = new AppearanceSyncQueue<PendingPreferences>(async snapshot => {
       if (!active || generationRef.current !== generation) {
@@ -206,6 +221,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
         console.warn('Raialume appearance load:', error.message);
         // A failed read is NOT an empty cloud record.
         // Retain local preferences and retry initialization later.
+        report('failed');
         return;
       }
 
@@ -213,7 +229,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
       // Their cache writes may still be completing asynchronously.
       if (revisionRef.current > 0) {
         readyRef.current = true;
-        if (queue.pending) void queue.flush();
+        if (queue.pending) send(); else report('synced');
         return;
       }
 
@@ -254,7 +270,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
 
       readyRef.current = true;
 
-      if (queue.pending) void queue.flush();
+      if (queue.pending) send(); else report('synced');
     };
 
     const retry = () => {
@@ -275,7 +291,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
 
         initializationRef.current = operation;
       } else if (queue.pending) {
-        void queue.flush();
+        send();
       }
     };
 
@@ -316,7 +332,10 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
       queue.enqueue({ preferences: next, revision });
 
       if (readyRef.current) {
-        void queue.flush();
+        setAccountSync('pending');
+        void queue.flush().then(saved => {
+          if (userRef.current === accountId && queueRef.current === queue) setAccountSync(saved ? 'synced' : 'failed');
+        });
       }
     }).catch(error => {
       console.warn('Raialume appearance cache write:', error);
@@ -397,6 +416,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
       resetAppearance,
       importDeviceAppearance,
       hasDeviceAppearance,
+      accountSync,
     }}>
       {children}
     </ThemeContext.Provider>

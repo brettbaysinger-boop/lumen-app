@@ -44,6 +44,8 @@ import {
 import { CameraCapture } from '@/components/CameraCapture';
 import { CompanionPortrait } from '@/components/CompanionPortrait';
 import { AnimatedCompanion } from '@/components/AnimatedCompanion';
+import { LiveRoomActions, LiveRoomHeader, LiveRoomTheaterBar } from '@/components/LiveRoom';
+import { ROOM_BACK_EVENT, isLiveRoom, postRoomEvent, roomEmbedded, setRoomMode, useRoomMode } from '@/lib/live-room';
 import { AnimatedCompanionSession, animatedCompanionAvailable, type AnimatedState } from '@/lib/animated-companion';
 import { AutoSpeak } from '@/lib/animated-companion-core';
 import { inAppVideoSupported, liveVideoPrompt, liveVideoStatus, liveVideoWebUrl, openLiveVideoOnWeb } from '@/lib/live-video-web';
@@ -79,7 +81,7 @@ export default function ChatScreen() {
   const routeParams = useLocalSearchParams<{ conversation?: string; draft?: string; document?: string }>();
   const routeDraftRef = useRef(routeParams.draft ?? null);
   const turnKey = useRef<{ text: string; id: string } | null>(null);
-  const { width: screenWidth } = useWindowDimensions();
+  const { width: screenWidth, height: screenHeight } = useWindowDimensions();
   const isMobile = screenWidth < 600;
   const [showCamera, setShowCamera] = useState(false);
   const [speakingId, setSpeakingId] = useState<string | null>(null);
@@ -361,6 +363,33 @@ export default function ChatScreen() {
       setAnimatedNote('The animated companion is not available right now. Lumen is using the portrait.');
     }
   }, [animated, companion?.id]);
+
+  // --- Live Room (web layout shown inside the phone app) ---------------------------------------------
+  // Video Chat and Theater are two layouts of this one screen. Nothing below connects, closes or
+  // replaces the avatar session when the view changes: `roomMode` only feeds styles.
+  const room = Platform.OS === 'web' && isLiveRoom();
+  const roomMode = useRoomMode();
+  const theater = room && roomMode === 'theater' && animatedState === 'ready';
+  const [theaterMessages, setTheaterMessages] = useState(false);
+  // Opening the room is the request to watch: live video is turned on once, when the server offers it.
+  // Turning it off afterwards is respected.
+  const roomStarted = useRef(false);
+  useEffect(() => {
+    if (!room || roomStarted.current || !animatedOffered || !companion?.id || animated.state !== 'off') return;
+    roomStarted.current = true;
+    void toggleAnimated();
+  }, [room, animatedOffered, companion?.id, animated, toggleAnimated]);
+  // Theater needs the video. If the video ends, the room falls back to Video Chat by itself.
+  useEffect(() => { if (room && roomMode === 'theater' && animatedState !== 'ready') setRoomMode('chat'); }, [room, roomMode, animatedState]);
+  useEffect(() => { if (room) postRoomEvent(theater ? 'theater' : 'chat'); }, [room, theater]);
+  // While this screen shows, the phone app hides its own bar: the room's header has Back in it.
+  useFocusEffect(useCallback(() => {
+    if (!room) return;
+    postRoomEvent('ready');
+    const back = () => setRoomMode('chat');   // Android Back while in Theater
+    window.addEventListener(ROOM_BACK_EVENT, back);
+    return () => { window.removeEventListener(ROOM_BACK_EVENT, back); postRoomEvent('gone'); };
+  }, [room]));
 
   const loadConversations = useCallback(async (companionId: string, userId: string) => {
     if (managementBusyRef.current) return;
@@ -840,7 +869,18 @@ export default function ChatScreen() {
   return (
     <SafeAreaView style={[styles.container, { flexDirection: 'row' }]} edges={['top']}>
       <KeyboardAvoidingView style={{ flex: 1, minWidth: 0, marginLeft: showSidebar && !isMobile ? sidebarWidth : 0 }} behavior={Platform.OS === 'ios' ? 'padding' : Platform.OS === 'android' ? 'height' : undefined} keyboardVerticalOffset={Platform.OS === 'web' ? 0 : insets.top}>
-      <View style={styles.header}>
+      {room ? !theater && <>
+        <LiveRoomHeader c={colors} name={companion?.name || 'Companion'} live={animatedState} thinking={sending}
+          onBack={roomEmbedded() ? () => postRoomEvent('close') : undefined} onTheater={() => setRoomMode('theater')}
+          menu={{ items: [
+            { label: 'Conversations', onPress: () => { if (!sending) setShowSidebar(true); } },
+            ...(roomEmbedded() ? [{ label: 'Open in browser ↗', onPress: () => postRoomEvent('browser') }] : []),
+          ], extra: companion ? <ModelPicker companionId={companion.id} compact disabled={sending || voiceBusy || managementBusy} /> : undefined }} />
+        {/* With the keyboard open the window is short: the buttons row gives its height to the conversation. */}
+        {screenHeight >= 430 && <LiveRoomActions c={colors} live={animatedState} offered={animatedOffered} busy={sending || voiceBusy || managementBusy || documentBusy}
+          onLive={() => { void toggleAnimated(); }} onDocuments={() => router.push('/documents')}
+          onPractice={() => router.push({ pathname: '/goals', params: { goal: activeConversation?.goal_item_id || '' } })} />}
+      </> : <View style={styles.header}>
         <TouchableOpacity
           style={styles.menuButton}
           disabled={sending}
@@ -872,9 +912,9 @@ export default function ChatScreen() {
             {sending ? 'Thinking…' : syncStatus === 'current' ? 'Conversation' : syncStatus === 'refreshing' ? 'Refreshing…' : 'Saved on device'}
           </Text>}
         </View>
-      </View>
+      </View>}
 
-      {syncStatus === 'cached' && <TouchableOpacity accessibilityRole="button" accessibilityLabel="Retry connection"
+      {syncStatus === 'cached' && !theater && <TouchableOpacity accessibilityRole="button" accessibilityLabel="Retry connection"
         onPress={() => { void loadCompanion().then(() => { if (activeIdRef.current) void loadMessages(activeIdRef.current); }); }}
         style={{ paddingHorizontal: 16, paddingVertical: 10 }}>
         <Text style={{ color: colors.primary[300], fontSize: 12 }}>Connection unavailable · Showing saved chats · Tap to retry</Text>
@@ -1001,13 +1041,18 @@ export default function ChatScreen() {
         }} />}
       <ChatManagement collections={collections} key={managedChat?.id ?? 'closed'} chat={managedChat} busy={managementBusy}
         error={managementError} onClose={() => { if (!managementBusyRef.current) setManagedChat(null); }} onChange={changeChat} />
-      {activeConversation?.handoff && <HandoffCard key={activeConversation.id}
+      {activeConversation?.handoff && !theater && <HandoffCard key={activeConversation.id}
         chat={activeConversation} chats={conversations}
         disabled={sending || voiceBusy || managementBusy || documentBusy}
         onOpen={chat => setActiveConversation(chat)} />}
-      {animatedState === 'ready' && <View style={{ alignItems: 'center', paddingVertical: 8 }}>
-        <AnimatedCompanion session={animated} borderColor={colors.primary[400]} controlColor={colors.primary[300]} />
+      {/* One element in one place for both room views: Theater only changes the box around it. */}
+      {animatedState === 'ready' && <View testID="live-video-area" style={theater ? { flex: 1, minHeight: 0, backgroundColor: '#000' } : { alignItems: 'center', paddingVertical: room ? 4 : 8 }}>
+        <AnimatedCompanion session={animated} borderColor={colors.primary[400]} controlColor={colors.primary[300]} room={room ? (theater ? 'theater' : 'chat') : undefined} />
+        {theater && <LiveRoomTheaterBar messagesOpen={theaterMessages} onChat={() => setRoomMode('chat')} onMessages={() => setTheaterMessages(open => !open)} />}
       </View>}
+      {/* The conversation and the message box. In Theater this is the collapsible messages panel:
+          the same elements, so nothing is reloaded and no text is drawn over the picture. */}
+      <View testID="conversation-panel" style={!theater ? { flex: 1, minHeight: 0 } : theaterMessages ? { flexGrow: 0, flexShrink: 0, flexBasis: '45%', minHeight: 0, borderTopWidth: 1, borderTopColor: colors.neutral[800] } : { display: 'none' }}>
       {soundBlocked && <View style={styles.errorBanner}><Text accessibilityRole="alert" style={styles.errorBannerText}>Your browser is holding back sound until you allow it.</Text><TouchableOpacity onPress={enableSound} accessibilityRole="button" accessibilityLabel="Enable sound"><Text style={styles.errorBannerText}>Enable sound</Text></TouchableOpacity></View>}
       <ConversationList
         ref={flatListRef}
@@ -1221,6 +1266,8 @@ export default function ChatScreen() {
           </TouchableOpacity>
         </View>
         {!keyboardVisible && !isMobile && <Text style={styles.composerHint}>A conversation that stays with you.</Text>}
+        {room && <View style={{ height: 8 }} />}
+      </View>
       </View>
       </KeyboardAvoidingView>
       {showCamera && <CameraCapture onClose={() => setShowCamera(false)} onCapture={image => setPendingImages(previous => [...previous, image].slice(0, 4))} />}

@@ -125,7 +125,7 @@ test('the in-app screen: guarded, allowlisted, closed in the background, with th
   assert.match(screen,/url && supported && !message \? require\('react-native-webview'\)\.WebView : null/);
   assert.match(screen,/sameWebOrigin\(url!, request\.url\)\) return true;[\s\S]{0,300}return false;/);
   assert.match(screen,/originWhitelist=\{\['\*'\]\}/);                                // so the library never hands a blocked address to another app
-  assert.match(screen,/WebView && active \? <WebView/);assert.match(screen,/AppState\.addEventListener\('change'/);
+  assert.match(screen,/WebView && active \? <KeyboardAvoidingView behavior="padding" style=\{\{ flex: 1 \}\}><WebView/);assert.match(screen,/AppState\.addEventListener\('change'/);
   assert.match(screen,/Platform\.OS === 'web' \|\| !session\) return <Redirect/);
   assert.match(screen,/Browser ↗/);
   // Fail closed: a capability report that never arrives ends in a message, not in a web view left running.
@@ -133,7 +133,8 @@ test('the in-app screen: guarded, allowlisted, closed in the background, with th
   assert.match(screen,/setTimeout\(\(\) => setSilent\(true\), PROBE_TIMEOUT_MS\)/);
   assert.match(screen,/silent && !probe \? 'This phone did not confirm/);
   assert.match(screen,/url && supported && !message \? require/);                       // any message, this one included, takes the web view away
-  assert.doesNotMatch(screen,/access_token|Authorization|injectJavaScript\(|supabase/);   // nothing of the app's sign-in goes into the page
+  assert.doesNotMatch(screen,/access_token|Authorization|supabase/);                   // nothing of the app's sign-in goes into the page
+  assert.deepEqual(screen.match(/injectJavaScript\([^)]*\)/g),['injectJavaScript(ROOM_BACK_SCRIPT)']);   // one fixed line (Back in Theater), see tests/live-room.test.cjs
   for(const off of ['allowFileAccess={false}','setSupportMultipleWindows={false}','thirdPartyCookiesEnabled={false}','geolocationEnabled={false}','mixedContentMode="never"'])assert.ok(screen.includes(off),off);
   assert.match(fs.readFileSync('app/(tabs)/index.tsx','utf8'),/choice === 'inapp' \? \{ text: 'Watch here', onPress: \(\) => \{ router\.push\('\/live-video'\); \} \}/);
 });
