@@ -51,6 +51,7 @@ class CognitionRuntime:
         if document_id:
             await selected_document(self.db, companion_id, document_id)
 
+        new_conversation = not conversation_id
         conversation = await self.db.get_conversation(conversation_id, companion_id) if conversation_id else None
         if conversation_id and not conversation:
             raise ValueError("Conversation not found for this companion")
@@ -70,6 +71,24 @@ class CognitionRuntime:
         if rmc_memory is not None:
             rmc_read_status, memories = await rmc_memory.relevant(
                 companion, conversation_id, user_message)
+            # New chats need a small stable continuity anchor. Hindsight
+            # relevance to an unrelated first question cannot be relied upon
+            # to surface a previously agreed nickname.
+            if new_conversation and rmc_read_status == "ok":
+                continuity_status, continuity = await rmc_memory.relevant(
+                    companion, conversation_id,
+                    "Which nicknames and shared names have the user and companion explicitly agreed to use?"
+                )
+                if continuity_status == "ok":
+                    seen = {m.get("id") or m.get("content") for m in memories}
+                    for item in continuity:
+                        key = item.get("id") or item.get("content")
+                        if key not in seen:
+                            memories.append(item)
+                            seen.add(key)
+                        if len(memories) >= 12:
+                            break
+                    memories = memories[:12]
         else:
             memories = await self.db.get_relevant_memories(
                 companion_id,
