@@ -102,7 +102,9 @@ test('Private voice requests are unchanged; Public ones name the reply to be spo
 test('the switch is in Chat, Video Chat and Theater, and flipping it never touches the video session',()=>{
   const screen=read('app/(tabs)/index.tsx');
   assert.match(screen,/\{!theater && !\(room && animatedState === 'ready'\) && <PrivacyBar c=\{colors\} \/>\}/);   // ordinary Chat, and Video Chat without video
-  assert.match(screen,/\{room && !theater && <View pointerEvents="box-none" style=\{\{ position: 'absolute', top: 10, left: 10 \}\}><PrivacyToggle c=\{colors\} overlay \/><\/View>\}/);   // Video Chat with video
+  assert.match(screen,/privacy=\{animatedState === 'ready' && roomPrivacyInRow \? <PrivacyToggle c=\{colors\} \/> : undefined\} \/>\}/);   // Video Chat with video: in the button row
+  assert.match(screen,/\{room && !theater && !roomPrivacyInRow && <View pointerEvents="box-none" style=\{\{ position: 'absolute', bottom: 10, left: 10 \}\}><PrivacyToggle c=\{colors\} overlay \/><\/View>\}/);   // short windows: lower corner
+  assert.doesNotMatch(screen,/position: 'absolute', top: 10, left: 10 \}\}><PrivacyToggle/);   // never over the face
   assert.match(screen,/privacy=\{<PrivacyToggle c=\{colors\} overlay \/>\} \/>\}/);        // Theater's controls
   assert.match(read('components/LiveRoom.tsx'),/\{privacy\}\n\s+\{control\(messagesOpen/);
   const toggle=read('components/PrivacyToggle.tsx').replace(/^\s*\/\/.*$/gm,'');   // code only, not comments

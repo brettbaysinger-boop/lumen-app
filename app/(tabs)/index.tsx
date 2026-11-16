@@ -44,10 +44,11 @@ import {
 import { CameraCapture } from '@/components/CameraCapture';
 import { CompanionPortrait } from '@/components/CompanionPortrait';
 import { AnimatedCompanion } from '@/components/AnimatedCompanion';
-import { LiveRoomActions, LiveRoomHeader, LiveRoomTheaterBar } from '@/components/LiveRoom';
+import { LiveRoomActions, LiveRoomHeader, LiveRoomTheaterBar, Pill } from '@/components/LiveRoom';
+import { takeRoomLeft } from '@/lib/room-rotation';
 import { PrivacyBar, PrivacyToggle } from '@/components/PrivacyToggle';
 import { conversationLabel, emptyComposer, getPrivacyMode, listenForAppPrivacy, messageVisible, returnFailedTurn, swapComposer, turnHidden, usePrivacyMode, type ComposerDraft, type ComposerSlots, type PrivacyMode } from '@/lib/privacy-mode';
-import { ROOM_BACK_EVENT, ROOM_LANDSCAPE_EVENT, ROOM_PORTRAIT_EVENT, getRoomMode, isLiveRoom, postRoomEvent, roomEmbedded, setRoomMode, turnRoom, useRoomMode, type RoomView } from '@/lib/live-room';
+import { ROOM_BACK_EVENT, ROOM_LANDSCAPE_EVENT, ROOM_PORTRAIT_EVENT, getRoomMode, isLiveRoom, lockRoomViewport, postRoomEvent, roomEmbedded, setRoomMode, turnRoom, useRoomMode, type RoomView } from '@/lib/live-room';
 import { AnimatedCompanionSession, animatedCompanionAvailable, type AnimatedState } from '@/lib/animated-companion';
 import { AutoSpeak } from '@/lib/animated-companion-core';
 import { inAppVideoSupported, liveVideoPrompt, liveVideoStatus, liveVideoWebUrl, openLiveVideoOnWeb } from '@/lib/live-video-web';
@@ -77,6 +78,9 @@ import { Spacing, Radius, Typography, type ExtendedThemeColors } from '@/lib/the
 import { StateGlow } from '@/components/StateGlow';
 import { useCompanionState, getMoodFromState } from '@/hooks/useCompanionState';
 import type { Companion, Conversation, Message, ChatCollection } from '@/types/database';
+
+/** Window height (CSS px) from which Video Chat has room for the switch in its button row. */
+const ROOM_PRIVACY_ROW_MIN_HEIGHT = 680;
 
 export default function ChatScreen() {
   const { colors } = useTheme();
@@ -203,6 +207,10 @@ export default function ChatScreen() {
 
   const styles = useMemoStyles(colors, isMobile);
   const keyboardVisible = useKeyboardVisible();
+  // Coming back from Live Video the keyboard-avoiding view starts afresh: the web view's keyboard
+  // reaches it too, and a hide it never heard left the chat squeezed (Android S22 fix).
+  const [keyboardEpoch, setKeyboardEpoch] = useState(0);
+  useFocusEffect(useCallback(() => { if (Platform.OS !== 'web' && takeRoomLeft()) setKeyboardEpoch(n => n + 1); }, []));
   const insets = useSafeAreaInsets();
 
   useEffect(() => {
@@ -385,6 +393,8 @@ export default function ChatScreen() {
   const roomMode = useRoomMode();
   // Inside the phone app the room follows the app's Public / Private choice (two fixed lines, no data).
   useEffect(() => room ? listenForAppPrivacy() : undefined, [room]);
+  // Inside the phone app the room is never zoomed: one scale, the phone's width (lib/live-room.ts).
+  useEffect(() => { if (room) lockRoomViewport(); }, [room]);
   // Switching to Public stops any reply being read aloud right now; the video keeps running.
   useEffect(() => { if (privacy.mode === 'public') { playbackRef.current?.abort(); autoSpeak.cancel(); } }, [privacy.mode, autoSpeak]);
   // The message box keeps one draft per mode (text, photos, document): flipping parks one and shows the other.
@@ -400,6 +410,9 @@ export default function ChatScreen() {
     setInputTextState(next.show.text); setPendingImages(next.show.images); setPendingDocument(next.show.document);
   }, [privacy.mode]);
   const theater = room && roomMode === 'theater' && animatedState === 'ready';
+  // Video Chat: the Private / Public switch joins the row of buttons when the window is tall enough
+  // for that row to wrap (the Galaxy S22 is); the picture itself stays clear of controls.
+  const roomPrivacyInRow = screenHeight >= ROOM_PRIVACY_ROW_MIN_HEIGHT;
   const [theaterMessages, setTheaterMessages] = useState(false);
   // Opening the room is the request to watch: live video is turned on once, when the server offers it.
   // Turning it off afterwards is respected.
@@ -959,8 +972,14 @@ export default function ChatScreen() {
   const sidebarWidth = isMobile ? screenWidth * 0.82 : 280;
 
   return (
-    <SafeAreaView style={[styles.container, { flexDirection: 'row' }]} edges={['top']}>
-      <KeyboardAvoidingView style={{ flex: 1, minWidth: 0, marginLeft: showSidebar && !isMobile ? sidebarWidth : 0 }} behavior={Platform.OS === 'ios' ? 'padding' : Platform.OS === 'android' ? 'height' : undefined} keyboardVerticalOffset={Platform.OS === 'web' ? 0 : insets.top}>
+    // Inside the phone app the native screen already keeps the room below the status bar; a second
+    // top inset from the web view showed as an empty band above the video on the S22.
+    <SafeAreaView style={[styles.container, { flexDirection: 'row' }]} edges={room && roomEmbedded() ? [] : ['top']}>
+      {/* Android S22 fix. With the keyboard up (or a keyboard event left over from typing in Live
+          Video), React Native's 'height' mode sets this view to flex: 0. Inside this row that made its
+          width the width of its widest line, so every message, the switch and the message box ran
+          off the right edge. A full width keeps it on the screen; the key below drops a stale state. */}
+      <KeyboardAvoidingView key={`kav-${keyboardEpoch}`} style={{ flex: 1, minWidth: 0, marginLeft: showSidebar && !isMobile ? sidebarWidth : 0, ...(Platform.OS !== 'web' && !(showSidebar && !isMobile) ? { width: '100%' as const } : {}) }} behavior={Platform.OS === 'ios' ? 'padding' : Platform.OS === 'android' ? 'height' : undefined} keyboardVerticalOffset={Platform.OS === 'web' ? 0 : insets.top}>
       {room ? !theater && <>
         <LiveRoomHeader c={colors} name={companion?.name || 'Companion'} live={animatedState} thinking={sending}
           onBack={roomEmbedded() ? () => postRoomEvent('close') : undefined} onTheater={() => setRoomMode('theater')}
@@ -971,7 +990,8 @@ export default function ChatScreen() {
         {/* With the keyboard open the window is short: the buttons row gives its height to the conversation. */}
         {screenHeight >= 430 && <LiveRoomActions c={colors} live={animatedState} offered={animatedOffered} busy={sending || voiceBusy || managementBusy || documentBusy}
           onLive={() => { void toggleAnimated(); }} onDocuments={() => router.push('/documents')}
-          onPractice={() => router.push({ pathname: '/goals', params: { goal: activeConversation?.goal_item_id || '' } })} />}
+          onPractice={() => router.push({ pathname: '/goals', params: { goal: activeConversation?.goal_item_id || '' } })}
+          privacy={animatedState === 'ready' && roomPrivacyInRow ? <PrivacyToggle c={colors} /> : undefined} />}
       </> : <View style={styles.header}>
         <TouchableOpacity
           style={styles.menuButton}
@@ -992,20 +1012,24 @@ export default function ChatScreen() {
           {animatedOffered && <TouchableOpacity accessibilityRole="switch" accessibilityState={{ checked: animatedState !== 'off', busy: animatedState === 'connecting' }} accessibilityLabel="Animated companion" disabled={animatedState === 'connecting'} onPress={toggleAnimated}>
             <Text style={{color:colors.primary[300],fontSize:12}}>{animatedState === 'ready' ? 'Animated: on' : animatedState === 'connecting' ? 'Connecting…' : 'Animated: off'}</Text>
           </TouchableOpacity>}
-          {Platform.OS !== 'web' && <TouchableOpacity accessibilityRole="link" accessibilityLabel="Open live video in your browser" accessibilityHint="Checks whether video is running, then offers to open the Lumen web app, where the animated companion and Wide Theater run" accessibilityState={{ busy: liveVideoChecking }} disabled={liveVideoChecking} hitSlop={8} onPress={() => { void openLiveVideo(); }}>
-            <Text style={{color:colors.primary[300],fontSize:12}}>{liveVideoChecking ? 'Checking…' : 'Live video ↗'}</Text>
-          </TouchableOpacity>}
+          {/* Phone app: real buttons with full-size touch targets (Android S22 fix: the 12 px words were hard to hit). */}
+          {Platform.OS !== 'web' ? <>
+            <Pill c={colors} label={liveVideoChecking ? 'Checking…' : 'Live video'} hint="Open live video" disabled={liveVideoChecking} onPress={() => { void openLiveVideo(); }} />
+            <Pill c={colors} label="Documents" hint="Open your documents" disabled={sending || voiceBusy || documentBusy} onPress={() => router.push('/documents')} />
+            <Pill c={colors} label="Practice" hint="Open goals and practice" disabled={sending || voiceBusy || managementBusy} onPress={() => router.push({ pathname: '/goals', params: { goal: activeConversation?.goal_item_id || '' } })} />
+          </> : <>
           <TouchableOpacity accessibilityRole="button" accessibilityLabel="Open your documents" disabled={sending || voiceBusy || documentBusy} onPress={() => router.push('/documents')}>
             <Text style={{color:colors.primary[300],fontSize:12}}>Documents</Text>
           </TouchableOpacity>
           <TouchableOpacity accessibilityRole="button" accessibilityLabel="Open goals and practice" disabled={sending || voiceBusy || managementBusy} onPress={()=>router.push({pathname:'/goals',params:{goal:activeConversation?.goal_item_id||''}})}><Text style={{color:colors.primary[300],fontSize:12}}>Practice</Text></TouchableOpacity>
+          </>}
           {/* On a phone the resting word "Conversation" is left out: the row is for actions and for news. */}
           {!(isMobile && !sending && syncStatus === 'current') && <Text style={styles.statusText}>
             {sending ? 'Thinking…' : syncStatus === 'current' ? 'Conversation' : syncStatus === 'refreshing' ? 'Refreshing…' : 'Saved on device'}
           </Text>}
         </View>
       </View>}
-      {/* In the Live Room with video on, the switch sits over the picture (as in Theater) so the conversation keeps its height. */}
+      {/* In the Live Room with video on, the switch is in the room's row of buttons, never over the companion's picture. */}
       {!theater && !(room && animatedState === 'ready') && <PrivacyBar c={colors} />}
 
       {syncStatus === 'cached' && !theater && <TouchableOpacity accessibilityRole="button" accessibilityLabel="Retry connection"
@@ -1142,7 +1166,8 @@ export default function ChatScreen() {
       {/* One element in one place for both room views: Theater only changes the box around it. */}
       {animatedState === 'ready' && <View testID="live-video-area" style={theater ? { flex: 1, minHeight: 0, backgroundColor: '#000' } : { alignItems: 'center', paddingVertical: room ? 4 : 8 }}>
         <AnimatedCompanion session={animated} borderColor={colors.primary[400]} controlColor={colors.primary[300]} room={room ? (theater ? 'theater' : 'chat') : undefined} />
-        {room && !theater && <View pointerEvents="box-none" style={{ position: 'absolute', top: 10, left: 10 }}><PrivacyToggle c={colors} overlay /></View>}
+        {/* Short windows only (no height for a second row of buttons): the switch in the picture's lower corner, away from the face. */}
+        {room && !theater && !roomPrivacyInRow && <View pointerEvents="box-none" style={{ position: 'absolute', bottom: 10, left: 10 }}><PrivacyToggle c={colors} overlay /></View>}
         {theater && <LiveRoomTheaterBar messagesOpen={theaterMessages} onChat={() => { turned.current = null; setRoomMode('chat'); }} onMessages={() => setTheaterMessages(open => !open)}
           fullScreen={fullScreen} onFullScreen={canFullScreen ? toggleFullScreen : undefined} privacy={<PrivacyToggle c={colors} overlay />} />}
       </View>}
@@ -1280,7 +1305,7 @@ export default function ChatScreen() {
             </View>
           </View>}
         </View>
-        {companion && <EffortControl companionId={companion.id} model={companion.conversation_model} value={effort} onChange={setEffort} disabled={sending} compact={isMobile} />}
+        {companion && !theater && <EffortControl companionId={companion.id} model={companion.conversation_model} value={effort} onChange={setEffort} disabled={sending} compact={isMobile} />}
         {!!pendingDocument && <TouchableOpacity disabled={sending} accessibilityRole="button" onPress={() => setInputText('Work harder: improve this bid into a clear professional proposal. Preserve the original scope, prices, exclusions and warranty terms. Flag missing details.')}><Text style={{ color: colors.primary[300], padding: 8 }}>Work harder · improve this document</Text></TouchableOpacity>}
         {Platform.OS !== 'web' && <View style={{ flexDirection: 'row', gap: 8, paddingHorizontal: 12 }}>
           <TouchableOpacity style={{ width: 44, height: 44, alignItems: 'center', justifyContent: 'center' }} accessibilityLabel="Search the web" disabled={sending || voiceBusy || documentBusy || !!pendingDocument} onPress={() => setInputText(text => /^search (?:the )?web:/i.test(text) ? text : `Search the web: ${text}`)}>
@@ -1439,7 +1464,7 @@ function useMemoStyles(c: ExtendedThemeColors, isMobile: boolean) {
       flexDirection: 'row',
       alignItems: 'center',
       gap: Spacing.xs,
-      ...(isMobile ? { width: '100%' as const, justifyContent: 'flex-end' as const, flexWrap: 'wrap' as const, columnGap: Spacing.md, rowGap: 6, marginTop: 6 } : {}),
+      ...(isMobile ? { width: '100%' as const, justifyContent: 'flex-end' as const, flexWrap: 'wrap' as const, columnGap: Spacing.sm, rowGap: 6, marginTop: 6 } : {}),
     },
     statusDot: {
       width: 8,

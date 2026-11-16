@@ -1,14 +1,15 @@
 // The Live Room's own chrome: one header row, one row of real buttons, and the two small controls
 // that sit over the video in Theater. Layout only. The avatar session, the conversation and the
 // message box belong to the chat screen and are not touched here.
-import { useState, type ReactNode } from 'react';
-import { Modal, Pressable, StyleSheet, Text, View } from 'react-native';
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
+import { AccessibilityInfo, Modal, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 import type { ExtendedThemeColors } from '@/lib/theme';
 import type { AnimatedState } from '@/lib/animated-companion';
 
 type Colors = ExtendedThemeColors;
 
-function Pill({ c, label, hint, onPress, disabled, filled, role = 'button', checked, busy }: {
+/** A real button: outline, 40+ px tall. Also used for the phone app's chat header actions. */
+export function Pill({ c, label, hint, onPress, disabled, filled, role = 'button', checked, busy }: {
   c: Colors; label: string; hint: string; onPress: () => void; disabled?: boolean; filled?: boolean;
   role?: 'button' | 'switch'; checked?: boolean; busy?: boolean;
 }) {
@@ -60,9 +61,11 @@ export function LiveRoomHeader({ c, name, live, thinking, onBack, onTheater, men
 }
 
 /** Video Chat: Live, Documents and Practice as buttons that look like buttons. */
-export function LiveRoomActions({ c, live, offered, onLive, onDocuments, onPractice, busy }: {
+export function LiveRoomActions({ c, live, offered, onLive, onDocuments, onPractice, busy, privacy }: {
   c: Colors; live: AnimatedState; offered: boolean; busy: boolean;
   onLive: () => void; onDocuments: () => void; onPractice: () => void;
+  /** The 🔒 Private | 👥 Public switch: in this row, never over the companion's picture. */
+  privacy?: ReactNode;
 }) {
   const label = live === 'ready' ? 'Live · On' : live === 'connecting' ? 'Connecting…' : offered ? 'Live · Off' : 'Live unavailable';
   return <View style={styles.actions}>
@@ -70,6 +73,7 @@ export function LiveRoomActions({ c, live, offered, onLive, onDocuments, onPract
       disabled={live === 'connecting' || (!offered && live === 'off')} onPress={onLive} />
     <Pill c={c} label="Documents" hint="Open your documents" disabled={busy} onPress={onDocuments} />
     <Pill c={c} label="Practice" hint="Open goals and practice" disabled={busy} onPress={onPractice} />
+    {privacy}
   </View>;
 }
 
@@ -87,15 +91,45 @@ export function LiveRoomTheaterBar({ messagesOpen, onChat, onMessages, fullScree
       style={({ pressed }) => [styles.overlay, { opacity: pressed ? 0.7 : 1 }]}>
       <Text numberOfLines={1} style={styles.overlayText}>{label}</Text>
     </Pressable>;
-  return <View pointerEvents="box-none" style={styles.theaterBar}>
-    {control('‹ Video Chat', 'Leave Companion Theater and return to Video Chat', onChat)}
-    <View pointerEvents="box-none" style={styles.theaterGroup}>
-      {privacy}
-      {control(messagesOpen ? 'Hide messages' : 'Messages', messagesOpen ? 'Hide the conversation' : 'Show the conversation', onMessages, messagesOpen)}
-      {onFullScreen && control(fullScreen ? 'Exit full screen' : 'Full screen', fullScreen ? 'Leave full screen' : 'Show the video full screen', onFullScreen)}
-    </View>
-  </View>;
+  // The controls sit over the top of the picture, where the companion's face is. They show when
+  // Theater opens and after a tap, and step aside after a few quiet seconds; a tap on the picture
+  // brings them back. With a screen reader on (phone app only) they stay.
+  const [shown, setShown] = useState(true);
+  const [reader, setReader] = useState(false);
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const poke = useCallback(() => {
+    setShown(true);
+    if (timer.current) clearTimeout(timer.current);
+    timer.current = setTimeout(() => setShown(false), THEATER_CONTROLS_MS);
+  }, []);
+  useEffect(() => { poke(); return () => { if (timer.current) clearTimeout(timer.current); }; }, [poke]);
+  useEffect(() => {
+    // In a browser (the room is always one) this cannot be known: react-native-web answers "on" for
+    // everyone. There the hidden controls stay one labelled button away ("Show video controls").
+    if (Platform.OS === 'web') return;
+    let live = true;
+    void AccessibilityInfo.isScreenReaderEnabled?.().then(on => { if (live) setReader(!!on); }).catch(() => {});
+    const watch = AccessibilityInfo.addEventListener?.('screenReaderChanged', on => setReader(!!on));
+    return () => { live = false; watch?.remove?.(); };
+  }, []);
+  const visible = shown || reader;
+  const tapped = (action: () => void) => () => { poke(); action(); };
+  return <>
+    <Pressable testID="theater-picture" accessibilityRole="button" accessibilityLabel={visible ? 'Hide video controls' : 'Show video controls'}
+      onPress={() => { if (visible && !reader) { if (timer.current) clearTimeout(timer.current); setShown(false); } else poke(); }}
+      style={StyleSheet.absoluteFill} />
+    {visible && <View pointerEvents="box-none" style={styles.theaterBar} onTouchStart={poke}>
+      {control('‹ Video Chat', 'Leave Companion Theater and return to Video Chat', tapped(onChat))}
+      <View pointerEvents="box-none" style={styles.theaterGroup}>
+        {privacy}
+        {control(messagesOpen ? 'Hide messages' : 'Messages', messagesOpen ? 'Hide the conversation' : 'Show the conversation', tapped(onMessages), messagesOpen)}
+        {onFullScreen && control(fullScreen ? 'Exit full screen' : 'Full screen', fullScreen ? 'Leave full screen' : 'Show the video full screen', tapped(onFullScreen))}
+      </View>
+    </View>}
+  </>;
 }
+/** How long Theater's controls stay over the picture after the last tap. */
+export const THEATER_CONTROLS_MS = 4000;
 
 const styles = StyleSheet.create({
   header: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 10, minHeight: 52, borderBottomWidth: 1, width: '100%', maxWidth: 800, alignSelf: 'center' },

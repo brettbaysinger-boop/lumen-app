@@ -31,3 +31,10 @@ export function roomLock(roomShown: boolean, keyboardOpen: boolean, landscape: b
 export function roomImmersive(roomShown: boolean, landscape: boolean): boolean {
   return roomShown && landscape;
 }
+
+// --- Leaving the Live Room (Android S22 fix) ---------------------------------------------------------
+// The chat screen stays mounted under the Live Room and hears its keyboard. When the room closes, it
+// leaves a note so the chat can reset its keyboard-avoiding view once, on its next focus.
+let roomLeft = false;
+export function noteRoomLeft(): void { roomLeft = true; }
+export function takeRoomLeft(): boolean { const was = roomLeft; roomLeft = false; return was; }

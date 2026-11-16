@@ -11,10 +11,11 @@ import { AppState, BackHandler, KeyboardAvoidingView, Platform, Text, TouchableO
 import { Redirect, Stack, router } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useTheme } from '@/lib/theme-context';
+import { roomAppearanceScript } from '@/lib/appearance';
 import { useAuth } from '@/lib/auth';
 import { IN_APP_PROBE, inAppVideoSupported, liveRoomWebUrl, liveVideoWebUrl, openLiveVideoOnWeb, readInAppProbe, sameWebOrigin, type InAppProbe } from '@/lib/live-video-web';
 import { ROOM_BACK_SCRIPT, ROOM_LANDSCAPE_SCRIPT, ROOM_PORTRAIT_SCRIPT, readRoomEvent, type RoomMode } from '@/lib/live-room';
-import { roomImmersive, roomLock } from '@/lib/room-rotation';
+import { noteRoomLeft, roomImmersive, roomLock } from '@/lib/room-rotation';
 import { loadPrivacyMode, privacyScript, setPrivacyMode, usePrivacyMode } from '@/lib/privacy-mode';
 import { useKeyboardVisible } from '@/hooks/useKeyboardVisible';
 import { useScreenLandscape } from '@/hooks/useScreenLandscape';
@@ -22,7 +23,9 @@ import { useScreenLandscape } from '@/hooks/useScreenLandscape';
 const PROBE_TIMEOUT_MS = 8_000;
 
 export default function LiveVideoScreen() {
-  const { colors: c } = useTheme();
+  const { colors: c, schemeId, appearance } = useTheme();
+  // The room shows exactly the colours this app shows (lib/appearance.ts), stated before the page starts.
+  const beforeContent = useMemo(() => roomAppearanceScript(schemeId, appearance) + IN_APP_PROBE, [schemeId, appearance]);
   const { session } = useAuth();
   const url = useMemo(() => liveVideoWebUrl(), []);
   const roomUrl = useMemo(() => liveRoomWebUrl(), []);
@@ -45,6 +48,7 @@ export default function LiveVideoScreen() {
   }, [room]);
   // In the background the web view is removed: no video session and no sound outlive the screen.
   useEffect(() => { const watch = AppState.addEventListener('change', state => setActive(state === 'active')); return () => watch.remove(); }, []);
+  useEffect(() => () => noteRoomLeft(), []);
 
   // Fail closed: no capability report within a few seconds counts as "cannot", not as "fine".
   const waiting = !!url && supported && active && !probe && !failed && !silent;
@@ -113,7 +117,11 @@ export default function LiveVideoScreen() {
         key={attempt}
         ref={view}
         source={{ uri: roomUrl ?? url }}
-        onLoadStart={() => setRoom(null)}
+        // Android S22 fix: Android reports every in-page address change (the web app's own navigation,
+        // e.g. opening a conversation) as a "load start". Treating those as a new page threw away the
+        // room's 'ready', so this bar stayed over the room's own header, Back and turning the phone
+        // stopped following Theater. Only a real page load (still loading) forgets the room now.
+        onLoadStart={(event: { nativeEvent: { loading?: boolean } }) => { if (event.nativeEvent.loading !== false) setRoom(null); }}
         style={{ flex: 1, backgroundColor: c.neutral[950] }}
         // Every navigation comes to the check below. Nothing outside the Lumen web app is loaded here,
         // and nothing is handed to another app.
@@ -124,7 +132,7 @@ export default function LiveVideoScreen() {
           return false;
         }}
         onNavigationStateChange={(state: { url?: string }) => { if (state.url && state.url !== 'about:blank' && !sameWebOrigin(url!, state.url)) { view.current?.stopLoading(); setFailed(true); } }}
-        injectedJavaScriptBeforeContentLoaded={IN_APP_PROBE}
+        injectedJavaScriptBeforeContentLoaded={beforeContent}
         onMessage={(event: { nativeEvent: { data: unknown } }) => {
           const report = readInAppProbe(event.nativeEvent.data);
           if (report) { setProbe(report); return; }
@@ -134,7 +142,8 @@ export default function LiveVideoScreen() {
           if (word === 'restored') { setSettle(true); return; }
           if (word === 'ready') setRoom(now => now ?? 'chat');
           else if (word === 'gone') setRoom(null);
-          else if (word === 'chat' || word === 'theater') setRoom(now => now === null ? now : word);
+          // 'chat' and 'theater' come only from the room's own screen, so they also mean it is showing.
+          else if (word === 'chat' || word === 'theater') setRoom(word);
           else if (word === 'private' || word === 'public') setPrivacyMode(word);
           else if (word === 'close') close();
           else if (word === 'browser') browser();
@@ -146,7 +155,12 @@ export default function LiveVideoScreen() {
         setSupportMultipleWindows={false} javaScriptCanOpenWindowsAutomatically={false}
         allowFileAccess={false} allowFileAccessFromFileURLs={false} allowUniversalAccessFromFileURLs={false}
         thirdPartyCookiesEnabled={false} geolocationEnabled={false} mixedContentMode="never"
-        setBuiltInZoomControls={false} overScrollMode="never"
+        setBuiltInZoomControls={false} setDisplayZoomControls={false} overScrollMode="never"
+        // Android S22 fix: no "fit the page to the screen" scaling. With it, the web view zoomed the room
+        // out to fit and kept that zoom after the phone was turned, so the conversation came back wider
+        // than the screen and cut off. The page is laid out at the phone's own width, at one scale, and
+        // its text follows the page, not a second zoom on top.
+        scalesPageToFit={false} textZoom={100}
       /></KeyboardAvoidingView> : <View style={{ flex: 1 }} />}
     </SafeAreaView>
   );
