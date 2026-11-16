@@ -1,0 +1,143 @@
+# Short video: staged release (owner-run, each stage gated)
+
+**Status 2026-11-16: nothing below has been run in production.** BigLust still images are live (PR #52).
+Video, the migration, the worker and the video web app are not deployed, and video is off.
+
+## What is live, and why no `git pull`
+
+The live checkout `/home/brett/lumen-push` has HEAD at the S22 release `7f63d52`. The BigLust images
+patch (code `27fa0bc`) is applied to its **working files**, not committed. A `git pull`, `checkout`, rebase
+or reset there would throw that patch away or conflict with it. So:
+
+* the backend stage applies one reviewed patch, `27fa0bc → 0b370fb` (`backend/` only), and only to files
+  that still equal the images release byte for byte. Otherwise it STOPs and changes nothing.
+* the web stage fast-forwards HEAD only to a **frontend-only** commit
+  (`release/video-frontend-20261116`, `9ed4737`, on `7f63d52`), through the unchanged
+  `scripts/animated-web-update.sh`. It touches no backend file, so the working-file patches stay.
+* **Never run `scripts/biglust-images-release.sh rollback` while the video backend is applied.** It would put
+  back pre-images copies of `config.py`, `main.py` and `media_safety.py`. Roll back video first.
+  `video-release.sh backend` refuses to start if the images files are no longer as released.
+
+`scripts/video-release.sh` covers stages 1–4 and 6. Run it from a clean clone of
+`feat/local-media-generation-20261116`, as the lumen-api user. `scripts/video-release.sh check` shows every
+stage's state and changes nothing. Every step that changes something needs its own confirmation word and
+has its own way back. A way back refuses while a later stage is still in place.
+
+Tested offline: `scripts/test-video-release.sh` runs all 15 steps, with and without pytest in the venv,
+on a fake live checkout. That checkout has the images patch in its working files. The test uses
+stubbed systemd and the real worker process.
+
+## Stage 0: prove the existing clip is the canary (Heavy, read-only). HARD STOP until MATCH
+
+From the canary checkout on Lumen (`git -C ~/lumen-fps-canary fetch -q origin && git -C ~/lumen-fps-canary checkout -q --detach origin/feat/local-media-generation-20261116`):
+```
+scp ~/lumen-fps-canary/scripts/framepack-studio-job-output.py /tmp/raialume-biglust-8k5z36zq/lumen-canary.png <heavy>:/tmp/
+ssh <heavy> 'cd /data/ai-media-studio/FP-Studio && <FP-Studio python> /tmp/framepack-studio-job-output.py --queue-json queue.json --job-id 0bb4dd05-9f03-4837-86d8-5c62f2f9b544 --expect-image /tmp/lumen-canary.png'
+```
+`MATCH` requires all of these:
+* the job's prompt equals the canary prompt (compared, never printed);
+* the length is 3 s;
+* FP-Studio's saved start frame has the same pixels as the canary PNG;
+* the output was written during that job's run.
+
+`MISMATCH` or `REFUSED` means stop here: no GPU job and no release step.
+
+## Stage 1: the private route for FP-Studio (read-only check, then an owner change)
+
+`scripts/video-release.sh route` shows how `127.0.0.1:18188` (ComfyUI) reaches Heavy today:
+* the listener and that it is loopback-only;
+* the owning process and its systemd unit, with that unit's definition;
+* whether `17863` is free.
+
+If the owning process belongs to another user, run `sudo ss -ltnp 'sport = :18188'` for the process.
+
+Recommendation: give FP-Studio the same mechanism with one more loopback forward,
+`127.0.0.1:17863 → Heavy 127.0.0.1:7863`. For an ssh/autossh unit, that's one more
+`-L 127.0.0.1:17863:127.0.0.1:7863`.
+* Keep both ends on loopback.
+* Keep the key and its passphrase handling exactly as the 18188 route has them.
+* Never remove a passphrase, widen `AllowTcpForwarding`, open a port or loosen a Tailscale ACL to do it.
+
+The interactive `ssh -L` used for the canary asks for the key passphrase and closes, so it cannot serve
+the worker. The script changes none of this; the owner edits that unit.
+
+Check: `curl -fsS http://127.0.0.1:17863/gradio_api/info >/dev/null && echo ok` on Lumen, and
+`python3 scripts/check-framepack-endpoint.py --url http://127.0.0.1:17863 --api-name /handle_start_button`
+(read-only). Way back: remove that one forward.
+
+## Stage 2: migration (owner applies). STOP if anything else is pending
+
+`scripts/video-release.sh migration-check` reports whether `media_generation_jobs` exists and what
+`chat-media` allows. Before the migration, it writes the undo SQL with today's bucket values to
+`~/.local/state/lumen-video-release/migration-undo.sql`.
+
+Apply `supabase/migrations/20261116100000_media_generation_jobs.sql` in one transaction, through the SQL
+path you use for this Supabase. If you use `supabase db push --local`, run `supabase migration list --local`
+first and STOP if any migration other than `20261116100000` is pending.
+
+The migration creates the table (RLS on, no client policies) and lets `chat-media` hold MP4/WebM up to
+50 MB. Nothing reads it while video is off. Way back: the undo SQL. It drops the table and restores the
+recorded bucket values.
+
+## Stage 3: backend, video still OFF
+```
+scripts/video-release.sh backend-check            # read-only; tests run on a patched copy
+VIDEO_RELEASE_CONFIRM=backend:<patch id> scripts/video-release.sh backend
+```
+It backs up the 17 files byte for byte, applies the patch to the working files and leaves HEAD and `.env`
+alone. It restarts lumen-api only and checks `/health` plus the new job route. Any failure restores the
+backup.
+
+Canary: a Private BigLust image still reaches Chat and Gallery.
+Way back: `VIDEO_RELEASE_CONFIRM=backend-rollback scripts/video-release.sh backend-rollback`.
+
+## Stage 4: worker service, video still OFF
+`VIDEO_RELEASE_CONFIRM=worker scripts/video-release.sh worker` installs `lumen-media-worker.service`:
+* the same user, WorkingDirectory and EnvironmentFile as lumen-api;
+* `Restart=on-failure`;
+* `ExecStart=<live venv> -m lumen.media_worker`.
+
+It is enabled and started; with video off it logs "nothing to do" and exits 0. The step STOPs if lumen-api
+sets `SUPABASE_*`/`VIDEO_*`/`FRAMEPACK_*`/`COMFYUI_*` inline, because the worker would not see them.
+Way back: `VIDEO_RELEASE_CONFIRM=worker-rollback scripts/video-release.sh worker-rollback`.
+
+## Stage 5: web app (Gallery Public lock, chat video, progress)
+From a clean clone of `release/video-frontend-20261116`:
+```
+scripts/animated-web-update.sh check
+LUMEN_WEB_UPDATE_CONFIRM=update:<commit> scripts/animated-web-update.sh update
+```
+This branch has only PR #51's frontend files on `7f63d52`. Tests: 152 node tests, plus the browser checks
+for media, Public/Private and the live room, all pass.
+
+Canary: Gallery in Public reads nothing and says it is hidden. In Private it shows everything as before.
+Way back: `LUMEN_WEB_UPDATE_CONFIRM=rollback scripts/animated-web-update.sh rollback`.
+
+## Stage 6: enable video, then the live canary
+```
+VIDEO_FRAMEPACK_URL=http://127.0.0.1:17863 VIDEO_RELEASE_CONFIRM=enable scripts/video-release.sh enable
+```
+It STOPs unless stages 2–5 are in place and FP-Studio's contract check passes through that loopback URL.
+It sets exactly these keys in `.env`:
+* `VIDEO_GENERATION_ENABLED=true`
+* `FRAMEPACK_URL`
+* `FRAMEPACK_API_NAME=/handle_start_button`
+
+It then restarts lumen-api and the worker. Clips stay at most 10 s (`VIDEO_MAX_SECONDS`). The 4 h render
+budget (`VIDEO_RENDER_BUDGET_SECONDS`) is how long one render may take, not clip length.
+
+Live canary (owner, Private):
+1. Desktop: "animate this" on a BigLust image, 3 seconds. The reply comes at once, and progress shows in
+   the bubble.
+2. While it renders: `sudo systemctl restart lumen-api lumen-media-worker`. The job keeps its FP-Studio id
+   (`journalctl -u lumen-media-worker`), is not submitted again and finishes.
+3. It appears once in Chat and once in Gallery, and plays.
+4. Switch to Public. Gallery and the job are hidden.
+5. The same on the S22.
+
+Way back: `VIDEO_RELEASE_CONFIRM=enable-rollback scripts/video-release.sh enable-rollback` restores `.env`
+byte for byte. Unfinished jobs stay in the table, and nothing is cancelled on Heavy.
+
+## Order of ways back
+6 enable-rollback → 5 web rollback → 4 worker-rollback → 3 backend-rollback → 2 undo SQL → 1 remove the
+forward. The images release stays as it is throughout.

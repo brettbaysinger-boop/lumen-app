@@ -246,6 +246,8 @@ checkpoint and every node exist.
 
 ## Host setup (owner, after review)
 
+Superseded by the staged guide `docs/video-release.md`; the steps below are kept for reference.
+
 1. Apply `supabase/migrations/20261116100000_media_generation_jobs.sql` (new table; `chat-media`
    accepts MP4/WebM up to 50 MB).
 2. On Heavy, read-only: `python3 scripts/check-framepack-endpoint.py --url http://127.0.0.1:7863
@@ -253,7 +255,7 @@ checkpoint and every node exist.
    canary in Readiness. Set `FRAMEPACK_API_NAME=/handle_start_button`.
 3. Backend `.env`: `COMFYUI_WORKFLOW=<repo>/backend/workflows/biglust-sdxl-v16-api.json`,
    `COMFYUI_CHECKPOINT=<exact name from the check>`, `VIDEO_GENERATION_ENABLED=true` (only after the FramePack-Studio canary and owner approval),
-   `FRAMEPACK_URL=<private route to FramePack-Studio, still to be decided>`.
+   `FRAMEPACK_URL=http://127.0.0.1:17863` (the loopback forward from stage 1 of docs/video-release.md).
    Optional: `COMFYUI_T2V_WORKFLOW=/path/wan22_t2v_api.json` exported with "Save (API)" and these
    exact string values: `{{LUMEN_PROMPT}}`, optionally `{{LUMEN_NEGATIVE}}`, `{{LUMEN_SEED}}`,
    `{{LUMEN_FRAMES}}` (4n+1), `{{LUMEN_FPS}}`; output through VideoHelperSuite or SaveVideo as MP4/WebM.
@@ -281,24 +283,23 @@ checkpoint and every node exist.
 6. Real S22 acceptance (not covered by these tests): progress shows, the clip plays inline in Chat and
    in Gallery, Public hides both.
 
-## Release gates (not authorized; owner decides each)
+## Release gates (owner decides each)
 
-PR #51 changes the backend, the database and the frontend, so it can never go out through the
-frontend-only updater (`scripts/animated-web-update.sh`, live blob `97e032f`, unchanged). That
-updater refuses its backend, migration and operator-script files by design
-(`tests/media-jobs.test.cjs`). PR #50 stays the isolated phone repair and ships on its own.
+Done: BigLust images (PR #52) applied in production and accepted on 2026-11-16 (Private Chat → Gallery).
+Everything for video is in **`docs/video-release.md`** and `scripts/video-release.sh`. Each stage has a
+hard STOP and a way back, built for what is live (S22 `7f63d52` HEAD with the images patch in the
+working files):
+0. provenance MATCH on Heavy;
+1. the private FP-Studio route (same mechanism as 18188);
+2. migration;
+3. backend with video off;
+4. worker unit;
+5. web app with the Gallery Public lock (`release/video-frontend-20261116`);
+6. enable, then the live and S22 canary.
 
-Proposed order, each a separate owner go-ahead, after #50 is accepted on the S22:
-1. Read-only Heavy evidence: `check-comfyui-image-workflow.py` (BigLust checkpoint and nodes) and
-   `check-framepack-endpoint.py` (operational FramePack install). Nothing changes.
-2. Migration only (new table, video MIME types), needed only for video. Nothing reads it until video.
-3. Images first, from PR #52 (prepared, not run): BigLust backend change only, no migration, video
-   off, `COMFYUI_WORKFLOW`/`COMFYUI_CHECKPOINT` set to BigLust; restart `lumen-api` only. Canary: one
-   Private image appears in Chat and Gallery with the checkpoint as its model. The rest of this PR's
-   backend (video jobs, runtime changes) follows later with `VIDEO_GENERATION_ENABLED=false`.
-4. Frontend web build (chat video player, progress, Gallery lock) through the existing guarded path.
-5. Turn video on; canary: a 3-second image-to-video in Private, then on the S22.
-Not production-ready until the S22 tests in step 5 pass.
+PR #51 as a whole never goes through the frontend-only updater (live blob `97e032f`, unchanged). Only
+the frontend-only branch does. PR #50 stays the isolated phone repair.
+Not production-ready until the S22 canary in stage 6 passes.
 
 ## Not done
 
