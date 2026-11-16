@@ -1,7 +1,7 @@
 {
   "version": "1.1",
   "generated_at": "2026-11-15T18:00:00Z",
-  "freshness_policy_hours": 48,
+  "stale_after_seconds": 172800,
   "projects": [
     {
       "id": "pesttrails",

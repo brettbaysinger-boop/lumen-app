@@ -170,7 +170,13 @@ def build_default_project_registry() -> Dict[str, Project]:
                     ref="https://github.com/brettbaysinger-boop/raialume-memory-core",
                     observed_at=HISTORICAL_FREEZE_OBSERVED,
                     commit_sha=None,
-                )
+                ),
+                Source(
+                    kind="git_pr",
+                    ref="https://github.com/brettbaysinger-boop/lumen-app/pull/10",
+                    observed_at=HISTORICAL_FREEZE_OBSERVED,
+                    commit_sha=None,
+                ),
             ],
             observed_at=HISTORICAL_FREEZE_OBSERVED,
         ),
@@ -471,124 +477,134 @@ class ProjectRegistry:
         results = {}
 
         for pid in target_ids:
-            proj = self._projects.get(pid)
-            if not proj or not proj.repositories:
-                continue
-
-            open_prs_list: List[OpenPr] = []
-            latest_commit_info: Optional[LastCommit] = None
-            ci_evidence_info: Optional[CiEvidence] = None
-            activity_events: List[ActivityEvent] = []
-            links: List[ProjectLink] = []
-
-            for repo in proj.repositories:
-                # Add repo link
-                links.append(ProjectLink(kind="repo", label=repo, url=f"https://github.com/{repo}"))
-
-                # 1. Fetch repo info (default branch)
-                repo_res = await collector.fetch_repository(repo)
-                if repo_res.status != "ok" or not isinstance(repo_res.data, dict):
+            try:
+                proj = self._projects.get(pid)
+                if not proj or not proj.repositories:
                     continue
-                default_branch = repo_res.data.get("default_branch", "main")
 
-                # 2. Fetch latest commit
-                commit_res = await collector.fetch_latest_commit(repo, ref=default_branch)
-                if commit_res.status == "ok" and isinstance(commit_res.data, dict):
-                    sha = commit_res.data.get("sha")
-                    commit_obj = commit_res.data.get("commit", {})
-                    author_obj = commit_obj.get("author", {})
-                    commit_at = author_obj.get("date", now_iso)
-                    msg = commit_obj.get("message", "").split("\n")[0][:200]
+                open_prs_list: List[OpenPr] = []
+                latest_commit_info: Optional[LastCommit] = None
+                ci_evidence_info: Optional[CiEvidence] = None
+                activity_events: List[ActivityEvent] = []
+                links: List[ProjectLink] = []
+                prs_checked = False
 
-                    latest_commit_info = LastCommit(
-                        at=commit_at,
-                        branch=default_branch,
-                        ref=f"https://github.com/{repo}/commit/{sha}" if sha else None,
-                        commit_sha=sha[:40] if sha else None,
-                        observed_at=now_iso,
-                    )
-                    activity_events.append(
-                        ActivityEvent(
+                for repo in proj.repositories:
+                    # Add repo link
+                    links.append(ProjectLink(kind="repo", label=repo, url=f"https://github.com/{repo}"))
+
+                    # 1. Fetch repo info (default branch)
+                    repo_res = await collector.fetch_repository(repo)
+                    if repo_res.status != "ok" or not isinstance(repo_res.data, dict):
+                        continue
+                    default_branch = repo_res.data.get("default_branch", "main")
+
+                    # 2. Fetch latest commit
+                    commit_res = await collector.fetch_latest_commit(repo, ref=default_branch)
+                    if commit_res.status == "ok" and isinstance(commit_res.data, dict):
+                        sha = commit_res.data.get("sha")
+                        commit_obj = commit_res.data.get("commit", {})
+                        author_obj = commit_obj.get("author", {})
+                        commit_at = author_obj.get("date", now_iso)
+                        raw_msg = commit_obj.get("message", "").split("\n")[0]
+                        commit_text = f"{repo}: {raw_msg}"[:240]
+
+                        latest_commit_info = LastCommit(
                             at=commit_at,
-                            kind="commit",
-                            text=f"{repo}: {msg}" if msg else f"Commit on {default_branch}",
+                            branch=default_branch,
                             ref=f"https://github.com/{repo}/commit/{sha}" if sha else None,
-                        )
-                    )
-
-                    # Update project source with verified commit SHA
-                    sources = list(proj.sources)
-                    existing = next((s for s in sources if s.ref == f"https://github.com/{repo}"), None)
-                    if existing:
-                        sources.remove(existing)
-                    sources.append(
-                        Source(
-                            kind="git_repo",
-                            ref=f"https://github.com/{repo}",
-                            observed_at=now_iso,
                             commit_sha=sha[:40] if sha else None,
-                        )
-                    )
-                    # Update project in registry
-                    self._projects[pid] = Project(
-                        id=proj.id,
-                        name=proj.name,
-                        priority=proj.priority,
-                        state=proj.state,
-                        deployment=proj.deployment,  # Deployment NEVER inferred from commit
-                        evidence_level="git_verified",
-                        summary=proj.summary,
-                        repositories=list(proj.repositories),
-                        blocked_by=list(proj.blocked_by),
-                        sources=sources,
-                        observed_at=now_iso,
-                    )
-                    proj = self._projects[pid]
-
-                # 3. Fetch open PRs
-                prs_res = await collector.fetch_pull_requests(repo, state="open", page=1)
-                if prs_res.status == "ok" and isinstance(prs_res.data, list):
-                    for pr in prs_res.data:
-                        pr_num = pr.get("number")
-                        pr_title = pr.get("title", "")[:280]
-                        pr_draft = pr.get("draft", False)
-                        pr_head = pr.get("head", {})
-                        pr_sha = pr_head.get("sha")
-                        pr_opened = pr.get("created_at", now_iso)
-                        pr_updated = pr.get("updated_at", now_iso)
-                        review_state = "draft" if pr_draft else "review_required"
-
-                        open_prs_list.append(
-                            OpenPr(
-                                ref=f"{repo}#{pr_num}",
-                                title=pr_title,
-                                review=review_state,
-                                opened_at=pr_opened,
-                                updated_at=pr_updated,
-                                head_sha=pr_sha[:40] if pr_sha else None,
-                            )
+                            observed_at=now_iso,
                         )
                         activity_events.append(
                             ActivityEvent(
-                                at=pr_updated,
-                                kind="pr",
-                                text=f"PR #{pr_num}: {pr_title}",
-                                ref=f"https://github.com/{repo}/pull/{pr_num}",
+                                at=commit_at,
+                                kind="commit",
+                                text=commit_text,
+                                ref=f"https://github.com/{repo}/commit/{sha}" if sha else None,
                             )
                         )
 
-            # Store insights
-            self._insights[pid] = ProjectInsights(
-                observed_at=now_iso,
-                open_prs=OpenPrsGroup(observed_at=now_iso, items=open_prs_list) if open_prs_list else None,
-                last_commit=latest_commit_info,
-                last_deploy=None,  # Never manufactured from Git
-                ci=ci_evidence_info,
-                next=[],
-                activity=activity_events,
-                links=links,
-            )
-            results[pid] = "updated"
+                        # Update project source with verified commit SHA
+                        sources = list(proj.sources)
+                        existing = next((s for s in sources if s.ref == f"https://github.com/{repo}"), None)
+                        if existing:
+                            sources.remove(existing)
+                        sources.append(
+                            Source(
+                                kind="git_repo",
+                                ref=f"https://github.com/{repo}",
+                                observed_at=now_iso,
+                                commit_sha=sha[:40] if sha else None,
+                            )
+                        )
+                        self._projects[pid] = Project(
+                            id=proj.id,
+                            name=proj.name,
+                            priority=proj.priority,
+                            state=proj.state,
+                            deployment=proj.deployment,
+                            evidence_level="git_verified",
+                            summary=proj.summary,
+                            repositories=list(proj.repositories),
+                            blocked_by=list(proj.blocked_by),
+                            sources=sources,
+                            observed_at=now_iso,
+                        )
+                        proj = self._projects[pid]
+
+                    # 3. Fetch open PRs
+                    prs_res = await collector.fetch_pull_requests(repo, state="open", page=1)
+                    if prs_res.status == "ok" and isinstance(prs_res.data, list):
+                        prs_checked = True
+                        for pr in prs_res.data:
+                            pr_num = pr.get("number")
+                            pr_title = pr.get("title", "")
+                            pr_draft = pr.get("draft", False)
+                            pr_head = pr.get("head", {})
+                            pr_sha = pr_head.get("sha")
+                            pr_opened = pr.get("created_at", now_iso)
+                            pr_updated = pr.get("updated_at", now_iso)
+                            review_state = "draft" if pr_draft else "review_required"
+
+                            open_prs_list.append(
+                                OpenPr(
+                                    ref=f"{repo}#{pr_num}",
+                                    title=pr_title[:280],
+                                    review=review_state,
+                                    opened_at=pr_opened,
+                                    updated_at=pr_updated,
+                                    head_sha=pr_sha[:40] if pr_sha else None,
+                                )
+                            )
+                            # Safe truncation to <= 240 chars for ActivityEvent.text
+                            activity_text = f"PR #{pr_num}: {pr_title}"[:240]
+                            activity_events.append(
+                                ActivityEvent(
+                                    at=pr_updated,
+                                    kind="pr",
+                                    text=activity_text,
+                                    ref=f"https://github.com/{repo}/pull/{pr_num}",
+                                )
+                            )
+
+                # Store insights (empty list if checked and none found, None if uncollected)
+                open_prs_val = OpenPrsGroup(observed_at=now_iso, items=open_prs_list) if prs_checked else None
+
+                self._insights[pid] = ProjectInsights(
+                    observed_at=now_iso,
+                    open_prs=open_prs_val,
+                    last_commit=latest_commit_info,
+                    last_deploy=None,
+                    ci=ci_evidence_info,
+                    next=[],
+                    activity=activity_events,
+                    links=links,
+                )
+                results[pid] = "updated"
+            except Exception as exc:
+                # Per-project failure isolation
+                results[pid] = f"error: {str(exc)}"
 
         return {"status": "ok", "observed_at": now_iso, "results": results}
 
@@ -638,10 +654,27 @@ class ProjectRegistry:
         )
 
     def generate_snapshot(self) -> ProjectSnapshot:
-        """Generate a complete ProjectSnapshot matching the schema contract."""
+        """Generate a complete ProjectSnapshot matching the v1 schema contract."""
         now_iso = datetime.now(timezone.utc).isoformat()
         return ProjectSnapshot(
             version="1.0",
             generated_at=now_iso,
             projects=self.list_projects(),
         )
+
+    def generate_snapshot_v11(self) -> Dict[str, Any]:
+        """Generate a canonical ProjectSnapshot matching proposed v1.1 contract with inline insights."""
+        now_iso = datetime.now(timezone.utc).isoformat()
+        projects_v11 = []
+        for p in self.list_projects():
+            p_dict = p.model_dump()
+            insights = self.get_project_insights(p.id)
+            p_dict["insights"] = insights.model_dump() if insights else None
+            projects_v11.append(p_dict)
+
+        return {
+            "version": "1.1",
+            "generated_at": now_iso,
+            "stale_after_seconds": 172800,  # 48 hours
+            "projects": projects_v11,
+        }

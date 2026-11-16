@@ -135,17 +135,33 @@ def get_collector(
 router = APIRouter(prefix="/v0.1/project-steward", tags=["project-steward"])
 
 
-@router.get("/snapshot", response_model=ProjectSnapshot)
+@router.get("/snapshot")
 async def get_project_snapshot(
+    refresh: bool = Query(default=False, description="Whether to collect latest read-only GitHub evidence"),
+    version: str = Query(default="1.0", description="Contract version: '1.0' or '1.1'"),
+    owner: AuthUser = Depends(require_steward_owner),
+    registry: ProjectRegistry = Depends(get_registry),
+    collector: ReadOnlyGitHubCollector = Depends(get_collector),
+) -> Any:
+    """Return complete deterministic read-only project snapshot matching v1.0 or canonical v1.1 contract."""
+    if refresh and collector.is_enabled:
+        await registry.ingest_github_evidence(collector)
+    if version == "1.1":
+        return registry.generate_snapshot_v11()
+    return registry.generate_snapshot()
+
+
+@router.get("/snapshot/v1.1")
+async def get_project_snapshot_v11(
     refresh: bool = Query(default=False, description="Whether to collect latest read-only GitHub evidence"),
     owner: AuthUser = Depends(require_steward_owner),
     registry: ProjectRegistry = Depends(get_registry),
     collector: ReadOnlyGitHubCollector = Depends(get_collector),
-) -> ProjectSnapshot:
-    """Return complete deterministic read-only project snapshot matching v1 contract."""
+) -> Dict[str, Any]:
+    """Return canonical v1.1 project snapshot with stale_after_seconds and optional inline insights."""
     if refresh and collector.is_enabled:
         await registry.ingest_github_evidence(collector)
-    return registry.generate_snapshot()
+    return registry.generate_snapshot_v11()
 
 
 @router.get("/projects", response_model=List[Project])

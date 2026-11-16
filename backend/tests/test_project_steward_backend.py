@@ -270,6 +270,30 @@ class TestP0TruthAndRegistryIntegrity(unittest.TestCase):
         self.assertEqual(pt.deployment, "not_deployed")
 
 
+    def test_rmc_pilot_includes_pr_10_source(self):
+        rmc = self.registry.get_project("rmc")
+        self.assertIsNotNone(rmc)
+        pr10 = next((s for s in rmc.sources if "pull/10" in s.ref), None)
+        self.assertIsNotNone(pr10, "RMC pilot must cite PR #10")
+        self.assertEqual(pr10.kind, "git_pr")
+
+    def test_strict_coupling_verified_current_rejected_without_host_receipt(self):
+        """verified_current strictly requires host_verified and host_receipt."""
+        with self.assertRaises(ValueError):
+            Project(
+                id="fake-deploy",
+                name="Fake Deploy",
+                priority="p2",
+                state="coded",
+                deployment="verified_current",
+                evidence_level="git_verified",  # Mismatched! Must be host_verified
+                repositories=[],
+                blocked_by=[],
+                sources=[],
+                observed_at="2026-11-15T18:00:00Z",
+            )
+
+
 class TestP1GitHubCollectorSecurityAndIngestion(unittest.IsolatedAsyncioTestCase):
     """Test input hardening, allowlist enforcement, and evidence ingestion."""
 
@@ -525,6 +549,81 @@ class TestP1GitHubCollectorSecurityAndIngestion(unittest.IsolatedAsyncioTestCase
         self.assertIn("***REDACTED***", res.error)
 
 
+    # F-01 Fix: Long PR title (>280 chars) does not abort ingest, truncated <=240 for activity
+    async def test_long_pr_title_isolated_and_truncated(self):
+        long_title = "feat(core): " + "x" * 350
+
+        def mock_long_title_github(request: httpx.Request) -> httpx.Response:
+            url_str = str(request.url)
+            if "/repos/brettbaysinger-boop/chorusfall" in url_str and "/commits" not in url_str and "/pulls" not in url_str:
+                return httpx.Response(200, json={"default_branch": "main"})
+            if "/commits/main" in url_str:
+                return httpx.Response(
+                    200,
+                    json={
+                        "sha": "1234567890abcdef1234567890abcdef12345678",
+                        "commit": {
+                            "author": {"date": "2026-11-15T18:00:00Z"},
+                            "message": "Update",
+                        },
+                    },
+                )
+            if "/pulls" in url_str:
+                return httpx.Response(
+                    200,
+                    json=[
+                        {
+                            "number": 99,
+                            "title": long_title,
+                            "draft": False,
+                            "head": {"sha": "1234567890abcdef1234567890abcdef12345678"},
+                            "created_at": "2026-11-15T10:00:00Z",
+                            "updated_at": "2026-11-15T18:00:00Z",
+                        }
+                    ],
+                )
+            return httpx.Response(404, json={})
+
+        collector = ReadOnlyGitHubCollector(
+            self.settings, transport=httpx.MockTransport(mock_long_title_github)
+        )
+        registry = ProjectRegistry(self.settings)
+        res = await registry.ingest_github_evidence(collector, project_id="chorusfall")
+        self.assertEqual(res["status"], "ok")
+        insights = registry.get_project_insights("chorusfall")
+        self.assertIsNotNone(insights)
+        self.assertTrue(len(insights.activity[0].text) <= 240)
+
+    # Empty PR list is marked as checked with items=[] rather than uncollected (None)
+    async def test_empty_pr_list_recorded_as_checked_empty(self):
+        def mock_empty_prs_github(request: httpx.Request) -> httpx.Response:
+            url_str = str(request.url)
+            if "/repos/brettbaysinger-boop/forge" in url_str and "/commits" not in url_str and "/pulls" not in url_str:
+                return httpx.Response(200, json={"default_branch": "main"})
+            if "/commits/main" in url_str:
+                return httpx.Response(
+                    200,
+                    json={
+                        "sha": "1234567890abcdef1234567890abcdef12345678",
+                        "commit": {"author": {"date": "2026-11-15T18:00:00Z"}, "message": "Forge"},
+                    },
+                )
+            if "/pulls" in url_str:
+                return httpx.Response(200, json=[])  # Empty list of open PRs!
+            return httpx.Response(404, json={})
+
+        collector = ReadOnlyGitHubCollector(
+            self.settings, transport=httpx.MockTransport(mock_empty_prs_github)
+        )
+        registry = ProjectRegistry(self.settings)
+        res = await registry.ingest_github_evidence(collector, project_id="forge")
+        self.assertEqual(res["status"], "ok")
+        insights = registry.get_project_insights("forge")
+        self.assertIsNotNone(insights)
+        self.assertIsNotNone(insights.open_prs)
+        self.assertEqual(insights.open_prs.items, [])
+
+
 class TestContractCompliance(unittest.TestCase):
     """Validate snapshot against contracts/project-steward/project-snapshot.v1.schema.json."""
 
@@ -598,6 +697,16 @@ class TestContractCompliance(unittest.TestCase):
                 headers={"Authorization": "Bearer valid-token"},
             )
             self.assertEqual(insights_resp.status_code, 200)
+
+            v11_resp = client.get(
+                "/v0.1/project-steward/snapshot/v1.1",
+                headers={"Authorization": "Bearer valid-token"},
+            )
+            self.assertEqual(v11_resp.status_code, 200)
+            v11_data = v11_resp.json()
+            self.assertEqual(v11_data["version"], "1.1")
+            self.assertEqual(v11_data["stale_after_seconds"], 172800)
+            self.assertIn("insights", v11_data["projects"][0])
 
 
 if __name__ == "__main__":

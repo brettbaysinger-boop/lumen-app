@@ -149,6 +149,21 @@ class Project(BaseModel):
                 raise ValueError(f"Blocker exceeds 240 characters: '{b[:30]}...'")
         return blockers
 
+    @model_validator(mode="after")
+    def validate_deployment_coupling(self) -> Project:
+        """Enforce strict coupling: verified_current requires host_verified and a host_receipt source."""
+        if self.deployment == "verified_current":
+            if self.evidence_level != "host_verified":
+                raise ValueError(
+                    "deployment 'verified_current' strictly requires evidence_level 'host_verified'"
+                )
+            has_host_receipt = any(s.kind == "host_receipt" for s in self.sources)
+            if not has_host_receipt:
+                raise ValueError(
+                    "deployment 'verified_current' strictly requires at least one source with kind 'host_receipt'"
+                )
+        return self
+
 
 class ProjectSnapshot(BaseModel):
     """Project Steward v1 read-only project snapshot."""
@@ -158,6 +173,31 @@ class ProjectSnapshot(BaseModel):
     version: Literal["1.0"] = "1.0"
     generated_at: str
     projects: list[Project]
+
+    @field_validator("generated_at")
+    @classmethod
+    def validate_generated_at(cls, v: str) -> str:
+        res = _validate_iso_datetime(v)
+        if res is None:
+            raise ValueError("generated_at cannot be null")
+        return res
+
+
+class ProjectV11(Project):
+    """Project Steward v1.1 project with optional inline insights."""
+
+    insights: Optional[Any] = None
+
+
+class ProjectSnapshotV11(BaseModel):
+    """Canonical Project Steward v1.1 read-only project snapshot."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    version: Literal["1.1"] = "1.1"
+    generated_at: str
+    stale_after_seconds: int = 172800  # 48 hours
+    projects: list[ProjectV11]
 
     @field_validator("generated_at")
     @classmethod
