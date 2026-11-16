@@ -1,6 +1,6 @@
 // Local image and video generation in headless Chromium against the web build in dist/.
 // No Supabase, Lumen API or Heavy service is used: all are stand-ins, and all data is fictional.
-// Checks: a video job shows live progress in Chat and then plays; a saved video attachment plays;
+// Checks: a video request naming "image" is sent to chat, not the image endpoint; a video job shows live progress in Chat and then plays; a saved video attachment plays;
 // job status is only requested in Private; Gallery shows videos in Private and reads nothing in Public.
 //   EXPO_PUBLIC_SUPABASE_URL=http://127.0.0.1:54321 EXPO_PUBLIC_SUPABASE_ANON_KEY=test \
 //   EXPO_PUBLIC_LUMEN_API_URL=http://127.0.0.1:8001 npx expo export --platform web --clear
@@ -25,10 +25,11 @@ function stand({user,mode}){
   localStorage.setItem('sb-127-auth-token',JSON.stringify({access_token:'test-token',refresh_token:'t',expires_at:Math.floor(Date.now()/1000)+36000,expires_in:36000,token_type:'bearer',user}));
   if(mode)localStorage.setItem('lumen.privacyMode.v1',mode);
 }
-const jobRequests=[];let polls=0;
+const jobRequests=[],sends=[];let polls=0;
 const api=http.createServer((req,res)=>{const cors={'access-control-allow-origin':'*','access-control-allow-headers':'*','access-control-allow-methods':'*'};
   if(req.method==='OPTIONS'){res.writeHead(204,cors);return res.end();}
   const json=(data,status=200)=>{res.writeHead(status,{...cors,'content-type':'application/json'});res.end(JSON.stringify(data));};
+  if(req.method==='POST'&&/\/(respond|images\/generate)/.test(req.url)){sends.push(req.url.split('?')[0]);return json({detail:'test stop'},503);}
   if(req.url.includes('/v0.3/media/jobs/')){jobRequests.push(req.url);polls++;
     if(!req.url.includes('privacy_mode=private'))return json({detail:'hidden'},403);
     return json(polls<2?{id:JOB,status:'running',progress:42,stage:'Animating…',mode:'t2i2v',duration_seconds:5,result_path:null,result_mime_type:null,error:null,message_id:'m2'}
@@ -74,7 +75,19 @@ const shot=async(page,name)=>{if(SHOTS)await page.screenshot({path:path.join(SHO
   await page.getByText('Lantern on a lake').click();
   await page.waitForFunction(()=>[...document.querySelectorAll('video')].some(v=>v.src.includes('old.mp4')),null,{timeout:10000});
   await shot(page,'gallery-private-video');
-  assert.deepEqual(errors,[]);await page.close();await context.close();
+  assert.deepEqual(errors,[]);await page.close();
+  // --- Live failure 2026-11-16: a video request that names "image" goes to chat, never to the image endpoint
+  const LIVE='Make a 3-second video animating the image you just generated. Use gentle, natural movement.';
+  for(const [text,expected] of [[LIVE,/\/respond/],['Create an image of a lighthouse at dusk',/\/v0\.2\/images\/generate$/]]){
+    sends.length=0;({page,errors}=await open(context,{mode:'private'}));
+    const box=page.getByPlaceholder('Message Lumen…');await box.waitFor({timeout:20000});
+    await box.fill(text);await box.press('Enter');
+    for(let i=0;i<50&&!sends.length;i++)await page.waitForTimeout(100);
+    assert.equal(sends.length,1,`one request for: ${text}`);assert.match(sends[0],expected,text);
+    if(text===LIVE)assert.ok(!sends.some(u=>u.includes('images/generate')),'a video request never reaches the image endpoint');
+    await page.close();
+  }
+  await context.close();
   // --- Public: Gallery reads nothing; chat never asks for job status ---------------------------------
   galleryReads.length=0;jobRequests.length=0;
   context=await browser.newContext();
