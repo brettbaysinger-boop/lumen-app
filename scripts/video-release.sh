@@ -112,6 +112,7 @@ test_copy() {  # $1 = record dir: the patch on a throwaway copy of the live back
   local copy p; copy=$(mktemp -d)
   tar -C "$LIVE_DIR" --exclude=backend/.venv --exclude=.env --exclude='*.env' --exclude=__pycache__ \
     --exclude=.pytest_cache -cf - backend | tar -C "$copy" -xf -
+  repo archive "$CODE" scripts | tar -C "$copy" -xf -   # the operator scripts the backend tests exercise
   git -C "$copy" apply - < "$1/patch" || { rm -rf "$copy"; return 1; }
   while read -r p; do
     [ "$(git hash-object --no-filters -- "$copy/$p" 2>/dev/null || echo absent)" = "$(blob_of "$CODE" "$p")" ] \
