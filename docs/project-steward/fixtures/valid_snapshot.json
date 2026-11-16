@@ -1,0 +1,126 @@
+{
+  "version": "1.0",
+  "generated_at": "2026-11-15T18:00:00Z",
+  "projects": [
+    {
+      "id": "pesttrails",
+      "name": "PestTrails",
+      "priority": "p0",
+      "state": "coded",
+      "deployment": "not_deployed",
+      "evidence_level": "git_verified",
+      "summary": "Owner's highest overall priority pest control management platform.",
+      "repositories": [
+        "brettbaysinger-boop/pest-control-platform"
+      ],
+      "blocked_by": [
+        "Owner operational field acceptance test pending"
+      ],
+      "sources": [
+        {
+          "kind": "git_repo",
+          "ref": "https://github.com/brettbaysinger-boop/pest-control-platform",
+          "observed_at": "2026-11-15T18:00:00Z",
+          "commit_sha": "a1b2c3d4e5f6"
+        },
+        {
+          "kind": "git_issue",
+          "ref": "https://github.com/brettbaysinger-boop/pest-control-platform/issues/6",
+          "observed_at": "2026-11-15T18:00:00Z",
+          "commit_sha": null
+        }
+      ],
+      "observed_at": "2026-11-15T18:00:00Z"
+    },
+    {
+      "id": "chorusfall",
+      "name": "Chorusfall",
+      "priority": "p1",
+      "state": "coded",
+      "deployment": "not_deployed",
+      "evidence_level": "git_verified",
+      "summary": "First priority game project; audio-driven procedural world engine.",
+      "repositories": [
+        "brettbaysinger-boop/chorusfall-engine"
+      ],
+      "blocked_by": [
+        "Procedural audio engine performance benchmark under review"
+      ],
+      "sources": [
+        {
+          "kind": "git_repo",
+          "ref": "https://github.com/brettbaysinger-boop/chorusfall-engine",
+          "observed_at": "2026-11-15T18:00:00Z",
+          "commit_sha": "c4d5e6f7a8b9"
+        }
+      ],
+      "observed_at": "2026-11-15T18:00:00Z"
+    },
+    {
+      "id": "dreamvault",
+      "name": "DreamVault",
+      "priority": "on_hold",
+      "state": "planned",
+      "deployment": "not_deployed",
+      "evidence_level": "unverified",
+      "summary": "Non-repo conceptual archive project; no standalone repository exists.",
+      "repositories": [],
+      "blocked_by": [
+        "No repository or active runtime; on hold"
+      ],
+      "sources": [
+        {
+          "kind": "owner_report",
+          "ref": "owner://backlog/dreamvault-concept",
+          "observed_at": "2026-11-15T18:00:00Z",
+          "commit_sha": null
+        }
+      ],
+      "observed_at": "2026-11-15T18:00:00Z"
+    },
+    {
+      "id": "wisdom-of-the-crowd",
+      "name": "Wisdom of the Crowd",
+      "priority": "unranked",
+      "state": "planned",
+      "deployment": "not_deployed",
+      "evidence_level": "unverified",
+      "summary": "Non-repo consensus research initiative; no standalone repository exists.",
+      "repositories": [],
+      "blocked_by": [
+        "Exploratory design only; unranked"
+      ],
+      "sources": [
+        {
+          "kind": "owner_report",
+          "ref": "owner://backlog/wisdom-of-the-crowd-concept",
+          "observed_at": "2026-11-15T18:00:00Z",
+          "commit_sha": null
+        }
+      ],
+      "observed_at": "2026-11-15T18:00:00Z"
+    },
+    {
+      "id": "bretts-games",
+      "name": "Brett's Games",
+      "priority": "p2",
+      "state": "planned",
+      "deployment": "not_deployed",
+      "evidence_level": "owner_report",
+      "summary": "Portfolio umbrella project representing multiple independent game modules.",
+      "repositories": [],
+      "blocked_by": [
+        "Portfolio umbrella; tracked via individual game sub-projects"
+      ],
+      "sources": [
+        {
+          "kind": "owner_report",
+          "ref": "owner://portfolio/games-umbrella",
+          "observed_at": "2026-11-15T18:00:00Z",
+          "commit_sha": null
+        }
+      ],
+      "observed_at": "2026-11-15T18:00:00Z"
+    }
+  ]
+}

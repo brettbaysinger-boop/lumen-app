@@ -1,0 +1,7 @@
+{
+  "status_code": 301,
+  "headers": {
+    "location": "https://attacker-controlled.internal/metadata"
+  },
+  "body": "Moved Permanently"
+}
