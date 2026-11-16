@@ -37,7 +37,9 @@ _ALLOWED = (
     re.compile(
         r"^(?:Our (?:ongoing|recurring|weekly|monthly) (?:ritual|tradition|routine) is|"
         r"Whenever we (?:chat|talk), we (?:usually|always)|"
-        r"You and I (?:always|usually) (?:talk|chat|play|work))\s+.{3,180}[.!]?$",
+        r"Our (?:inside joke|running joke) (?:is|about)|"
+        r"You and I (?:always|usually) (?:talk|chat|play|work)|"
+        r"You and I (?:often|always) (?:laugh|joke) about)\s+.{3,180}[.!]?$",
         re.I,
     ),
 )
