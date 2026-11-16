@@ -52,7 +52,8 @@ class Settings(BaseSettings):
     # Checkpoint for workflows that use {{LUMEN_CHECKPOINT}} (e.g. the BigLust SDXL v1.6
     # workflow). Exact filename as ComfyUI lists it; never guessed by Lumen.
     comfyui_checkpoint: str = ""
-    # Used where a workflow has {{LUMEN_NEGATIVE}}. Always keeps the anti-minor terms.
+    # Used where a workflow has {{LUMEN_NEGATIVE}}. The default includes anti-minor terms; an
+    # owner-set COMFYUI_NEGATIVE_PROMPT replaces the whole string.
     comfyui_negative_prompt: str = (
         "lowres, bad anatomy, bad hands, extra fingers, deformed, blurry, watermark, text, "
         "child, minor, underage, teen, childlike body"

@@ -35,7 +35,7 @@ from .images import (
     compose_image_prompt,
     create_image_provider,
 )
-from .media_safety import adult_prompt, check_media_prompt, refusal_text
+from .media_safety import check_media_prompt, refusal_text
 from .media_jobs import router as media_router
 from .portrait_creation import router as portrait_router
 from .push import router as push_router
@@ -233,7 +233,7 @@ async def generate_image(
 
     try:
         provider = create_image_provider(settings)
-        result = await provider.generate(adult_prompt(resolved_prompt, verdict))
+        result = await provider.generate(resolved_prompt)
     except ImageProviderNotConfigured as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
     except ImageProviderError as exc:

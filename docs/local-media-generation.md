@@ -46,13 +46,43 @@ through" reply, see below).
 * Gallery now reads nothing and shows a lock while Public is on (it read all items before).
 * Heavy's URLs live only in the backend `.env`; `/v0.3/media/capabilities` returns booleans.
 
-## Content limits (`media_safety.py`)
+## Content rules (`media_safety.py`), exactly as they stand
 
-Adult content is allowed for fictional adults. Hard blocks, before any GPU work, for every image and
-video path: sexual or nude content with any sign of a minor; sexual or nude content of real or
-identifiable people; non-consent; intimate video made from an uploaded photo. Allowed adult prompts
-get an explicit adult-age line and an anti-minor negative prompt where the workflow supports one.
-Keyword checks are a backstop, not a classifier.
+Owner directive 2026-11-16: BigLust and FramePack are private local tools. Adult nudity and erotic
+material of consenting fictional adults is generated as asked. There is no NSFW filter, no cloud
+moderation, no safe mode and no new dependency, and the user's prompt is not rewritten.
+
+**Refusals** (backend, before any GPU work, every image and video path). Each needs a sexual/nude
+word in the prompt *and* one of:
+1. a minor signal: child/kid/minor/underage/teen words, an age under 18 ("16 years old", "15yo",
+   "aged 12"), school-child framing (schoolgirl, school uniform, high school...), loli/shota,
+   "little/young girl/boy", "barely legal", "young-looking", "childish body";
+2. a real, identifiable person: celebrity/famous, "real person"/real-life/irl, lookalike, deepfake,
+   face swap, "photo/picture of my ...", or "my" + a relationship (wife, girlfriend, coworker, friend,
+   sister...);
+3. stated non-consent: rape, non-consensual, "without (her) consent", "against her will",
+   "forced to/into/sex", coercion, drugged, unconscious, incapacitated, blackmail, hidden camera,
+   spy cam, upskirt, voyeur, revenge porn;
+4. or, for video only, an uploaded photo as the source (it can show a real person).
+
+Narrowed on 2026-11-16 (these no longer cause a refusal): occupations (actress, singer, royal,
+athlete...), "baby", son/daughter/niece/nephew/step-family words, "flat-chested", "petite young",
+plain "elementary", "N years" without "old" (anniversaries), "sleeping"/"asleep"/"passed out",
+bare "forced" (e.g. forced perspective).
+
+**Transformations that remain** (only on the negative side; the positive prompt is untouched):
+* Stills: `COMFYUI_NEGATIVE_PROMPT` fills `{{LUMEN_NEGATIVE}}`. Its default is quality terms plus
+  "child, minor, underage, teen, childlike body". An owner-set value replaces the whole string.
+* Video: when the request is sexual/nude, "child, minor, underage, teen, young-looking, childlike body,
+  school uniform" is sent as the negative prompt (`ADULT_NEGATIVE`).
+* Companion images: the companion's own visual identity is added to the prompt when the request is
+  about the companion (an existing feature, not a safety rule).
+
+Known false-positive risk that is still in rule 2: "my girlfriend"/"my wife" also blocks a request
+that means the Lumen companion itself. Owner decision.
+
+Public vs Private is about who can see the screen, not content: generation and media are Private-only.
+Keyword rules are a backstop and can misfire; each refusal names the rule so it can be rephrased.
 
 ## Readiness (owner-supplied Heavy discovery, 2026-11-16)
 

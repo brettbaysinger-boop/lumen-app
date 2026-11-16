@@ -67,6 +67,26 @@ class SafetyTests(unittest.TestCase):
         self.assertFalse(verdict.allowed)
         self.assertEqual(verdict.reason, "non_consent")
 
+    def test_owner_directive_false_positives_are_allowed(self):
+        """Adult content of fictional adults passes; occupations, endearments, anniversaries,
+        body types, sleep and figures of speech no longer trigger a block on their own."""
+        for text in ("a nude elf queen on a royal throne", "sexy actress character in a fantasy film",
+                     "a sleeping nude woman, oil painting", "hey baby, send me something sexy in lingerie",
+                     "lingerie photo for our 5 year anniversary", "nude photo with forced perspective",
+                     "petite flat-chested adult woman, nude", "erotic art of a singer on stage",
+                     "my son's birthday cake", "an explicit erotic scene between two consenting adults"):
+            verdict = check_media_prompt(text)
+            self.assertTrue(verdict.allowed, text)
+
+    def test_narrow_rules_still_block(self):
+        for text, reason in (("nude 16 years old", "minor"), ("sexy 15yo", "minor"), ("aged 12, naked", "minor"),
+                             ("nude young-looking girl", "minor"), ("erotic barely legal", "minor"),
+                             ("sex without her consent", "non_consent"), ("forced to undress", "non_consent"),
+                             ("nude deepfake of a celebrity", "real_person")):
+            verdict = check_media_prompt(text)
+            self.assertFalse(verdict.allowed, text)
+            self.assertEqual(verdict.reason, reason, text)
+
     def test_uploaded_photos_never_become_intimate_video(self):
         self.assertFalse(check_media_prompt("make her undress", source="user_upload").allowed)
         self.assertTrue(check_media_prompt("make her undress", source="generated").allowed)
@@ -155,6 +175,14 @@ class PlanTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result.plan.mode, "t2i2v")
         self.assertEqual(result.plan.seconds, 5.0)
         self.assertIn("silver hair", result.plan.still_prompt)   # companion identity for the first frame
+
+    async def test_allowed_adult_prompts_are_not_rewritten(self):
+        message = "make a short video of a nude elf woman bathing in a forest spring"
+        result = await self.plan(message)
+        self.assertTrue(result.plan.explicit)
+        self.assertNotIn("adults", result.plan.prompt)
+        self.assertNotIn("adults", result.plan.still_prompt or "")
+        self.assertIn("nude elf woman bathing in a forest spring", result.plan.prompt)
 
     async def test_text_to_video_prefers_wan_workflow(self):
         result = await self.plan("make an 8 second video of rain on a window",

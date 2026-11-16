@@ -37,7 +37,7 @@ from .auth import AuthUser, require_user
 from .config import get_settings
 from .db import SupabaseRepository
 from .images import ImageProviderError, ImageProviderNotConfigured, compose_image_prompt, create_image_provider
-from .media_safety import ADULT_NEGATIVE, adult_prompt, check_media_prompt, refusal_text
+from .media_safety import ADULT_NEGATIVE, check_media_prompt, refusal_text
 from .video_providers import framepack_provider, free_comfy_memory, run_comfy_video_workflow, video_mime
 
 log = logging.getLogger(__name__)
@@ -231,8 +231,8 @@ async def plan_video_job(settings, *, privacy_mode: str, user_id: str, companion
         return PlanResult("I'm still working on your other videos. Let's wait for those to finish first.")
 
     plan = VideoJobPlan(owner_user_id=user_id, companion_id=companion["id"], conversation_id=conversation_id,
-                        mode=mode, prompt=adult_prompt(text, verdict), seconds=seconds, explicit=verdict.explicit,
-                        still_prompt=adult_prompt(still, verdict) if still else None,
+                        mode=mode, prompt=text, seconds=seconds, explicit=verdict.explicit,
+                        still_prompt=still,
                         source_path=source[0] if source else None, source_mime=source[1] if source else None)
     return PlanResult(f"I'm making a {seconds:g}-second video now. It will show up right here when it's "
                       "ready, usually within a few minutes.", plan)
