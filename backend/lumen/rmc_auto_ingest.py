@@ -36,6 +36,40 @@ _SENSITIVE = re.compile(
     r"\b\d{4,}\b)",
     re.IGNORECASE,
 )
+# A tiny deterministic high-precision path for explicit, low-risk user
+# preferences. It prevents an empty LLM extraction response from discarding
+# plain facts such as "My favorite fruit is golden kiwi." It is NOT a general
+# text classifier: all other turns use the existing model screening.
+_FAVORITE = re.compile(
+    r"^My favorite (?P<kind>color|fruit|food|season|flower|animal|"
+    r"movie|book|hobby|sport|music) is (?P<value>[^.!?\\n]{2,70})\\.$",
+    re.IGNORECASE,
+)
+
+
+def deterministic_safe_preference(statement: str) -> Candidate | None:
+    """Return only an unambiguous, entire-sentence, owner-spoken preference."""
+    if not isinstance(statement, str) or _SENSITIVE.search(statement):
+        return None
+    match = _FAVORITE.fullmatch(statement.strip())
+    if not match:
+        return None
+    kind, value = match.group("kind").casefold(), match.group("value").strip()
+    if (not value or len(value.split()) > 9
+            or any(token in value.casefold().split() for token in
+                   ("maybe", "perhaps", "hypothetically", "if", "unless", "pretend",
+                    "because", "but", "although", "actually", "or"))):
+        return None
+    candidate = Candidate(
+        content="The user favorite " + kind + " is " + value + ".",
+        evidence=statement.strip(),
+        subject="user", type="preference",
+        direct_assertion=True, sensitive=False, conflicting=False,
+        topic="favorite_" + kind, durable=True,
+    )
+    return candidate if approved_evidence(statement, candidate, "Companion") else None
+
+
 _PROMPT = """You screen the CURRENT USER STATEMENT for durable personal memories.
 Return JSON matching the schema. Propose up to 3 candidates, or none.
 Evidence MUST be an exact substring of the current user statement.
@@ -76,6 +110,10 @@ def approved_evidence(statement: str, candidate: Candidate, companion_name: str)
 
 
 async def _screen(settings, statement: str, companion: dict) -> list[Candidate]:
+    # Plain, high-confidence preferences must not depend on model guessing.
+    direct = deterministic_safe_preference(statement)
+    if direct is not None:
+        return [direct]
     model = (settings.memory_observation_model
              or companion.get("conversation_model")
              or settings.conversation_model)
