@@ -42,7 +42,7 @@ _SENSITIVE = re.compile(
 # text classifier: all other turns use the existing model screening.
 _FAVORITE = re.compile(
     r"^My favorite (?P<kind>color|fruit|food|season|flower|animal|"
-    r"movie|book|hobby|sport|music) is (?P<value>[^.!?\\n]{2,70})\\.$",
+    r"movie|book|hobby|sport|music) is (?P<value>[^.!?\n]{2,70})\.$",
     re.IGNORECASE,
 )
 
@@ -61,7 +61,7 @@ def deterministic_safe_preference(statement: str) -> Candidate | None:
                     "because", "but", "although", "actually", "or"))):
         return None
     candidate = Candidate(
-        content="The user favorite " + kind + " is " + value + ".",
+        content="The user's favorite " + kind + " is " + value + ".",
         evidence=statement.strip(),
         subject="user", type="preference",
         direct_assertion=True, sensitive=False, conflicting=False,
