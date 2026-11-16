@@ -123,7 +123,7 @@ web release). One step per command; go on only after `RESULT <step>: OK`.
 
 ```bash
 git diff --quiet release/public-private-20261116 HEAD -- app components lib hooks types && echo "same app source as the web release"
-scripts/android-refresh.sh backup                     # copies the installed APK off the phone (e963ef43… expected)
+scripts/android-refresh.sh backup                     # copies the installed APK off the phone; note the sha256 and signer it prints
 scripts/android-refresh.sh phone
 scripts/android-refresh.sh build-check
 ANDROID_REFRESH_CONFIRM=build:<12 printed> scripts/android-refresh.sh build
@@ -131,6 +131,10 @@ scripts/android-refresh.sh verify <APK printed by build>
 unzip -p <APK> assets/index.android.bundle | grep -ac lumenroompublic    # must be 1 or more: this bundle has the switch
 ANDROID_REFRESH_CONFIRM=install:<12 printed> scripts/android-refresh.sh install <APK>
 ```
+
+The installed APK is whatever ADB reports at that moment. Earlier hashes are history, not an expectation:
+`e963ef43…` (Nov 15 build-host inventory) and `9ba60544…8d1192a` (PR #20 receipt for the signed in-app APK).
+If `backup` or `phone` reports a hash or signer you do not recognise, stop there.
 
 `verify` and `install` refuse another package, certificate, lower `versionCode`, missing public settings
 or a stale bundle. The script's own bundle marker proves the Live Room build; the `grep` line proves
