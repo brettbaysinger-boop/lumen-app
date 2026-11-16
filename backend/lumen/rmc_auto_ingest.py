@@ -152,7 +152,10 @@ async def auto_ingest_rmc_user_message(settings, token: str, user_id: str,
         if row.get("role") != "user" or not isinstance(row.get("metadata"), dict):
             return
         meta = dict(row["metadata"])
-        if meta.get("rmc_auto_state") != "pending":
+        if meta.get("rmc_auto_state") not in ("pending", "deferred"):
+            return
+        attempts = meta.get("rmc_auto_attempts", 0)
+        if type(attempts) is not int or not 0 <= attempts < 3:
             return
         companion = await db.get_companion(row.get("companion_id"))
         if (not companion or companion.get("owner_user_id") != user_id
@@ -267,6 +270,7 @@ async def auto_ingest_rmc_user_message(settings, token: str, user_id: str,
         # Chat message metadata is a STATUS RECEIPT, not a second memory store.
         # Retain existing attachments and do not log user text.
         meta["rmc_auto_state"] = state
+        meta["rmc_auto_attempts"] = attempts + 1
         meta["rmc_auto_confirmed_count"] = saved_count
         if shared_agreement and saved_count:
             meta["rmc_auto_kind"] = "agreed_nickname"
@@ -278,3 +282,57 @@ async def auto_ingest_rmc_user_message(settings, token: str, user_id: str,
     except Exception:
         # Never claim a successful save on exceptions or print memory contents.
         log.warning("RMC automatic ingestion could not finish; check the user's receipt")
+
+
+async def auto_ingest_rmc_with_deferred_retry(
+    settings, token: str, user_id: str, message_id: str,
+    companion_id: str | None, assistant_text: str = "",
+) -> None:
+    """Current source first, then retry at most ONE earlier deferred screen.
+
+    A 'deferred' screen was canceled before an RMC write by foreground chat.
+    NEVER retry 'unconfirmed' writes: the RMC ledger may have stored them.
+    Both current and retry paths validate account ownership and policy.
+    """
+    await auto_ingest_rmc_user_message(
+        settings, token, user_id, message_id, assistant_text
+    )
+    if (not companion_id or not uses_rmc(settings)
+            or not getattr(settings, "rmc_auto_ingest_enabled", False)):
+        return
+    db = SupabaseRepository(settings, token)
+    try:
+        companion = await db.get_companion(companion_id)
+        if (not companion or companion.get("owner_user_id") != user_id
+                or companion.get("auto_memory_enabled") is False):
+            return
+        rows = await db._request(
+            "GET", "messages",
+            params={
+                "select": "id,metadata",
+                "companion_id": "eq." + companion_id,
+                "role": "eq.user",
+                "metadata->>rmc_auto_state": "eq.deferred",
+                "order": "created_at.desc,id.desc",
+                "limit": "12",
+            },
+        )
+        if not isinstance(rows, list):
+            return
+        for row in rows:
+            if row.get("id") == message_id:
+                continue
+            meta = row.get("metadata")
+            if (not isinstance(meta, dict)
+                    or meta.get("rmc_auto_state") != "deferred"
+                    or type(meta.get("rmc_auto_attempts", 0)) is not int
+                    or not 0 <= meta.get("rmc_auto_attempts", 0) < 3):
+                continue
+            if not isinstance(row.get("id"), str):
+                continue
+            await auto_ingest_rmc_user_message(
+                settings, token, user_id, row["id"]
+            )
+            break
+    except Exception:
+        log.warning("RMC deferred screening retry unavailable")
