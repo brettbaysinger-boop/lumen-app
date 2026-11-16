@@ -36,18 +36,23 @@ def heavy_info():
             item["type"] = {"enum": ["Original", "Original with Endframe", "F1", "Video",
                                      "Video with Endframe", "Video F1"], "type": "string"}
         start.append(item)
+    def out(*pairs):
+        return [{"label": label, "component": component} for label, component in pairs]
+
+    # Gradio /info keeps label and component apart (owner output "Finished Frames Video" = label
+    # "Finished Frames" + component "Video"); labels match FramePack-Studio's modules/interface.py.
     return {
-        "/handle_start_button": {"parameters": start, "returns": [
-            {"label": "Finished Frames Video"}, {"label": "Current Job ID"}, {"label": "Next Latents"},
-            {"label": "value_193"}, {"label": "value_194"}, {"label": "Job Queue"}, {"label": "value_5"},
-            {"label": "Seed"}, {"label": "value_199"}]},
-        "/monitor_job": {"parameters": [{"label": "Current Job ID", "component": "Textbox"}], "returns": [
-            {"label": "Finished Frames Video"}, {"label": "Next Latents"}, {"label": "Next Latents (Top Display)"},
-            {"label": "value"}, {"label": "value"}]},
-        "/check_for_current_job_and_monitor": {"parameters": [], "returns": [
-            {"label": "Current Job ID"}, {"label": "Finished Frames Video"}, {"label": "Next Latents"},
-            {"label": "Next Latents (Top Display)"}, {"label": "value"}, {"label": "value"}, {"label": "Job Queue"},
-            {"label": "value"}]},
+        "/handle_start_button": {"parameters": start, "returns": out(
+            ("Finished Frames", "Video"), ("Current Job ID", "Textbox"), ("Next Latents", "Image"),
+            ("value_193", "Markdown"), ("value_194", "Html"), ("Job Queue", "Dataframe"), ("value_5", "Markdown"),
+            ("Seed", "Number"), ("value_199", "Markdown"))},
+        "/monitor_job": {"parameters": out(("Current Job ID", "Textbox")), "returns": out(
+            ("Finished Frames", "Video"), ("Next Latents", "Image"), ("Next Latents (Top Display)", "Image"),
+            ("value", "Markdown"), ("value", "Html"))},
+        "/check_for_current_job_and_monitor": {"parameters": [], "returns": out(
+            ("Current Job ID", "Textbox"), ("Finished Frames", "Video"), ("Next Latents", "Image"),
+            ("Next Latents (Top Display)", "Image"), ("value", "Markdown"), ("value", "Html"),
+            ("Job Queue", "Dataframe"), ("value", "Markdown"))},
         "/end_process_with_update": {"parameters": [], "returns": []},
         "/partial": {"parameters": [{"label": f"p{i}"} for i in range(36)], "returns": []},
     }
@@ -111,6 +116,26 @@ class FakeStudio:
 class StudioContractTests(unittest.TestCase):
     def test_heavy_shape_is_accepted(self):
         self.assertEqual(len(studio_contract(heavy_info())), 29)
+
+    def test_regression_real_split_label_and_component(self):
+        """2026-11-16 hardware canary failed closed: the contract wanted label "Finished Frames Video",
+        but Gradio reports label "Finished Frames" with component "Video"."""
+        info = heavy_info()
+        self.assertEqual(info["/handle_start_button"]["returns"][0], {"label": "Finished Frames", "component": "Video"})
+        self.assertEqual(len(studio_contract(info)), 29)
+        for endpoint in ("/handle_start_button", "/monitor_job"):
+            wrong = heavy_info()
+            wrong[endpoint]["returns"][0] = {"label": "Finished Frames", "component": "Image"}
+            with self.assertRaisesRegex(FramePackNeedsAdapter, "Finished Frames"):
+                studio_contract(wrong)
+        combined = heavy_info()
+        combined["/handle_start_button"]["returns"][0] = {"label": "Finished Frames Video", "component": "Video"}
+        with self.assertRaisesRegex(FramePackNeedsAdapter, "got 'Finished Frames Video'/'Video'"):
+            studio_contract(combined)
+        wrong_id = heavy_info()
+        wrong_id["/check_for_current_job_and_monitor"]["returns"][0]["component"] = "Markdown"
+        with self.assertRaisesRegex(FramePackNeedsAdapter, "busy"):
+            studio_contract(wrong_id)
 
     def test_any_moved_or_extra_input_is_refused(self):
         moved = heavy_info()
@@ -321,6 +346,34 @@ class StudioCanaryRunTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(freed, ["/free"])
         self.assertEqual(fake.start_data[0], "Original")
         self.assertFalse(any("end_process" in p for _, p in fake.calls))
+
+
+class StudioCanaryReasonTests(unittest.IsolatedAsyncioTestCase):
+    async def test_contract_failure_prints_the_exact_reason_and_queues_nothing(self):
+        import importlib.util, io
+        from contextlib import redirect_stdout
+        from pathlib import Path
+        from types import SimpleNamespace
+        script = Path(__file__).resolve().parents[2] / "scripts" / "canary-framepack-studio.py"
+        spec = importlib.util.spec_from_file_location("fps_canary2", script)
+        canary = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(canary)
+        info = heavy_info()
+        info["/monitor_job"]["returns"][0] = {"label": "Finished Frames Video", "component": "Video"}
+        fake = FakeStudio(info=info)
+        original = httpx.AsyncClient
+        out = io.StringIO()
+        args = SimpleNamespace(url="http://127.0.0.1:17863", image="unused.png", seconds=3.0, out="/tmp/x",
+                               prompt="p", negative="", timeout=60, comfy_url="")
+        with patch("lumen.video_providers.httpx.AsyncClient",
+                   side_effect=lambda **kw: original(transport=httpx.MockTransport(fake), **kw)), \
+                patch("httpx.AsyncClient", side_effect=lambda **kw: original(transport=httpx.MockTransport(fake), **kw)), \
+                redirect_stdout(out):
+            code = await canary.run(args)
+        summary = json.loads(out.getvalue())
+        self.assertEqual(code, 1)
+        self.assertIn("FramePackNeedsAdapter: /monitor_job does not return the video first", summary["reason"])
+        self.assertEqual([m for m, _ in fake.calls], ["GET"])
 
 
 class OldFramePackTimeoutTests(unittest.IsolatedAsyncioTestCase):

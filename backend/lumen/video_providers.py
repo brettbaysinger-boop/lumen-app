@@ -401,11 +401,23 @@ def _label(item: dict[str, Any]) -> str:
     return str(item.get("label") or "").strip().lower()
 
 
+def _is(item: Any, label: str, component: str) -> bool:
+    """Gradio /info keeps label and component apart, e.g. {"label": "Finished Frames", "component": "Video"}."""
+    return (isinstance(item, dict) and _label(item) == label.lower()
+            and str(item.get("component") or "").strip().lower() == component.lower())
+
+
 def _choices(parameter: dict[str, Any]) -> list[Any] | None:
     kind = parameter.get("type")
     if isinstance(kind, dict) and isinstance(kind.get("enum"), list):
         return kind["enum"]
     return None
+
+
+def _shape(items: Any) -> str:
+    if not isinstance(items, list):
+        return "nothing"
+    return ", ".join(f"{i.get('label')!r}/{i.get('component')!r}" if isinstance(i, dict) else repr(i) for i in items)
 
 
 def studio_contract(endpoints: dict[str, Any]) -> list[dict[str, Any]]:
@@ -431,19 +443,22 @@ def studio_contract(endpoints: dict[str, Any]) -> list[dict[str, Any]]:
     if not (STUDIO_MODE in (choices or []) or (choices is None and mode.get("parameter_default") == STUDIO_MODE)):
         raise FramePackNeedsAdapter(f"FramePack-Studio does not offer the '{STUDIO_MODE}' generation type.")
     returns = start.get("returns") or []
-    if len(returns) < 2 or _label(returns[0]) != "finished frames video" or _label(returns[1]) != "current job id":
-        raise FramePackNeedsAdapter(f"{STUDIO_START} does not return (video, job id) first.")
+    if len(returns) < 2 or not _is(returns[0], "Finished Frames", "Video") \
+            or not _is(returns[1], "Current Job ID", "Textbox"):
+        raise FramePackNeedsAdapter(
+            f"{STUDIO_START} does not return (Finished Frames Video, Current Job ID Textbox) first; "
+            f"got {_shape(returns[:2])}.")
     monitor = endpoints.get(STUDIO_MONITOR)
     monitor_in = monitor.get("parameters") if isinstance(monitor, dict) else None
     monitor_out = (monitor or {}).get("returns") or [] if isinstance(monitor, dict) else []
-    if not isinstance(monitor_in, list) or len(monitor_in) != 1 or _label(monitor_in[0]) != "current job id":
-        raise FramePackNeedsAdapter(f"{STUDIO_MONITOR} does not take exactly the job id.")
-    if len(monitor_out) < 5 or _label(monitor_out[0]) != "finished frames video":
-        raise FramePackNeedsAdapter(f"{STUDIO_MONITOR} does not return the video first.")
+    if not isinstance(monitor_in, list) or len(monitor_in) != 1 or not _is(monitor_in[0], "Current Job ID", "Textbox"):
+        raise FramePackNeedsAdapter(f"{STUDIO_MONITOR} does not take exactly the job id; got {_shape(monitor_in)}.")
+    if len(monitor_out) < 5 or not _is(monitor_out[0], "Finished Frames", "Video"):
+        raise FramePackNeedsAdapter(f"{STUDIO_MONITOR} does not return the video first; got {_shape(monitor_out[:1])}.")
     current = endpoints.get(STUDIO_CURRENT)
     current_out = current.get("returns") or [] if isinstance(current, dict) else []
     if not isinstance(current, dict) or (current.get("parameters") or []) or not current_out \
-            or _label(current_out[0]) != "current job id":
+            or not _is(current_out[0], "Current Job ID", "Textbox"):
         raise FramePackNeedsAdapter(f"{STUDIO_CURRENT} is missing or changed; Lumen cannot see if FP-Studio is busy.")
     return parameters
 

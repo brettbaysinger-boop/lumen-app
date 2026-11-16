@@ -31,11 +31,14 @@ async def run(args) -> int:
     from lumen.video_providers import FramePackStudioProvider, free_comfy_memory
     settings = SimpleNamespace(framepack_url=args.url, framepack_api_name="/handle_start_button",
                                video_generation_timeout=args.timeout)
+    import httpx
     provider = FramePackStudioProvider(settings)
-    if not await provider.health_check():
-        print(json.dumps({"result": "FAIL", "reason": "FramePack-Studio unreachable or its API is not the "
-                                                      "contract this adapter was written for; run "
-                                                      "check-framepack-endpoint.py --api-name /handle_start_button"}))
+    try:  # read-only contract check first; the exact reason is printed, nothing is queued
+        async with httpx.AsyncClient(timeout=15) as client:
+            await provider._endpoint(client)
+    except Exception as exc:  # noqa: BLE001 - report exactly, never guess
+        print(json.dumps({"result": "FAIL", "stage": "contract (before any GPU work)",
+                          "reason": f"{type(exc).__name__}: {exc}"}))
         return 1
     if args.comfy_url:
         # Same step Lumen's video jobs take: ComfyUI unloads its models (BigLust) so FramePack has the
