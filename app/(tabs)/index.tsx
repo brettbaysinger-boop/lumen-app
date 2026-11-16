@@ -45,7 +45,7 @@ import { CameraCapture } from '@/components/CameraCapture';
 import { CompanionPortrait } from '@/components/CompanionPortrait';
 import { AnimatedCompanion } from '@/components/AnimatedCompanion';
 import { LiveRoomActions, LiveRoomHeader, LiveRoomTheaterBar } from '@/components/LiveRoom';
-import { ROOM_BACK_EVENT, isLiveRoom, postRoomEvent, roomEmbedded, setRoomMode, useRoomMode } from '@/lib/live-room';
+import { ROOM_BACK_EVENT, ROOM_LANDSCAPE_EVENT, ROOM_PORTRAIT_EVENT, getRoomMode, isLiveRoom, postRoomEvent, roomEmbedded, setRoomMode, turnRoom, useRoomMode, type RoomView } from '@/lib/live-room';
 import { AnimatedCompanionSession, animatedCompanionAvailable, type AnimatedState } from '@/lib/animated-companion';
 import { AutoSpeak } from '@/lib/animated-companion-core';
 import { inAppVideoSupported, liveVideoPrompt, liveVideoStatus, liveVideoWebUrl, openLiveVideoOnWeb } from '@/lib/live-video-web';
@@ -390,7 +390,8 @@ export default function ChatScreen() {
   const canFullScreen = room && typeof document !== 'undefined' && document.fullscreenEnabled === true;
   useEffect(() => {
     if (!room) return;
-    const changed = () => setFullScreen(!!document.fullscreenElement);
+    // The view is said again when full screen ends: the phone app then puts its own rotation rule back.
+    const changed = () => { setFullScreen(!!document.fullscreenElement); postRoomEvent(getRoomMode()); };
     document.addEventListener('fullscreenchange', changed);
     return () => document.removeEventListener('fullscreenchange', changed);
   }, [room]);
@@ -403,7 +404,25 @@ export default function ChatScreen() {
   }, []);
   // Full screen belongs to Theater: leaving Theater, by any route, leaves full screen too.
   useEffect(() => { if (room && !theater) leaveFullScreen(); }, [room, theater, leaveFullScreen]);
+  // The phone turned sideways (said by the phone app, where its build can turn this screen): Theater
+  // by itself, and back to what was showing when it is upright again. Layout only, like every other
+  // view change here. A view chosen by hand while sideways is kept.
+  const [sideways, setSideways] = useState(false);
+  const turned = useRef<RoomView | null>(null);
+  const theaterMessagesRef = useRef(theaterMessages); theaterMessagesRef.current = theaterMessages;
+  useEffect(() => {
+    if (!room) return;
+    const next = turnRoom(sideways, animatedState === 'ready', { mode: getRoomMode(), messages: theaterMessagesRef.current }, turned.current);
+    turned.current = next.saved;
+    setTheaterMessages(next.now.messages); setRoomMode(next.now.mode);
+  }, [room, sideways, animatedState]);
   // While this screen shows, the phone app hides its own bar: the room's header has Back in it.
+  useFocusEffect(useCallback(() => {
+    if (!room) return;
+    const landscape = () => setSideways(true), portrait = () => setSideways(false);
+    window.addEventListener(ROOM_LANDSCAPE_EVENT, landscape); window.addEventListener(ROOM_PORTRAIT_EVENT, portrait);
+    return () => { window.removeEventListener(ROOM_LANDSCAPE_EVENT, landscape); window.removeEventListener(ROOM_PORTRAIT_EVENT, portrait); };
+  }, [room]));
   useFocusEffect(useCallback(() => {
     if (!room) return;
     postRoomEvent('ready');
@@ -1070,7 +1089,7 @@ export default function ChatScreen() {
       {/* One element in one place for both room views: Theater only changes the box around it. */}
       {animatedState === 'ready' && <View testID="live-video-area" style={theater ? { flex: 1, minHeight: 0, backgroundColor: '#000' } : { alignItems: 'center', paddingVertical: room ? 4 : 8 }}>
         <AnimatedCompanion session={animated} borderColor={colors.primary[400]} controlColor={colors.primary[300]} room={room ? (theater ? 'theater' : 'chat') : undefined} />
-        {theater && <LiveRoomTheaterBar messagesOpen={theaterMessages} onChat={() => setRoomMode('chat')} onMessages={() => setTheaterMessages(open => !open)}
+        {theater && <LiveRoomTheaterBar messagesOpen={theaterMessages} onChat={() => { turned.current = null; setRoomMode('chat'); }} onMessages={() => setTheaterMessages(open => !open)}
           fullScreen={fullScreen} onFullScreen={canFullScreen ? toggleFullScreen : undefined} />}
       </View>}
       {/* The conversation and the message box. In Theater this is the collapsible messages panel:

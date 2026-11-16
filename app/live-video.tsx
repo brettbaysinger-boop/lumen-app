@@ -7,13 +7,15 @@
 // room's own header is showing, this screen's bar steps aside, so there is one header, not two.
 // The room and this screen exchange only the fixed words in lib/live-room.ts.
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { AppState, BackHandler, KeyboardAvoidingView, Platform, Text, TouchableOpacity, View } from 'react-native';
+import { AppState, BackHandler, KeyboardAvoidingView, Platform, StatusBar, Text, TouchableOpacity, View, useWindowDimensions } from 'react-native';
 import { Redirect, router } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useTheme } from '@/lib/theme-context';
 import { useAuth } from '@/lib/auth';
 import { IN_APP_PROBE, inAppVideoSupported, liveRoomWebUrl, liveVideoWebUrl, openLiveVideoOnWeb, readInAppProbe, sameWebOrigin, type InAppProbe } from '@/lib/live-video-web';
-import { ROOM_BACK_SCRIPT, readRoomEvent, type RoomMode } from '@/lib/live-room';
+import { ROOM_BACK_SCRIPT, ROOM_LANDSCAPE_SCRIPT, ROOM_PORTRAIT_SCRIPT, readRoomEvent, type RoomMode } from '@/lib/live-room';
+import { roomLock, roomRotation } from '@/lib/room-rotation';
+import { useKeyboardVisible } from '@/hooks/useKeyboardVisible';
 
 const PROBE_TIMEOUT_MS = 8_000;
 
@@ -49,6 +51,20 @@ export default function LiveVideoScreen() {
     const timer = setTimeout(() => setSilent(true), PROBE_TIMEOUT_MS);
     return () => clearTimeout(timer);
   }, [waiting, attempt]);
+  // --- Turning the phone -------------------------------------------------------------------------
+  // Only this screen, only while the room itself is on it, and only in a build that has the means
+  // (see lib/room-rotation.ts). Everything else in the app stays portrait.
+  const rotation = useMemo(() => roomRotation(), []);
+  const keyboardOpen = useKeyboardVisible();
+  const { width, height } = useWindowDimensions();
+  const landscape = width > height;
+  const [said, setSaid] = useState(0);   // the room spoke: its full screen may have reset the rule, so it is applied again
+  const roomShown = active && room !== null && !failed && !(silent && !probe) && !(probe && !probe.ok);
+  useEffect(() => { if (rotation) void rotation.set(roomLock(roomShown, keyboardOpen, landscape)); }, [rotation, roomShown, keyboardOpen, landscape, said]);
+  useEffect(() => () => { void rotation?.set('portrait'); }, [rotation]);   // leaving the screen: portrait again
+  // The room is told which way the phone is held, in one of two fixed lines. It answers with layout only.
+  useEffect(() => { if (rotation && roomShown) view.current?.injectJavaScript(landscape ? ROOM_LANDSCAPE_SCRIPT : ROOM_PORTRAIT_SCRIPT); }, [rotation, roomShown, landscape]);
+
   const retry = () => { setProbe(null); setFailed(false); setSilent(false); setNotice(null); setRoom(null); setAttempt(n => n + 1); };
 
   if (Platform.OS === 'web' || !session) return <Redirect href="/" />;
@@ -71,6 +87,8 @@ export default function LiveVideoScreen() {
   const showingRoom = !!WebView && active && room !== null;
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: c.neutral[950] }}>
+      {/* Sideways the status bar gives its strip to the picture. The navigation bar is Android's and stays. */}
+      {!!rotation && <StatusBar hidden={roomShown && landscape} animated />}
       {!showingRoom && <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 8, borderBottomWidth: 1, borderBottomColor: c.neutral[800] }}>
         {link('‹ Chat', 'Close live video and return to the chat', close)}
         <Text accessibilityRole="header" numberOfLines={1} style={{ color: c.neutral[200], fontSize: 15, flexShrink: 1 }}>Live video</Text>
@@ -106,6 +124,7 @@ export default function LiveVideoScreen() {
           // The room's fixed words. They can hide this bar, close this screen or open the browser
           // at the address this build already knows; they carry no data and can do nothing else.
           const word = readRoomEvent(event.nativeEvent.data);
+          if (word) setSaid(count => count + 1);
           if (word === 'ready') setRoom(now => now ?? 'chat');
           else if (word === 'gone') setRoom(null);
           else if (word === 'chat' || word === 'theater') setRoom(now => now === null ? now : word);

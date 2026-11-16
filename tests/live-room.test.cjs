@@ -62,7 +62,7 @@ test('the phone app says one fixed line to the page, with no data in it',()=>{
   assert.equal(room.ROOM_BACK_SCRIPT,"window.dispatchEvent(new Event('lumenroomback'));true;");
   vm.runInNewContext(room.ROOM_BACK_SCRIPT,{window:room.window,Event:class{constructor(type){this.type=type;}}});assert.deepEqual(room.events,['lumenroomback']);
   const screen=read('app/live-video.tsx');
-  assert.deepEqual(screen.match(/injectJavaScript\([^)]*\)/g),['injectJavaScript(ROOM_BACK_SCRIPT)']);   // the only script ever sent after load
+  assert.deepEqual(screen.match(/injectJavaScript\([^)]*\)/g),['injectJavaScript(ROOM_BACK_SCRIPT)','injectJavaScript(landscape ? ROOM_LANDSCAPE_SCRIPT : ROOM_PORTRAIT_SCRIPT)']);   // the only scripts ever sent after load: three fixed lines
   assert.match(screen,/if \(room !== 'theater'\) return;\s+const back = BackHandler\.addEventListener\('hardwareBackPress'/);   // Back leaves the screen everywhere else, as before
   assert.doesNotMatch(screen,/access_token|Authorization|supabase|session\.(access|refresh|user)/);
 });
@@ -96,7 +96,7 @@ test('full screen and sideways: the browser\'s own full screen for the page, and
   assert.match(screen,/onFullScreen=\{canFullScreen \? toggleFullScreen : undefined\}/);   // no dead button where the browser cannot
   assert.match(native,/allowsFullscreenVideo/);                                        // already on since PR #20: the web view hides the bars and frees rotation itself
   assert.equal(JSON.parse(read('app.json')).expo.orientation,'portrait');             // the app stays portrait everywhere else
-  assert.doesNotMatch(read('package.json'),/expo-screen-orientation|expo-navigation-bar/);   // no new native part, so the signed build is as it was
+  assert.doesNotMatch(read('package.json'),/expo-screen-orientation|expo-navigation-bar/);   // the repository's dependencies are as they were
 });
 test('the room has no website tab bar, and nothing that is not built: no Mini, no floating video',()=>{
   const tabs=read('app/(tabs)/_layout.tsx'),chrome=read('components/LiveRoom.tsx');
@@ -128,4 +128,52 @@ test('the guarded web updater accepts this change as it stands: its allowlist is
   for(const file of ['backend/app.py','supabase/migrations/20261116000000_x.sql','package.json','package-lock.json','app.json','infra/lumen-web.service','scripts/animated-deploy.sh.bak/x','scripts/lumen-rmc.sh','scripts/serve-web.cjs','scripts/test-live-room-browser.cjs','scripts/install-static-web.sh','.env'])
     assert.equal(allowed.test(file),false,`refused: ${file}`);
   assert.equal(fs.existsSync('scripts/test-live-room-browser.cjs'),false);
+});
+
+// --- Turning the phone: automatic Theater, in a build whose native project has the means ---
+function loadRotation({platform='android',native}={}){
+  const mod={exports:{}},calls=[];
+  const module=native==='throws'?null:native==='present'?{lockAsync:async lock=>{calls.push(lock);}}:native==='refuses'?{lockAsync:async()=>{throw Error('no activity');}}:native==='odd'?{}:null;
+  vm.runInNewContext(ts.transpileModule(read('lib/room-rotation.ts'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText,
+    {module:mod,exports:mod.exports,require:name=>name==='react-native'?{Platform:{OS:platform}}:{requireOptionalNativeModule:asked=>{if(native==='throws')throw Error('no registry');assert.equal(asked,'ExpoScreenOrientation');return module;}}});
+  return {...mod.exports,calls};
+}
+test('turning is offered only by an Android build that has the native part, and never crashes without it',async()=>{
+  for(const native of [undefined,'throws','odd'])assert.equal(loadRotation({native}).roomRotation(),null,String(native));   // today's signed build: portrait, as before
+  for(const platform of ['ios','web'])assert.equal(loadRotation({platform,native:'present'}).roomRotation(),null,platform);
+  const built=loadRotation({native:'present'}),rotation=built.roomRotation();
+  assert.equal(await rotation.set('follow'),true);assert.equal(await rotation.set('portrait'),true);assert.equal(await rotation.set('landscape'),true);
+  assert.deepEqual(built.calls,[0,3,5]);                                              // Android decides (honours auto-rotate), portrait, landscape
+  assert.equal(await loadRotation({native:'refuses'}).roomRotation().set('follow'),false);   // a refusal is reported, not thrown
+  assert.doesNotMatch(read('lib/room-rotation.ts'),/from 'expo-screen-orientation'/);
+});
+test('only the room turns: portrait away from it, held still while typing',()=>{
+  const {roomLock}=loadRotation();
+  for(const keyboard of [false,true])for(const landscape of [false,true])assert.equal(roomLock(false,keyboard,landscape),'portrait');   // sign-in, failure, background, leaving
+  assert.equal(roomLock(true,false,false),'follow');assert.equal(roomLock(true,false,true),'follow');
+  assert.equal(roomLock(true,true,false),'portrait');assert.equal(roomLock(true,true,true),'landscape');   // the keyboard is not turned over mid-word
+  const screen=read('app/live-video.tsx');
+  assert.match(screen,/const roomShown = active && room !== null && !failed && !\(silent && !probe\) && !\(probe && !probe\.ok\);/);
+  assert.match(screen,/if \(rotation\) void rotation\.set\(roomLock\(roomShown, keyboardOpen, landscape\)\);/);
+  assert.match(screen,/useEffect\(\(\) => \(\) => \{ void rotation\?\.set\('portrait'\); \}, \[rotation\]\);/);   // leaving the screen restores portrait
+  assert.match(screen,/if \(rotation && roomShown\) view\.current\?\.injectJavaScript\(landscape \? ROOM_LANDSCAPE_SCRIPT : ROOM_PORTRAIT_SCRIPT\)/);   // without the native part the page is told nothing
+  assert.match(screen,/\{!!rotation && <StatusBar hidden=\{roomShown && landscape\} animated \/>\}/);
+  assert.equal(JSON.parse(read('app.json')).expo.orientation,'portrait');
+  assert.match(read('scripts/android-refresh.sh'),/native project does NOT list expo-screen-orientation: the Live Room stays portrait/);
+});
+test('sideways shows Theater by itself and upright puts back exactly what was there',()=>{
+  const room=load(),chat={mode:'chat',messages:false},theaterOpen={mode:'theater',messages:true},alone={mode:'theater',messages:false};
+  const plain=value=>JSON.parse(JSON.stringify(value));
+  assert.deepEqual(plain(room.turnRoom(true,true,chat,null)),{now:alone,saved:chat});
+  assert.deepEqual(plain(room.turnRoom(false,true,alone,chat)),{now:chat,saved:null});
+  assert.deepEqual(plain(room.turnRoom(true,true,theaterOpen,null)),{now:alone,saved:theaterOpen});   // the messages panel closes sideways
+  assert.deepEqual(plain(room.turnRoom(false,true,alone,theaterOpen)),{now:theaterOpen,saved:null}); // and opens again upright
+  assert.deepEqual(plain(room.turnRoom(true,false,chat,null)),{now:chat,saved:null});               // no live video: no Theater to show
+  assert.deepEqual(plain(room.turnRoom(true,true,chat,theaterOpen)),{now:chat,saved:theaterOpen});  // already sideways: a view chosen by hand is kept
+  assert.deepEqual(plain(room.turnRoom(false,true,chat,null)),{now:chat,saved:null});
+  assert.equal(room.ROOM_LANDSCAPE_SCRIPT,"window.dispatchEvent(new Event('lumenroomlandscape'));true;");
+  assert.equal(room.ROOM_PORTRAIT_SCRIPT,"window.dispatchEvent(new Event('lumenroomportrait'));true;");
+  const screen=read('app/(tabs)/index.tsx');
+  for(const line of screen.split('\n').filter(line=>/turnRoom\(|setSideways\(/.test(line)))assert.doesNotMatch(line,/animated\.(connect|close)|toggleAnimated/,line.trim());   // layout only
+  assert.doesNotMatch(screen,/innerWidth\s*>\s*innerHeight|screenWidth > screenHeight/);   // never guessed from the window's shape (the keyboard changes it)
 });

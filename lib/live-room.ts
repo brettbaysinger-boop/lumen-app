@@ -80,6 +80,26 @@ export function readRoomEvent(data: unknown): RoomEvent | null {
 export const ROOM_BACK_EVENT = 'lumenroomback';
 export const ROOM_BACK_SCRIPT = `window.dispatchEvent(new Event('${ROOM_BACK_EVENT}'));true;`;
 
+// Two more fixed lines, sent only by a build that can turn this one screen: the phone is now held
+// sideways, or upright again. Decided by the app, never by the page: a portrait window with the
+// keyboard open is also wider than it is tall, and that must not count as turning the phone.
+export const ROOM_LANDSCAPE_EVENT = 'lumenroomlandscape';
+export const ROOM_PORTRAIT_EVENT = 'lumenroomportrait';
+export const ROOM_LANDSCAPE_SCRIPT = `window.dispatchEvent(new Event('${ROOM_LANDSCAPE_EVENT}'));true;`;
+export const ROOM_PORTRAIT_SCRIPT = `window.dispatchEvent(new Event('${ROOM_PORTRAIT_EVENT}'));true;`;
+
+export type RoomView = { mode: RoomMode; messages: boolean };
+/**
+ * Turning the phone sideways shows Theater by itself; turning it upright puts back exactly what was
+ * showing before. `saved` is that earlier view while the phone is sideways, else null.
+ * Without live video there is no Theater, so nothing changes until the video is ready.
+ */
+export function turnRoom(sideways: boolean, videoReady: boolean, now: RoomView, saved: RoomView | null): { now: RoomView; saved: RoomView | null } {
+  if (sideways && videoReady && !saved) return { now: { mode: 'theater', messages: false }, saved: now };
+  if (!sideways && saved) return { now: saved, saved: null };
+  return { now, saved };
+}
+
 // --- Size of the video in the room: always the whole 3:2 frame, never cropped or stretched ---------
 export const ROOM_ASPECT = 3 / 2;
 export const VIDEO_CHAT_SHARE = 0.38;   // of the window height, at most; it shrinks with the keyboard
