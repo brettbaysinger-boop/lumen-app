@@ -420,7 +420,113 @@ def build_default_project_registry() -> Dict[str, Project]:
         ),
     ]
 
-    return {p.id: p for p in projects}
+    # PS-05: relationships were verified against actual repository contents
+    # and earlier accepted source PRs. These are project-to-repo links, NOT
+    # deployment claims or proof that every repository is an active product.
+    related_repositories = {
+        # Avatar scene/bridge work, plus a historical stub repository.
+        "raialume": (
+            "brettbaysinger-boop/lumen-avatar-lab",
+            "brettbaysinger-boop/lumen",
+        ),
+        # DreamVault is a distinct private media application with work in
+        # the shared private-companion repository (e.g. F40F PR #95).
+        "dreamvault": ("brettbaysinger-boop/private-companion",),
+        # Distinct historical sports and crypto competition engines feed
+        # the unified arena, without implying their seasons are deployed.
+        "bot-arenas": (
+            "brettbaysinger-boop/buffett-bot-arena",
+            "brettbaysinger-boop/sports-bot-arena",
+        ),
+        # This public repo is a historical delivery drop, NOT a working
+        # Forge checkout; keep its provenance without treating it as prod.
+        "forge": ("brettbaysinger-boop/forge-phase-b-r1",),
+    }
+
+    by_id = {p.id: p for p in projects}
+    for project_id, repo_names in related_repositories.items():
+        project = by_id[project_id]
+        repos = list(project.repositories)
+        sources = list(project.sources)
+        for repo_name in repo_names:
+            if repo_name in repos:
+                continue
+            repos.append(repo_name)
+            sources.append(Source(
+                kind="git_repo",
+                ref="https://github.com/" + repo_name,
+                observed_at=HISTORICAL_FREEZE_OBSERVED,
+                commit_sha=None,
+            ))
+        updates = {"repositories": repos, "sources": sources}
+        if project_id == "dreamvault":
+            # PR #95 is a documented DreamVault source, not proof of
+            # current deployment or an independently tested release.
+            updates["evidence_level"] = "git_verified"
+            updates["sources"] = sources + [Source(
+                kind="git_pr",
+                ref="https://github.com/brettbaysinger-boop/private-companion/pull/95",
+                observed_at=HISTORICAL_FREEZE_OBSERVED,
+                commit_sha=None,
+            )]
+        by_id[project_id] = Project.model_validate({
+            **project.model_dump(),
+            **updates,
+        })
+
+    # Independent projects must remain separate records even when their
+    # repos are shared with another project or their software is local-only.
+    # All are historical/code evidence; no runtime status is inferred.
+    additions = [
+        (
+            "private-companion", "Private Companion",
+            "Standalone local-first companion application; separate from "
+            "Raialume/Lumen and from its DreamVault media workflows.",
+            ("brettbaysinger-boop/private-companion",),
+        ),
+        (
+            "florabot", "FloraBot",
+            "Botanical and plant-care assistant; original FloraBot repository "
+            "and the florabot1 application source are tracked together.",
+            ("brettbaysinger-boop/FloraBot", "brettbaysinger-boop/florabot1"),
+        ),
+        (
+            "model-weight-editing", "Model Weight Editing",
+            "Experimental local model-weight and LoRA research; experimental "
+            "smoke tests are not a validated product improvement.",
+            ("brettbaysinger-boop/model-weight-editing",),
+        ),
+        (
+            "voicelist", "VoiceList",
+            "Standalone voice-to-project-notes application using local "
+            "speech recognition and a local model.",
+            ("brettbaysinger-boop/voicelist",),
+        ),
+    ]
+    for project_id, name, summary, repo_names in additions:
+        by_id[project_id] = Project(
+            id=project_id,
+            name=name,
+            priority="unranked",
+            state="coded",
+            deployment="unknown",
+            evidence_level="git_verified",
+            summary=summary,
+            repositories=list(repo_names),
+            blocked_by=[],
+            sources=[
+                Source(
+                    kind="git_repo",
+                    ref="https://github.com/" + repo_name,
+                    observed_at=HISTORICAL_FREEZE_OBSERVED,
+                    commit_sha=None,
+                )
+                for repo_name in repo_names
+            ],
+            observed_at=HISTORICAL_FREEZE_OBSERVED,
+        )
+
+    return by_id
 
 
 class ProjectRegistry:
@@ -509,13 +615,31 @@ class ProjectRegistry:
                         raw_msg = commit_obj.get("message", "").split("\n")[0]
                         commit_text = f"{repo}: {raw_msg}"[:240]
 
-                        latest_commit_info = LastCommit(
+                        candidate_commit = LastCommit(
                             at=commit_at,
                             branch=default_branch,
                             ref=f"https://github.com/{repo}/commit/{sha}" if sha else None,
                             commit_sha=sha[:40] if sha else None,
                             observed_at=now_iso,
                         )
+                        # Multiple repositories may belong to one project.
+                        # Show the chronologically latest commit, not the
+                        # commit from whichever repository was polled last.
+                        try:
+                            candidate_time = datetime.fromisoformat(
+                                commit_at.replace("Z", "+00:00")
+                            ).astimezone(timezone.utc)
+                            previous_time = (
+                                datetime.fromisoformat(
+                                    latest_commit_info.at.replace("Z", "+00:00")
+                                ).astimezone(timezone.utc)
+                                if latest_commit_info else None
+                            )
+                            if previous_time is None or candidate_time > previous_time:
+                                latest_commit_info = candidate_commit
+                        except (ValueError, TypeError, AttributeError):
+                            # Malformed source time is not proof of recency.
+                            pass
                         activity_events.append(
                             ActivityEvent(
                                 at=commit_at,
@@ -591,6 +715,11 @@ class ProjectRegistry:
                 # Store insights (empty list if checked and none found, None if uncollected)
                 open_prs_val = OpenPrsGroup(observed_at=now_iso, items=open_prs_list) if prs_checked else None
 
+                if latest_commit_info is None and not prs_checked:
+                    # Repo links alone are not a successful evidence refresh.
+                    # Retain the previous snapshot, if any, as historical.
+                    results[pid] = "unavailable_no_verified_github_evidence"
+                    continue
                 self._insights[pid] = ProjectInsights(
                     observed_at=now_iso,
                     open_prs=open_prs_val,

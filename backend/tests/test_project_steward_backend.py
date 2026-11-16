@@ -260,7 +260,13 @@ class TestP0TruthAndRegistryIntegrity(unittest.TestCase):
         bg = self.registry.get_project("bretts-games")
         self.assertIsNotNone(dv)
         self.assertIsNotNone(bg)
-        self.assertEqual(dv.repositories, [])
+        # PS-05: DreamVault shares code provenance with Private Companion
+        # but remains its own product. Brett's Games still has no linked repo.
+        self.assertEqual(dv.repositories, ["brettbaysinger-boop/private-companion"])
+        pc = self.registry.get_project("private-companion")
+        self.assertIsNotNone(pc)
+        self.assertNotEqual(dv.id, pc.id)
+        self.assertIn("brettbaysinger-boop/private-companion", pc.repositories)
         self.assertEqual(bg.repositories, [])
         self.assertIn("character, image, and video", dv.summary)
 
@@ -706,7 +712,13 @@ class TestContractCompliance(unittest.TestCase):
             v11_data = v11_resp.json()
             self.assertEqual(v11_data["version"], "1.1")
             self.assertEqual(v11_data["stale_after_seconds"], 172800)
-            self.assertIn("insights", v11_data["projects"][0])
+            # PS-05: v1.1 insights is optional and OBJECT-only when present.
+            # With no collection requested, there is no justified evidence.
+            self.assertTrue(v11_data["projects"])
+            self.assertTrue(
+                all("insights" not in p for p in v11_data["projects"]),
+                "Uncollected insights must be omitted, not serialized as null",
+            )
 
 
 if __name__ == "__main__":
