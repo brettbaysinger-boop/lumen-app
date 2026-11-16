@@ -323,6 +323,7 @@ class FramePackProvider:
             result_path = await self._follow(client, f"{root}/call{self.api_name}/{event_id}", seconds,
                                              on_progress, root)
             await on_progress(97, "Saving the video…")
+            self.stage = "download"
             video = await client.get(f"{root}/file={result_path}")
             video.raise_for_status()
         return {"bytes": video.content, "mime_type": video_mime(result_path) or "video/mp4",
@@ -513,10 +514,64 @@ def studio_desc(values: Any) -> str:
     return desc.strip() if isinstance(desc, str) else ""
 
 
+def studio_hidden_state_slots(config: Any, api_name: str = STUDIO_START.lstrip("/"),
+                               visible: int = len(STUDIO_INPUTS)) -> list[int]:
+    """Positions of the event's hidden gr.State inputs, from Gradio's /config.
+
+    /info lists only the 29 visible inputs, but the server validates the full input list: FramePack-Studio's
+    ``ips`` ends with ``lora_names_states = gr.State(...)``, so /handle_start_button expects 30 values and
+    answers 29 with ``event: error`` / ``data: null`` ("didn't receive enough input values"). Like
+    gradio_client, Lumen sends None in each State slot; Gradio then uses the session's own state value.
+    Reproduced on Gradio 5.25.2 (FramePack-Studio's pinned version) with FP-Studio's exact wiring.
+    """
+    if not isinstance(config, dict):
+        raise FramePackNeedsAdapter("FramePack-Studio's /config is not readable; its hidden inputs cannot be counted.")
+    types = {c.get("id"): str(c.get("type") or "").lower() for c in config.get("components") or []
+             if isinstance(c, dict)}
+    matches = [d for d in config.get("dependencies") or [] if isinstance(d, dict) and d.get("api_name") == api_name]
+    if len(matches) != 1:
+        raise FramePackNeedsAdapter(f"/config has {len(matches)} '{api_name}' events; expected exactly one.")
+    kinds = [types.get(i, "") for i in matches[0].get("inputs") or []]
+    states = [i for i, kind in enumerate(kinds) if kind == "state"]
+    if len(kinds) - len(states) != visible:
+        raise FramePackNeedsAdapter(
+            f"/config '{api_name}' has {len(kinds)} inputs ({len(states)} hidden state); expected {visible} visible.")
+    return states
+
+
+def with_state_slots(data: list[Any], states: list[int]) -> list[Any]:
+    full = list(data)
+    for position in states:
+        full.insert(position, None)
+    return full
+
+
+_PATHS = re.compile(r"(?:[A-Za-z]:)?(?:[\\/][\w.@~+-]+){2,}")
+
+
+def sse_error_detail(api: str, payload: str) -> str:
+    """A short, safe description of a Gradio ``event: error``: the API path and the server's message,
+    capped at 300 characters with file paths redacted. Gradio sends ``null`` unless show_error is on."""
+    text = (payload or "").strip()
+    try:
+        value = json.loads(text) if text else None
+    except json.JSONDecodeError:
+        value = text
+    if value is None:
+        message = "no details (data: null; FramePack-Studio's console log has the exception)"
+    else:
+        message = value if isinstance(value, str) else json.dumps(value)[:600]
+        message = _PATHS.sub("<path>", message)
+        message = re.sub(r"\s+", " ", message).strip()[:300]
+    return f"{api} returned event:error: {message}"
+
+
 class FramePackStudioProvider(FramePackProvider):
     """FramePack-Studio on Heavy: enqueue one Original image-to-video job, follow only that job."""
 
     name = "framepack-studio"
+    stage = "contract"  # contract, current_job, upload, start_queue, monitor, download
+    states: list[int] = []
 
     async def _info(self, client: httpx.AsyncClient) -> tuple[str, dict[str, Any]]:
         for prefix in ("/gradio_api", ""):
@@ -530,7 +585,13 @@ class FramePackStudioProvider(FramePackProvider):
 
     async def _endpoint(self, client: httpx.AsyncClient) -> tuple[str, list[dict[str, Any]]]:
         prefix, endpoints = await self._info(client)
-        return prefix, studio_contract(endpoints)
+        parameters = studio_contract(endpoints)
+        try:
+            config = (await client.get(f"{self.base_url}/config")).json()
+        except (httpx.HTTPError, ValueError):
+            config = None
+        self.states = studio_hidden_state_slots(config)
+        return prefix, parameters
 
     async def _events(self, client: httpx.AsyncClient, root: str, api: str, data: list[Any],
                       deadline: float):
@@ -555,7 +616,7 @@ class FramePackStudioProvider(FramePackProvider):
                     except json.JSONDecodeError:
                         values = None
                     if event == "error":
-                        raise ImageProviderError("FramePack-Studio reported an error.")
+                        raise ImageProviderError(sse_error_detail(api, payload))
                     yield event, values
                     if event == "complete":
                         return
@@ -576,12 +637,15 @@ class FramePackStudioProvider(FramePackProvider):
         seed = secrets.randbelow(21474)
         job_id = None
         async with httpx.AsyncClient(timeout=httpx.Timeout(60, read=120)) as client:
+            self.stage = "contract"
             prefix, parameters = await self._endpoint(client)
             root = f"{self.base_url}{prefix}"
             try:
+                self.stage = "current_job"
                 current = await self._last(client, root, STUDIO_CURRENT, [], deadline)
                 if isinstance(current, list) and current and _value(current[0]):
                     raise ImageProviderError("FramePack-Studio is busy with another job. Try again when it is free.")
+                self.stage = "upload"
                 ext = {"image/png": "png", "image/jpeg": "jpg", "image/webp": "webp"}.get(mime_type, "png")
                 uploaded = await client.post(f"{root}/upload",
                                              files=[("files", (f"lumen-source.{ext}", image, mime_type))])
@@ -592,16 +656,20 @@ class FramePackStudioProvider(FramePackProvider):
                 file_data = {"path": paths[0], "meta": {"_type": "gradio.FileData"}}
                 data = studio_arguments(parameters, image=file_data, prompt=prompt, negative=negative,
                                         seed=seed, seconds=seconds)
+                self.stage = "start_queue"
+                data = with_state_slots(data, self.states)
                 job_id = studio_job_id(await self._last(client, root, STUDIO_START, data, deadline))
                 if not job_id:
                     raise ImageProviderError("FramePack-Studio did not return a job id.")
                 await on_progress(5, "Animating…")
+                self.stage = "monitor"
                 result_path = await self._follow_job(client, root, job_id, seconds, on_progress, deadline)
             except (asyncio.TimeoutError, httpx.ReadTimeout):
                 # Never a stop call: FP-Studio has no per-job cancel, and end_process is global.
                 left = f" Its job {job_id} was left in FramePack-Studio's queue." if job_id else ""
                 raise ImageProviderError(f"FramePack-Studio did not finish in time.{left}")
             await on_progress(97, "Saving the video…")
+            self.stage = "download"
             video = await client.get(f"{root}/file={result_path}")
             video.raise_for_status()
         return {"bytes": video.content, "mime_type": "video/mp4", "provider": self.name,

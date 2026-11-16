@@ -11,7 +11,8 @@ touch Supabase, Chat, Gallery, lumen-api or any service setting. Video stays off
       --image /tmp/lumen-canary/lumen-canary.png --seconds 3 --out /tmp/lumen-fps-canary \
       [--comfy-url http://127.0.0.1:<comfy port>]   # release ComfyUI's VRAM first
 
-Needs a Python with httpx and pydantic-settings (the lumen backend virtualenv has both).
+Without --run-gpu it is read-only: contract + hidden-state check, then it prints the exact values it
+would send and exits (no upload, no queue). Needs a Python with httpx and pydantic-settings (the lumen backend virtualenv has both).
 Prints a JSON summary: FP-Studio job id, latency, size, sha256 and the file written.
 """
 import argparse
@@ -37,9 +38,20 @@ async def run(args) -> int:
         async with httpx.AsyncClient(timeout=15) as client:
             await provider._endpoint(client)
     except Exception as exc:  # noqa: BLE001 - report exactly, never guess
-        print(json.dumps({"result": "FAIL", "stage": "contract (before any GPU work)",
+        print(json.dumps({"result": "FAIL", "stage": "contract", "gpu_work": "none",
                           "reason": f"{type(exc).__name__}: {exc}"}))
         return 1
+    if not args.run_gpu:
+        # Read-only: the exact values /handle_start_button would receive, hidden state slots included.
+        from lumen.video_providers import studio_arguments, studio_contract, with_state_slots, STUDIO_INPUTS
+        async with httpx.AsyncClient(timeout=15) as client:
+            prefix, parameters = await provider._endpoint(client)
+        data = with_state_slots(studio_arguments(parameters, image={"path": "<uploaded start frame>"},
+                                                 prompt=args.prompt, negative=args.negative, seed=1,
+                                                 seconds=args.seconds), provider.states)
+        print(json.dumps({"result": "CONTRACT OK", "gpu_work": "none", "values_sent": len(data),
+                          "hidden_state_slots": provider.states, "values": data}, default=str))
+        return 0
     if args.comfy_url:
         # Same step Lumen's video jobs take: ComfyUI unloads its models (BigLust) so FramePack has the
         # 16 GB GPU. Nothing is deleted; the next image request loads the checkpoint again.
@@ -50,8 +62,15 @@ async def run(args) -> int:
     async def progress(percent, stage):
         print(f"progress {percent}% {stage}", file=sys.stderr)
 
-    result = await provider.generate(image, mime, args.prompt, seconds=args.seconds,
-                                     negative=args.negative, on_progress=progress)
+    try:
+        result = await provider.generate(image, mime, args.prompt, seconds=args.seconds,
+                                         negative=args.negative, on_progress=progress)
+    except Exception as exc:  # noqa: BLE001 - one stable JSON line at every stage, never a traceback
+        print(json.dumps({"result": "FAIL", "stage": provider.stage,
+                          "gpu_work": "none" if provider.stage in ("contract", "current_job", "upload")
+                          else "possible: check FramePack-Studio's queue before retrying",
+                          "reason": f"{type(exc).__name__}: {str(exc)[:400]}"}))
+        return 1
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
     path = out / "lumen-fps-canary.mp4"
@@ -66,7 +85,8 @@ async def run(args) -> int:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--run-gpu", action="store_true", help="required: confirms one GPU job is intended")
+    parser.add_argument("--run-gpu", action="store_true",
+                        help="queue one GPU job; without it only the read-only contract check runs")
     parser.add_argument("--url", required=True, help="FramePack-Studio base URL, e.g. http://127.0.0.1:7863")
     parser.add_argument("--image", required=True, help="start frame (PNG or JPEG), e.g. the BigLust canary PNG")
     parser.add_argument("--seconds", type=float, default=3.0)
@@ -76,9 +96,6 @@ def main() -> int:
     parser.add_argument("--timeout", type=int, default=900)
     parser.add_argument("--comfy-url", default="", help="ComfyUI URL to release VRAM first (as Lumen's video jobs do)")
     args = parser.parse_args()
-    if not args.run_gpu:
-        print("Refusing: add --run-gpu to confirm one GPU job (owner-approved canary only).")
-        return 2
     if not 1.0 <= args.seconds <= 5.0:
         print("Refusing: the first canary is 1 to 5 seconds.")
         return 2

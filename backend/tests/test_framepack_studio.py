@@ -58,6 +58,24 @@ def heavy_info():
     }
 
 
+def heavy_config(state_slots=(29,)):
+    """Gradio /config for the same events: /info hides FP-Studio's trailing gr.State (lora_names_states),
+    but /handle_start_button's event has 30 inputs (verified on Gradio 5.25.2 with FP-Studio's wiring)."""
+    components, inputs = [], []
+    kinds = ["radio", "image", "video", "image", "slider", "textbox", "textbox", "number", "checkbox"] + ["x"] * 20
+    total = len(kinds) + len(state_slots)
+    k = iter(kinds)
+    for position in range(total):
+        kind = "state" if position in state_slots else next(k)
+        components.append({"id": 100 + position, "type": kind})
+        inputs.append(100 + position)
+    return {"components": components, "dependencies": [
+        {"api_name": "update_button_before_processing", "inputs": inputs},
+        {"api_name": "handle_start_button", "inputs": inputs},
+        {"api_name": "monitor_job", "inputs": [200]},
+        {"api_name": "check_for_current_job_and_monitor", "inputs": []}]}
+
+
 def sse(*events):
     return "".join(f"event: {name}\ndata: {json.dumps(values)}\n\n" for name, values in events)
 
@@ -69,8 +87,10 @@ def video(path):
 class FakeStudio:
     """A FramePack-Studio Gradio app. ``monitor`` is the list of monitor_job updates to stream."""
 
-    def __init__(self, *, info=None, current=None, monitor=None, job_id=JOB):
+    def __init__(self, *, info=None, current=None, monitor=None, job_id=JOB, config=None, start_error=None):
         self.info = info or heavy_info()
+        self.config = config if config is not None else heavy_config()
+        self.start_error = start_error
         self.current = current
         self.job_id = job_id
         self.monitor = monitor if monitor is not None else [
@@ -88,6 +108,8 @@ class FakeStudio:
             raise AssertionError(f"global stop endpoint called: {path}")
         if path == "/gradio_api/info":
             return httpx.Response(200, json={"named_endpoints": self.info})
+        if path == "/config":
+            return httpx.Response(200, json=self.config) if self.config else httpx.Response(404)
         if path == "/gradio_api/upload":
             return httpx.Response(200, json=["/tmp/gradio/abc/lumen-source.png"])
         if request.method == "POST" and path.startswith("/gradio_api/call/"):
@@ -100,6 +122,9 @@ class FakeStudio:
         if path == "/gradio_api/call/check_for_current_job_and_monitor/ev-check_for_current_job_and_monitor":
             return httpx.Response(200, text=sse(("complete", [self.current, None, None, None, "", "", None, ""])))
         if path == "/gradio_api/call/handle_start_button/ev-handle_start_button":
+            needed = len(self.config["dependencies"][1]["inputs"]) if self.config else 29
+            if self.start_error is not None or len(self.start_data) < needed:  # Gradio's validate_inputs
+                return httpx.Response(200, text="event: error\ndata: " + (self.start_error or "null") + "\n\n")
             return httpx.Response(200, text=sse(("complete", [None, self.job_id, None, "",
                                                               f"Job added to queue. Job ID: {self.job_id}",
                                                               None, None, None, None])))
@@ -193,6 +218,31 @@ class StudioContractTests(unittest.TestCase):
         self.assertIsInstance(framepack_provider(video_settings(framepack_api_name="/process")), FramePackProvider)
 
 
+class StudioHiddenStateTests(unittest.TestCase):
+    def test_state_slot_comes_from_config(self):
+        from lumen.video_providers import studio_hidden_state_slots, with_state_slots
+        self.assertEqual(studio_hidden_state_slots(heavy_config()), [29])
+        self.assertEqual(len(with_state_slots(list(range(29)), [29])), 30)
+        self.assertIsNone(with_state_slots(list(range(29)), [29])[29])
+
+    def test_unreadable_or_changed_config_is_refused(self):
+        from lumen.video_providers import studio_hidden_state_slots
+        with self.assertRaisesRegex(FramePackNeedsAdapter, "/config is not readable"):
+            studio_hidden_state_slots(None)
+        with self.assertRaisesRegex(FramePackNeedsAdapter, "31 inputs"):
+            studio_hidden_state_slots(heavy_config(state_slots=(29, 30)) | {"components": [
+                {"id": 100 + i, "type": "x"} for i in range(31)]})
+
+    def test_sse_error_detail_is_short_and_redacted(self):
+        from lumen.video_providers import sse_error_detail
+        self.assertIn("data: null", sse_error_detail("/handle_start_button", "null"))
+        detail = sse_error_detail("/handle_start_button",
+                                  json.dumps("ValueError at /home/brett/FramePack-Studio/modules/x.py: bad " + "x" * 900))
+        self.assertTrue(detail.startswith("/handle_start_button returned event:error: ValueError at <path>"))
+        self.assertNotIn("/home/brett", detail)
+        self.assertLess(len(detail), 360)
+
+
 class StudioRunTests(unittest.IsolatedAsyncioTestCase):
     async def run_studio(self, fake, **settings):
         original = httpx.AsyncClient
@@ -223,6 +273,25 @@ class StudioRunTests(unittest.IsolatedAsyncioTestCase):
         posts = [p for m, p in fake.calls if m == "POST"]
         self.assertEqual(posts, ["/gradio_api/call/check_for_current_job_and_monitor", "/gradio_api/upload",
                                  "/gradio_api/call/handle_start_button", "/gradio_api/call/monitor_job"])
+
+    async def test_sends_thirty_values_with_the_hidden_state_slot(self):
+        fake = FakeStudio()
+        await self.run_studio(fake)
+        self.assertEqual(len(fake.start_data), 30)
+        self.assertIsNone(fake.start_data[29])
+        self.assertEqual(fake.start_data[28], DEFAULTS[28])
+
+    async def test_regression_29_values_reproduce_the_hardware_error_with_details(self):
+        fake = FakeStudio(start_error=json.dumps("needed: 30, got: 29"))
+        provider = FramePackStudioProvider(video_settings(framepack_api_name="/handle_start_button"))
+        original = httpx.AsyncClient
+        with patch("lumen.video_providers.httpx.AsyncClient",
+                   side_effect=lambda **kw: original(transport=httpx.MockTransport(fake), **kw)):
+            with self.assertRaisesRegex(ImageProviderError,
+                                        "/handle_start_button returned event:error: needed: 30, got: 29"):
+                await provider.generate(b"PNG", "image/png", "p", seconds=3.0)
+        self.assertEqual(provider.stage, "start_queue")
+        self.assertFalse(any("monitor_job" in p for _, p in fake.calls))
 
     async def test_busy_studio_is_refused_before_upload(self):
         fake = FakeStudio(current=OTHER)
@@ -298,9 +367,10 @@ class StudioCanaryScriptTests(unittest.TestCase):
         from pathlib import Path
         script = Path(__file__).resolve().parents[2] / "scripts" / "canary-framepack-studio.py"
         base = [sys.executable, str(script), "--url", "http://127.0.0.1:9", "--image", "x.png", "--out", "/tmp/x"]
-        result = subprocess.run(base, capture_output=True, text=True, timeout=30)
-        self.assertEqual(result.returncode, 2)
-        self.assertIn("--run-gpu", result.stdout)
+        result = subprocess.run(base, capture_output=True, text=True, timeout=30)  # read-only mode
+        self.assertEqual(result.returncode, 1)
+        summary = json.loads(result.stdout)
+        self.assertEqual((summary["result"], summary["stage"], summary["gpu_work"]), ("FAIL", "contract", "none"))
         result = subprocess.run([*base, "--run-gpu", "--seconds", "10"], capture_output=True, text=True, timeout=30)
         self.assertEqual(result.returncode, 2)
 
@@ -332,7 +402,8 @@ class StudioCanaryRunTests(unittest.IsolatedAsyncioTestCase):
             image = Path(tmp) / "still.png"
             image.write_bytes(b"\x89PNG\r\n\x1a\n" + b"0" * 32)
             args = SimpleNamespace(url="http://127.0.0.1:17863", image=str(image), seconds=3.0, out=tmp,
-                                   prompt="waves", negative="", timeout=60, comfy_url="http://comfy.test:18188")
+                                   prompt="waves", negative="", timeout=60, comfy_url="http://comfy.test:18188",
+                                   run_gpu=True)
             out = io.StringIO()
             with patch("lumen.video_providers.httpx.AsyncClient",
                        side_effect=lambda **kw: original(transport=httpx.MockTransport(handler), **kw)), \
@@ -346,6 +417,34 @@ class StudioCanaryRunTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(freed, ["/free"])
         self.assertEqual(fake.start_data[0], "Original")
         self.assertFalse(any("end_process" in p for _, p in fake.calls))
+
+
+class StudioCanaryDryRunTests(unittest.IsolatedAsyncioTestCase):
+    async def test_without_run_gpu_prints_the_30_values_and_queues_nothing(self):
+        import importlib.util, io
+        from contextlib import redirect_stdout
+        from pathlib import Path
+        from types import SimpleNamespace
+        script = Path(__file__).resolve().parents[2] / "scripts" / "canary-framepack-studio.py"
+        spec = importlib.util.spec_from_file_location("fps_canary3", script)
+        canary = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(canary)
+        fake = FakeStudio()
+        original = httpx.AsyncClient
+        out = io.StringIO()
+        args = SimpleNamespace(url="http://127.0.0.1:17863", image="unused.png", seconds=3.0, out="/tmp/x",
+                               prompt="p", negative="", timeout=60, comfy_url="", run_gpu=False)
+        with patch("lumen.video_providers.httpx.AsyncClient",
+                   side_effect=lambda **kw: original(transport=httpx.MockTransport(fake), **kw)), \
+                patch("httpx.AsyncClient", side_effect=lambda **kw: original(transport=httpx.MockTransport(fake), **kw)), \
+                redirect_stdout(out):
+            code = await canary.run(args)
+        summary = json.loads(out.getvalue())
+        self.assertEqual(code, 0)
+        self.assertEqual((summary["result"], summary["values_sent"], summary["hidden_state_slots"]),
+                         ("CONTRACT OK", 30, [29]))
+        self.assertEqual(summary["values"][0], "Original")
+        self.assertEqual({m for m, _ in fake.calls}, {"GET"})
 
 
 class StudioCanaryReasonTests(unittest.IsolatedAsyncioTestCase):
