@@ -617,3 +617,51 @@ class StudioJobOutputScriptTests(unittest.TestCase):
             self.assertEqual((code, summary["result"]), (1, "REFUSED"), label)
             self.queue[JOB] = saved
         self.assertFalse((self.root / "copy").exists())
+
+
+class StudioDurableTests(unittest.IsolatedAsyncioTestCase):
+    """submit() / check() / download() used by the video worker (lumen.media_worker)."""
+
+    async def with_fake(self, fake, call):
+        provider = FramePackStudioProvider(video_settings(framepack_api_name="/handle_start_button"))
+        original = httpx.AsyncClient
+        with patch("lumen.video_providers.httpx.AsyncClient",
+                   side_effect=lambda **kw: original(transport=httpx.MockTransport(fake), **kw)):
+            return await call(provider)
+
+    async def test_submit_returns_the_job_id_without_monitoring_or_busy_check(self):
+        fake = FakeStudio(current=OTHER)  # someone else's job is running: ours waits in FP-Studio's queue
+        job = await self.with_fake(fake, lambda p: p.submit(b"PNG", "image/png", "waves", seconds=3.0))
+        self.assertEqual(job, JOB)
+        self.assertEqual(len(fake.start_data), 30)
+        self.assertFalse(any("monitor_job" in p or "check_for_current" in p for _, p in fake.calls))
+
+    async def test_check_states(self):
+        cases = [
+            ([(None, "", "Waiting in queue. Position: 2")], "queued"),       # FP-Studio's real slot
+            ([(None, "Sampling", "<div>40%</div>")], "running"),
+            ([(None, "Switching to current job...", ""),
+              (video(f"/o/{RUN2}_19.mp4"), "Completed", "")], "waiting"),     # another job is running
+            ([(None, "No job ID provided", "")], "failed"),                   # FP-Studio restarted / unknown id
+            ([(None, "Error: CUDA out of memory", "")], "failed"),
+            ([(None, "Completed", "")], "failed"),                            # no result file
+            ([(video(f"/o/{RUN}_9.mp4"), "Sampling", "<div>60%</div>"),
+              (video(f"/o/{RUN2}_19.mp4"), "Completed", "")], "failed"),      # two runs
+        ]
+        for monitor, expected in cases:
+            seen = await self.with_fake(FakeStudio(monitor=monitor), lambda p: p.check(JOB, seconds=3.0))
+            self.assertEqual(seen["state"], expected, monitor)
+            if expected == "waiting":
+                self.assertIsNone(seen["video"])  # nothing after a switch is ever taken
+
+    async def test_check_completed_names_the_run_and_download_checks_the_file(self):
+        heavy = "/data/ai-media-studio/FP-Studio/outputs"
+        fake = FakeStudio(monitor=[(video(f"{heavy}/{RUN}_19.mp4"), "Completed", "")])
+        seen = await self.with_fake(fake, lambda p: p.check(JOB, seconds=3.0))
+        self.assertEqual((seen["state"], seen["video"], seen["run"]), ("completed", f"{heavy}/{RUN}_19.mp4", RUN))
+        with self.assertRaisesRegex(ImageProviderError, "not an MP4"):  # the fake serves b"MP4:..."
+            await self.with_fake(fake, lambda p: p.download(seen["video"]))
+        with self.assertRaisesRegex(ImageProviderError, "Not a FramePack-Studio output"):
+            await self.with_fake(fake, lambda p: p.download("/etc/passwd"))
+        with self.assertRaisesRegex(ImageProviderError, "Not a FramePack-Studio job id"):
+            await self.with_fake(fake, lambda p: p.check("../x", seconds=3.0))

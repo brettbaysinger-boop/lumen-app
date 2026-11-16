@@ -6,7 +6,8 @@ function load(mode){
   const mod={exports:{}},calls=[];
   const req=name=>name==='react'?{useEffect:()=>{},useState:v=>[v,()=>{}]}
     :name==='./auth'?{authHeaders:async()=>({Authorization:'Bearer t'})}
-    :name==='./privacy-mode'?{getPrivacyMode:()=>mode}:{};
+    :name==='./privacy-mode'?{getPrivacyMode:()=>mode}
+    :name==='react-native'?{AppState:{currentState:'active',addEventListener:()=>({remove(){}})}}:{};
   const fetch=async(url,opts)=>{calls.push(url);return{ok:true,json:async()=>({id:'j1',status:'running',progress:40})};};
   vm.runInNewContext(js('lib/media-jobs.ts'),{module:mod,exports:mod.exports,require:req,fetch,process:{env:{EXPO_PUBLIC_LUMEN_API_URL:'http://lumen.test/'}},encodeURIComponent,setTimeout,clearTimeout});
   return {...mod.exports,calls};
@@ -19,6 +20,16 @@ test('job status is read from the backend only in Private mode',async()=>{
   const pub=load('public');
   assert.equal(await pub.fetchMediaJob('j1'),null);
   assert.deepEqual(pub.calls,[]);
+});
+
+test('long renders: polling backs off and pauses in the background',()=>{
+  const {mediaJobPollDelay}=load('private');
+  assert.equal(mediaJobPollDelay(0),4000);
+  assert.equal(mediaJobPollDelay(3*60_000),15000);
+  assert.equal(mediaJobPollDelay(2*3600_000),30000);
+  const src=read('lib/media-jobs.ts');
+  assert.match(src,/AppState\.currentState !== 'background'/);
+  assert.match(src,/state === 'active'[^]*void poll\(\)/);
 });
 
 test('message metadata is read defensively',()=>{

@@ -1,7 +1,10 @@
 /*
 # Short video generation jobs and video storage (Private mode only)
 
-1. `media_generation_jobs`: one row per background video job. Written and read only by the
+1. `media_generation_jobs`: one row per background video job. A render can take hours: the
+   dedicated video worker (`python -m lumen.media_worker`) stores FramePack-Studio's own job id
+   (`provider_job_id`), a heartbeat and a deadline, and after any restart looks at that same
+   job again instead of generating it twice. Written and read only by the
    Lumen backend (service role), always scoped to the verified user id. Row level security is
    on with no client policies, so the app can never read generation history directly; it asks
    the backend, which refuses while Public mode is on.
@@ -32,6 +35,10 @@ CREATE TABLE IF NOT EXISTS media_generation_jobs (
   result_path text,
   result_mime_type text,
   latency_ms integer,
+  provider_job_id text,
+  provider_run text,
+  heartbeat_at timestamptz,
+  deadline_at timestamptz,
   error text,
   created_at timestamptz NOT NULL DEFAULT now(),
   updated_at timestamptz NOT NULL DEFAULT now(),
@@ -41,6 +48,11 @@ CREATE TABLE IF NOT EXISTS media_generation_jobs (
 
 CREATE INDEX IF NOT EXISTS idx_media_jobs_owner_status ON media_generation_jobs(owner_user_id, status);
 CREATE INDEX IF NOT EXISTS idx_media_jobs_message ON media_generation_jobs(message_id);
+CREATE INDEX IF NOT EXISTS idx_media_jobs_active ON media_generation_jobs(created_at)
+  WHERE status IN ('queued', 'running');
+-- One Lumen job per FramePack-Studio job: a provider job can never be delivered to two rows.
+CREATE UNIQUE INDEX IF NOT EXISTS idx_media_jobs_provider_job
+  ON media_generation_jobs(provider, provider_job_id) WHERE provider_job_id IS NOT NULL;
 
 ALTER TABLE media_generation_jobs ENABLE ROW LEVEL SECURITY;
 -- Intentionally no policies for anon/authenticated: backend (service role) only.

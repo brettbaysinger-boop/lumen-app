@@ -76,6 +76,11 @@ class Settings(BaseSettings):
     video_max_seconds: float = Field(default=10.0, ge=1.0, le=10.0)
     video_fps: int = Field(default=16, ge=8, le=30)
     video_generation_timeout: int = Field(default=1800, ge=60, le=7200)
+    # FramePack-Studio renders run in its own queue and are followed by the video worker
+    # (python -m lumen.media_worker): how long one job may take end to end, and how often the
+    # worker looks at it. A job past its budget is reported, never cancelled on Heavy.
+    video_render_budget_seconds: int = Field(default=4 * 3600, ge=600, le=24 * 3600)
+    video_poll_seconds: int = Field(default=20, ge=5, le=120)
     video_max_bytes: int = Field(default=50 * 1024 * 1024, ge=1024 * 1024, le=50 * 1024 * 1024)
     video_max_pending_per_user: int = Field(default=2, ge=1, le=10)
 

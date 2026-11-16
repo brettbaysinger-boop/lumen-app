@@ -636,47 +636,131 @@ class FramePackStudioProvider(FramePackProvider):
                 last = values
         return last
 
-    async def generate(self, image: bytes, mime_type: str, prompt: str, *, seconds: float,
-                       negative: str = "", on_progress: Progress = _no_progress) -> dict[str, Any]:
+    async def submit(self, image: bytes, mime_type: str, prompt: str, *, seconds: float, negative: str = "",
+                     refuse_if_busy: bool = False) -> str:
+        """Add ONE job to FP-Studio's own queue and return its job id at once (no waiting for the GPU).
+
+        Lumen's durable worker submits without the busy check, so its job waits in FP-Studio's
+        queue behind anyone else's; the canary keeps ``refuse_if_busy`` to stay isolated."""
         if not self.base_url:
             raise ImageProviderNotConfigured("FramePack-Studio is not configured.")
-        started = time.perf_counter()
-        deadline = time.monotonic() + self.timeout
+        deadline = time.monotonic() + 300
         seed = secrets.randbelow(21474)
-        job_id = None
+        self.job_id = None
         async with httpx.AsyncClient(timeout=httpx.Timeout(60, read=120)) as client:
             self.stage = "contract"
             prefix, parameters = await self._endpoint(client)
             root = f"{self.base_url}{prefix}"
-            try:
+            if refuse_if_busy:
                 self.stage = "current_job"
                 current = await self._last(client, root, STUDIO_CURRENT, [], deadline)
                 if isinstance(current, list) and current and _value(current[0]):
                     raise ImageProviderError("FramePack-Studio is busy with another job. Try again when it is free.")
-                self.stage = "upload"
-                ext = {"image/png": "png", "image/jpeg": "jpg", "image/webp": "webp"}.get(mime_type, "png")
-                uploaded = await client.post(f"{root}/upload",
-                                             files=[("files", (f"lumen-source.{ext}", image, mime_type))])
-                uploaded.raise_for_status()
-                paths = uploaded.json()
-                if not isinstance(paths, list) or not paths or not isinstance(paths[0], str):
-                    raise ImageProviderError("FramePack-Studio did not accept the source image.")
-                file_data = {"path": paths[0], "meta": {"_type": "gradio.FileData"}}
-                data = studio_arguments(parameters, image=file_data, prompt=prompt, negative=negative,
-                                        seed=seed, seconds=seconds)
-                self.stage = "start_queue"
-                data = with_state_slots(data, self.states)
-                job_id = studio_job_id(await self._last(client, root, STUDIO_START, data, deadline))
-                self.job_id = job_id
-                if not job_id:
-                    raise ImageProviderError("FramePack-Studio did not return a job id.")
+            self.stage = "upload"
+            ext = {"image/png": "png", "image/jpeg": "jpg", "image/webp": "webp"}.get(mime_type, "png")
+            uploaded = await client.post(f"{root}/upload",
+                                         files=[("files", (f"lumen-source.{ext}", image, mime_type))])
+            uploaded.raise_for_status()
+            paths = uploaded.json()
+            if not isinstance(paths, list) or not paths or not isinstance(paths[0], str):
+                raise ImageProviderError("FramePack-Studio did not accept the source image.")
+            file_data = {"path": paths[0], "meta": {"_type": "gradio.FileData"}}
+            data = studio_arguments(parameters, image=file_data, prompt=prompt, negative=negative,
+                                    seed=seed, seconds=seconds)
+            self.stage = "start_queue"
+            data = with_state_slots(data, self.states)
+            job_id = studio_job_id(await self._last(client, root, STUDIO_START, data, deadline))
+            self.job_id = job_id
+            if not job_id:
+                raise ImageProviderError("FramePack-Studio did not return a job id.")
+            return job_id
+
+    async def check(self, job_id: str, *, seconds: float, window: float = 6.0) -> dict[str, Any]:
+        """One bounded look at OUR job through monitor_job(job_id); the stream is closed after
+        ``window`` seconds (Gradio stops the generator when the client disconnects).
+
+        state: queued | running | completed | failed | waiting. "waiting" = FP-Studio is busy with
+        another job (monitor_job switched): ours is still queued or finished, so look again later.
+        Videos are taken only before any switch and only with FP-Studio's output naming."""
+        state: dict[str, Any] = {"state": "waiting", "percent": None, "desc": "", "video": None, "run": None}
+        if not _UUID.match(job_id or ""):
+            raise ImageProviderError("Not a FramePack-Studio job id.")
+        async with httpx.AsyncClient(timeout=httpx.Timeout(30, read=window + 30)) as client:
+            prefix, _ = await self._endpoint(client)
+            root = f"{self.base_url}{prefix}"
+
+            async def look() -> None:
+                deadline = time.monotonic() + window + 30
+                async for event, values in self._events(client, root, STUDIO_MONITOR, [job_id], deadline):
+                    if event not in ("generating", "complete"):
+                        continue
+                    desc = studio_desc(values)
+                    if desc.startswith("Switching to current job"):
+                        state.update(state="waiting", desc="FramePack-Studio is busy with another job")
+                        return
+                    output = studio_output(values)
+                    if output:
+                        if state["run"] and output[1] != state["run"]:
+                            state.update(state="failed", desc="videos from two different runs")
+                            return
+                        state["video"], state["run"] = output
+                    if desc.startswith("Error") or desc in ("Job cancelled", "No job ID provided"):
+                        state.update(state="failed", desc=_short(desc))
+                        return
+                    if desc == "Completed":
+                        state.update(state="completed" if state["video"] else "failed",
+                                     desc="Completed" if state["video"] else "Completed without a result file")
+                        return
+                    html = _value(values[4]) if isinstance(values, list) and len(values) > 4 else ""
+                    if any(isinstance(t, str) and t.startswith("Waiting in queue") for t in (desc, html)):
+                        # FP-Studio puts "Waiting in queue. Position: N" in the progress slot (index 4).
+                        state.update(state="queued", desc=_short(desc or html))
+                        continue
+                    percent = framepack_progress(values if isinstance(values, list) else [], seconds)
+                    if percent is not None or desc:
+                        state["state"] = "running"
+                    if percent is not None:
+                        state["percent"] = percent
+                    if desc:
+                        state["desc"] = _short(desc)
+
+            try:
+                await asyncio.wait_for(look(), window)
+            except asyncio.TimeoutError:
+                pass  # a look, not a wait: the last state seen stands
+        return state
+
+    async def download(self, path: str) -> bytes:
+        """The finished file, through Gradio's own file route (the path came from monitor_job)."""
+        if not _STUDIO_OUTPUT.match(path.replace("\\", "/").rsplit("/", 1)[-1]):
+            raise ImageProviderError("Not a FramePack-Studio output.")
+        async with httpx.AsyncClient(timeout=httpx.Timeout(60, read=300)) as client:
+            prefix, _ = await self._info(client)
+            response = await client.get(f"{self.base_url}{prefix}/file={path}")
+            response.raise_for_status()
+            if response.content[4:8] != b"ftyp":
+                raise ImageProviderError("FramePack-Studio's file is not an MP4.")
+            return response.content
+
+    async def generate(self, image: bytes, mime_type: str, prompt: str, *, seconds: float,
+                       negative: str = "", on_progress: Progress = _no_progress) -> dict[str, Any]:
+        """Submit and follow one job in a single call (the isolated canary). Lumen's chat videos use
+        submit() + check() from the durable worker instead."""
+        started = time.perf_counter()
+        deadline = time.monotonic() + self.timeout
+        job_id = await self.submit(image, mime_type, prompt, seconds=seconds, negative=negative,
+                                   refuse_if_busy=True)
+        async with httpx.AsyncClient(timeout=httpx.Timeout(60, read=120)) as client:
+            prefix = (await self._info(client))[0]
+            root = f"{self.base_url}{prefix}"
+            try:
                 await on_progress(5, "Animating…")
                 self.stage = "monitor"
                 result_path = await self._follow_job(client, root, job_id, seconds, on_progress, deadline)
             except (asyncio.TimeoutError, httpx.ReadTimeout):
                 # Never a stop call: FP-Studio has no per-job cancel, and end_process is global.
-                left = f" Its job {job_id} was left in FramePack-Studio's queue." if job_id else ""
-                raise ImageProviderError(f"FramePack-Studio did not finish in time.{left}")
+                raise ImageProviderError(f"FramePack-Studio did not finish in time. Its job {job_id} was left "
+                                         "in FramePack-Studio's queue.")
             await on_progress(97, "Saving the video…")
             self.stage = "download"
             video = await client.get(f"{root}/file={result_path}")

@@ -3,8 +3,11 @@
 Flow: a chat turn asks for a video (an explicit request, or the companion's own
 ``generate_video`` action). ``plan_video_job`` checks mode, configuration,
 safety and limits and returns a reply right away. After the assistant message is
-saved, ``enqueue_video_job`` records the job and runs it in this process, one at
-a time (Heavy has one 16 GB GPU). Progress is written to
+saved, ``start_video_job`` links it to the job row and returns. The dedicated
+video worker (``python -m lumen.media_worker``) does the rest, so a render can
+take hours and survive restarts of lumen-api or of the worker: it submits ONE job
+to FramePack-Studio's own queue, stores that job id, looks at it every
+``VIDEO_POLL_SECONDS`` and delivers when it finishes. Progress is written to
 ``media_generation_jobs``; the app polls ``GET /v0.3/media/jobs/{id}``. The
 finished clip is saved to private ``chat-media`` storage, attached to that
 assistant message and registered in Gallery.
@@ -226,7 +229,6 @@ async def plan_video_job(settings, *, privacy_mode: str, user_id: str, companion
         return PlanResult("Text-to-video isn't set up on this Lumen server yet. Send me an image and ask me "
                           "to animate it, or ask again once video is configured.")
 
-    await recover_interrupted_jobs(settings)
     if await pending_jobs(settings, user_id) >= settings.video_max_pending_per_user:
         return PlanResult("I'm still working on your other videos. Let's wait for those to finish first.")
 
@@ -235,7 +237,7 @@ async def plan_video_job(settings, *, privacy_mode: str, user_id: str, companion
                         still_prompt=still,
                         source_path=source[0] if source else None, source_mime=source[1] if source else None)
     return PlanResult(f"I'm making a {seconds:g}-second video now. It will show up right here when it's "
-                      "ready, usually within a few minutes.", plan)
+                      "ready. Rendering can take a while, so feel free to leave and come back.", plan)
 
 
 async def record_video_job(settings, plan: VideoJobPlan) -> None:
@@ -249,10 +251,21 @@ async def record_video_job(settings, plan: VideoJobPlan) -> None:
 
 
 def start_video_job(settings, plan: VideoJobPlan, message_id: str) -> asyncio.Task:
-    task = asyncio.create_task(run_video_job(settings, plan, message_id))
+    """Hand the job to the video worker: link the saved reply, then return. Nothing renders in
+    lumen-api; ``python -m lumen.media_worker`` picks up queued rows that have a message."""
+    task = asyncio.create_task(attach_job_message(settings, plan.id, message_id))
     _TASKS.add(task)
     task.add_done_callback(_TASKS.discard)
     return task
+
+
+async def attach_job_message(settings, job_id: str, message_id: str) -> None:
+    try:
+        await _service_db(settings)._request("PATCH", JOB_TABLE, params={"id": f"eq.{job_id}", "status": "eq.queued"},
+                                             headers={"Prefer": "return=minimal"},
+                                             json={"message_id": message_id, "updated_at": _now()})
+    except Exception:
+        log.exception("Could not hand video job %s to the worker", job_id)
 
 
 class JobReporter:
@@ -306,14 +319,42 @@ async def update_message(db: SupabaseRepository, plan: VideoJobPlan, message_id:
                       headers={"Prefer": "return=minimal"}, json={"metadata": metadata})
 
 
-async def _store(db: SupabaseRepository, owner: str, content: bytes, mime: str) -> str:
+async def _store(db: SupabaseRepository, owner: str, content: bytes, mime: str, *, name: str | None = None) -> str:
+    """Save to private chat-media. ``name`` gives a fixed path (overwritten on a retry), so
+    delivering the same job twice never makes a second file."""
     ext = {"video/mp4": "mp4", "video/webm": "webm", "image/png": "png", "image/jpeg": "jpg",
            "image/webp": "webp"}.get(mime)
     if ext is None:
         raise ImageProviderError("The generator returned an unsupported file type.")
-    path = f"{owner}/{uuid.uuid4()}.{ext}"
-    await db.upload_storage(BUCKET, path, content, mime)
+    path = f"{owner}/{name or uuid.uuid4()}.{ext}"
+    if name:
+        await db.upload_storage(BUCKET, path, content, mime, upsert=True)
+    else:
+        await db.upload_storage(BUCKET, path, content, mime)
     return path
+
+
+async def deliver_video(db: SupabaseRepository, settings, reporter: "JobReporter", plan: VideoJobPlan,
+                        message_id: str, result: dict[str, Any], *, started_at: float | None = None,
+                        latency_ms: int | None = None) -> str:
+    """Idempotent: fixed storage path, attachment de-duplicated by path, Gallery row keyed by job."""
+    mime = result["mime_type"]
+    if not str(mime).startswith("video/") or not result["bytes"]:
+        raise ImageProviderError("The generator did not return a video.")
+    if len(result["bytes"]) > settings.video_max_bytes:
+        raise ImageProviderError("The video was too large to save. Try a shorter clip.")
+    await reporter.progress(98, "Saving the video…")
+    video_path = await _store(db, plan.owner_user_id, result["bytes"], mime, name=f"video-{plan.id}")
+    await update_message(db, plan, message_id, job={"status": "completed"},
+                         attachment={"path": video_path, "mime_type": mime},
+                         extra={"generated_video": True})
+    await register_gallery(db, plan, message_id, video_path, mime)
+    if latency_ms is None and started_at is not None:
+        latency_ms = round((time.perf_counter() - started_at) * 1000)
+    await reporter.update(status="completed", progress=100, stage="Ready", result_path=video_path,
+                          result_mime_type=mime, provider=result["provider"], model=result["model"],
+                          finished_at=_now(), latency_ms=latency_ms)
+    return video_path
 
 
 async def run_video_job(settings, plan: VideoJobPlan, message_id: str) -> None:
@@ -359,21 +400,7 @@ async def run_video_job(settings, plan: VideoJobPlan, message_id: str) -> None:
                     seconds=plan.seconds, fps=settings.video_fps, timeout=settings.video_generation_timeout,
                     on_progress=reporter.progress)
 
-            mime = result["mime_type"]
-            if not str(mime).startswith("video/") or not result["bytes"]:
-                raise ImageProviderError("The generator did not return a video.")
-            if len(result["bytes"]) > settings.video_max_bytes:
-                raise ImageProviderError("The video was too large to save. Try a shorter clip.")
-            await reporter.progress(98, "Saving the video…")
-            video_path = await _store(db, plan.owner_user_id, result["bytes"], mime)
-            await update_message(db, plan, message_id, job={"status": "completed"},
-                                 attachment={"path": video_path, "mime_type": mime},
-                                 extra={"generated_video": True})
-            await register_gallery(db, plan, message_id, video_path, mime)
-            await reporter.update(status="completed", progress=100, stage="Ready", result_path=video_path,
-                                  result_mime_type=mime, provider=result["provider"], model=result["model"],
-                                  finished_at=_now(),
-                                  latency_ms=round((time.perf_counter() - started) * 1000))
+            await deliver_video(db, settings, reporter, plan, message_id, result, started_at=started)
         except (ImageProviderNotConfigured, ImageProviderError) as exc:
             await _fail(db, reporter, plan, message_id, str(exc))
         except httpx.HTTPError:
@@ -406,27 +433,6 @@ async def register_gallery(db: SupabaseRepository, plan: VideoJobPlan, message_i
         log.exception("Generated video saved to chat but gallery registration failed")
 
 
-_RECOVERED = False
-
-
-async def recover_interrupted_jobs(settings) -> None:
-    """Jobs run in this process only. Before this process touches its first job, any
-    job still marked unfinished belongs to an earlier process and cannot resume."""
-    global _RECOVERED
-    if _RECOVERED or _TASKS:
-        _RECOVERED = True
-        return
-    try:
-        await _service_db(settings)._request("PATCH", JOB_TABLE, params={"status": "in.(queued,running)"},
-                                             headers={"Prefer": "return=minimal"}, json={
-                                                 "status": "failed", "stage": "Couldn't finish",
-                                                 "error": "Lumen restarted before this video finished. Ask again.",
-                                                 "finished_at": _now(), "updated_at": _now()})
-        _RECOVERED = True
-    except Exception:
-        log.warning("Could not mark interrupted video jobs")
-
-
 router = APIRouter(prefix="/v0.3/media")
 
 PUBLIC_JOB_FIELDS = ("id,status,progress,stage,mode,duration_seconds,result_path,result_mime_type,error,"
@@ -454,7 +460,6 @@ async def capabilities(privacy_mode: Literal["private", "public"] = "private",
 async def get_job(job_id: uuid.UUID, privacy_mode: Literal["private", "public"] = "private",
                   user: AuthUser = Depends(require_user)):
     _require_private(privacy_mode)
-    await recover_interrupted_jobs(get_settings())
     rows = await _service_db(get_settings())._request("GET", JOB_TABLE, params={
         "id": f"eq.{job_id}", "owner_user_id": f"eq.{user.id}", "select": PUBLIC_JOB_FIELDS, "limit": "1"})
     if not rows:

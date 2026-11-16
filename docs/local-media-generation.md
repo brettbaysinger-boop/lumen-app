@@ -27,11 +27,26 @@ Readiness). The adapter checks that exact contract before every use; `scripts/ch
 2. `media_jobs.plan_video_job` checks Private mode, configuration, safety, length (≤ 10 s; five-minute
    requests get a "separate feature" reply) and a per-user limit of 2 unfinished jobs. No GPU work.
 3. The reply is saved with `metadata.media_job`; the job row goes to `media_generation_jobs`.
-4. The job runs in the API process, one at a time (`GPU_LOCK`). Before FramePack, ComfyUI is asked to
-   free VRAM (`POST /free`) because both share the 16 GB GPU.
-5. The clip goes to private `chat-media` storage (`<user id>/<uuid>.mp4`), is attached to the reply and
-   registered in Gallery as `media_type = video`.
-6. The app polls `GET /v0.3/media/jobs/{id}?privacy_mode=private` and shows progress in the bubble.
+4. lumen-api only links the job to the saved reply and returns. Nothing renders in lumen-api.
+5. The video worker (`python -m lumen.media_worker`, its own systemd service) takes the job: it makes
+   or reads the start frame, asks ComfyUI to free VRAM (`POST /free`, both share the 16 GB GPU) and
+   submits ONE job to FramePack-Studio's own queue. FP-Studio's job id is stored on the row at once.
+6. Every `VIDEO_POLL_SECONDS` (default 20) it looks at that job through `monitor_job(<id>)` for a few
+   seconds and closes the stream (Gradio stops the server-side generator on disconnect; checked on
+   Gradio 5.25.2). A render may take hours: the budget is `VIDEO_RENDER_BUDGET_SECONDS` (default 4 h).
+7. Finished: the clip goes to private `chat-media` at a fixed path (`<user id>/video-<job id>.mp4`),
+   is attached to the reply and registered in Gallery (`media_type = video`). Delivery is idempotent,
+   so a crash mid-delivery is simply delivered again on the next pass.
+8. The app polls `GET /v0.3/media/jobs/{id}?privacy_mode=private`: every 4 s for 2 minutes, then
+   15 s, then 30 s; paused in the background and checked at once when the app comes back.
+
+Restarts: lumen-api restarts don't touch jobs. A worker restart looks at the same FP-Studio job again
+and never re-submits. A job claimed but without an FP-Studio id after 10 minutes is failed (it may or
+may not have reached Heavy, and sending it again could render it twice). Heavy unreachable: the job
+stays, its stage says so, and the worker keeps looking. Past the budget the job is reported as not
+finished; nothing is cancelled on Heavy (FP-Studio has no per-job cancel, `end_process` is global).
+If FP-Studio itself restarts, it no longer knows a finished job ("No job ID provided"), so the job
+fails with its FP-Studio id; `scripts/framepack-studio-job-output.py` recovers that file read-only.
 
 Clear picture requests ("send me a selfie") are now honoured in Private even when the local model
 answers in prose without its image action (the likely cause of the S22 "the image didn't come
@@ -87,7 +102,7 @@ Keyword rules are a backstop and can misfire; each refusal names the rule so it 
 
 ## Readiness (owner-supplied Heavy discovery, 2026-11-16)
 
-### BigLust still images: GPU canary PASSED, Chat/Gallery delivery UNTESTED
+### BigLust still images: LIVE in production (PR #52), Private Chat → Gallery accepted 2026-11-16
 * Verified (read-only, on Heavy): ComfyUI 0.39.0 at `127.0.0.1:8188`, RTX 5060 Ti;
   `CheckpointLoaderSimple` lists exactly one checkpoint, `bigLust_v16.safetensors`; all six nodes
   of `biglust-sdxl-v16-api.json` are installed.
@@ -102,12 +117,13 @@ Keyword rules are a backstop and can misfire; each refusal names the rule so it 
 * Next, owner-gated: the images-only backend release in PR #52 (`release/biglust-images-20261116`,
   on the live S22 release). Steps, backup/rollback and the Private Chat → Gallery canary are in
   `docs/biglust-images-release.md` on that branch. No migration, no frontend, video off.
-* UNTESTED: Chat and Gallery delivery with BigLust; desktop and S22 display.
+* Applied in production by the owner on 2026-11-16 and accepted: Private Chat → Gallery, model
+  `bigLust_v16.safetensors`, 12.34 s. The live Gallery Public-mode lock is NOT deployed yet.
 * UNTESTED, flagged: this PR's inline frontend video (`StoredVideo`, `MediaJobStatus`, Gallery video
   playback and Public lock) has run only in a desktop browser against fakes. It is not in the images
   release and must be tested independently before it ships.
 
-### FramePack-Studio video: adapter written, contract-tested with fakes, NO GPU run yet
+### FramePack-Studio video: one real GPU render on Heavy (canary 3), adapter fixed after it
 * Verified by the owner (read-only `/gradio_api/info` and `/config` on Heavy `127.0.0.1:7863`):
   `/handle_start_button` has 29 inputs in a fixed order; Generation Type choices are Original,
   Original with Endframe, F1, Video, Video with Endframe, Video F1 (default Original); Caching
@@ -175,14 +191,20 @@ Keyword rules are a backstop and can misfire; each refusal names the rule so it 
 
   `<canary job id>` is `fp_studio_job_id` from the canary's FAIL line (likely `0bb4dd05-…`, the newest
   entry). MATCH prints the file, bytes and sha256; REFUSED prints why and copies nothing.
-* Still open: the private route from lumen-api to FP-Studio; the canary itself; Chat/Gallery
-  delivery and playback. `VIDEO_GENERATION_ENABLED` stays false until a real canary passes and the
+* Hardware canary 3 (758c2b3, 2026-11-16) rendered on the GPU: FP-Studio's queue.json has job
+  `0bb4dd05-…` completed with `result` `outputs/261116_095453_817_1084_19.mp4` (836,627 bytes, H.264
+  512×768, 2.43 s). The adapter rejected it because it expected `<uuid>_` names; fixed in 34f10dd.
+* Still open: the unattended private route from the worker to FP-Studio; Chat/Gallery delivery and
+  playback of video on the S22. `VIDEO_GENERATION_ENABLED` stays false until a real canary passes and the
   owner approves.
 
-### Private route to FramePack-Studio (decision needed later)
-ComfyUI already has a working private route (above). FramePack-Studio listens on Heavy's loopback
-`7863`; how lumen-api reaches it is open until the adapter exists. It must stay private, and the
-existing ComfyUI route must not be changed.
+### Private route to FramePack-Studio (owner decision, host step)
+The worker needs an unattended route to Heavy's loopback `7863`. The manual `ssh -L` used for the
+canary asks for a key passphrase and closes, so it can't serve the worker. Recommended: the same
+mechanism that already gives lumen-api `COMFYUI_URL` (`127.0.0.1:18188` on Lumen), with one more
+forward, `127.0.0.1:17863 → Heavy 127.0.0.1:7863`. Then `FRAMEPACK_URL=http://127.0.0.1:17863`.
+It must stay private (loopback on both ends, nothing on a public interface, no SSH or Tailscale
+setting weakened), and the existing ComfyUI route must not be changed.
 
 ### Gated step A: isolated BigLust canary (no service, database or app change)
 On the lumen-api host, from a throwaway checkout of this PR (never the live checkout):
@@ -232,8 +254,28 @@ checkpoint and every node exist.
    Optional: `COMFYUI_T2V_WORKFLOW=/path/wan22_t2v_api.json` exported with "Save (API)" and these
    exact string values: `{{LUMEN_PROMPT}}`, optionally `{{LUMEN_NEGATIVE}}`, `{{LUMEN_SEED}}`,
    `{{LUMEN_FRAMES}}` (4n+1), `{{LUMEN_FPS}}`; output through VideoHelperSuite or SaveVideo as MP4/WebM.
-4. Restart `lumen-api` only. Canary in Private: "animate this" on a generated image, 3 seconds.
-5. Real S22 acceptance (not covered by these tests): progress shows, the clip plays inline in Chat and
+4. Video worker service, with the same user, working directory and environment as lumen-api (copy
+   those lines from `systemctl cat lumen-api`):
+   ```
+   # /etc/systemd/system/lumen-media-worker.service
+   [Unit]
+   Description=Lumen video worker (follows FramePack-Studio jobs)
+   After=network-online.target lumen-api.service
+   [Service]
+   User=<as lumen-api>
+   WorkingDirectory=<live checkout>/backend
+   EnvironmentFile=<as lumen-api>
+   ExecStart=<live checkout>/backend/.venv/bin/python -m lumen.media_worker
+   Restart=always
+   RestartSec=10
+   [Install]
+   WantedBy=multi-user.target
+   ```
+   With `VIDEO_GENERATION_ENABLED=false` it logs "nothing to do" and exits; enable it with video.
+   Optional: `VIDEO_RENDER_BUDGET_SECONDS` (default 14400, max 86400), `VIDEO_POLL_SECONDS` (20).
+5. Restart `lumen-api`, start `lumen-media-worker`. Canary in Private: "animate this" on a generated
+   image, 3 seconds.
+6. Real S22 acceptance (not covered by these tests): progress shows, the clip plays inline in Chat and
    in Gallery, Public hides both.
 
 ## Release gates (not authorized; owner decides each)
@@ -259,6 +301,8 @@ Not production-ready until the S22 tests in step 5 pass.
 
 * Five-minute video (segmentation, continuity, stitching): separate capability.
 * Cancelling a running job from the app.
-* Jobs do not survive an API restart; unfinished ones are marked failed on next use.
-* BigLust filename and a generated image are verified on Heavy. The FramePack-Studio adapter is
-  written against the owner's verified API labels and FP-Studio's source, but has not run on the GPU.
+* Time estimates: none are shown until real render times are measured.
+* The worker frees ComfyUI's VRAM when it submits; if FP-Studio's queue is long, an image request in
+  between can load BigLust again before FP-Studio starts. Not seen yet; watch for out-of-memory.
+* The durable worker, polling and delivery are tested with fakes and the submit/check/download calls
+  against a real Gradio 5.25.2 stand-in; not yet against Heavy.

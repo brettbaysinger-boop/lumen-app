@@ -28,7 +28,8 @@ def video_settings(**overrides):
         comfyui_workflow="/wf/flux.json", image_generation_timeout=60, video_generation_enabled=True,
         framepack_url="http://heavy.test:9000", framepack_api_name="/process", comfyui_t2v_workflow="",
         comfyui_i2v_workflow="", video_default_seconds=5.0, video_max_seconds=10.0, video_fps=16,
-        video_generation_timeout=120, video_max_bytes=50 * 1024 * 1024, video_max_pending_per_user=2)
+        video_generation_timeout=120, video_max_bytes=50 * 1024 * 1024, video_max_pending_per_user=2,
+        video_render_budget_seconds=4 * 3600, video_poll_seconds=20)
     values.update(overrides)
     return SimpleNamespace(**values)
 
@@ -141,7 +142,6 @@ class FakeJobsDb:
 
 class PlanTests(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
-        mj._RECOVERED = True
         self.db = FakeJobsDb()
         self.patch = patch.object(mj, "_service_db", return_value=self.db)
         self.patch.start()
@@ -363,7 +363,7 @@ class DeliveryDb:
             self.message = {"metadata": kwargs["json"]["metadata"]}
         return []
 
-    async def upload_storage(self, bucket, path, content, mime):
+    async def upload_storage(self, bucket, path, content, mime, upsert=False):
         self.uploads.append((bucket, path, mime))
 
     def job_updates(self):
@@ -456,7 +456,6 @@ class JobAwareSupabase(FakeSupabase):
 
 class ChatTurnTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
-        mj._RECOVERED = True
         self.supabase = JobAwareSupabase()
         original = httpx.AsyncClient
         self.patch = patch("lumen.db.httpx.AsyncClient",
@@ -533,7 +532,6 @@ class JobRouteTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(caught.exception.status_code, 403)
 
     async def test_job_status_is_scoped_to_the_signed_in_user(self):
-        mj._RECOVERED = True
         db = FakeJobsDb()
         with patch.object(mj, "_service_db", return_value=db), patch.object(mj, "get_settings", return_value=video_settings()):
             from fastapi import HTTPException

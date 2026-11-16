@@ -121,6 +121,7 @@ class SupabaseRepository:
         path: str,
         content: bytes,
         content_type: str,
+        upsert: bool = False,
     ):
         url = (
             self.base_url.removesuffix("/rest/v1")
@@ -130,7 +131,7 @@ class SupabaseRepository:
             "apikey": self.headers["apikey"],
             "Authorization": self.headers["Authorization"],
             "Content-Type": content_type,
-            "x-upsert": "false",
+            "x-upsert": "true" if upsert else "false",
         }
         async with httpx.AsyncClient(timeout=60) as client:
             response = await client.post(url, headers=headers, content=content)
