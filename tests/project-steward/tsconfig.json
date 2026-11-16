@@ -1,0 +1,16 @@
+{
+  "//": "Compiles the pure lib/project-steward modules + unit tests to CommonJS for node --test.",
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "commonjs",
+    "moduleResolution": "node",
+    "strict": true,
+    "esModuleInterop": true,
+    "resolveJsonModule": true,
+    "skipLibCheck": true,
+    "rootDir": "../..",
+    "types": ["node"],
+    "lib": ["ES2022", "DOM"]
+  },
+  "include": ["./*.test.ts"]
+}
