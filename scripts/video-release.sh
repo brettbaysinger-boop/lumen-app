@@ -201,6 +201,7 @@ backend() {
 backend_rollback() {
   [ "${VIDEO_RELEASE_CONFIRM:-}" = backend-rollback ] || die "Run: VIDEO_RELEASE_CONFIRM=backend-rollback $0 backend-rollback"
   [ -f "$STATE_DIR/backend" ] || die "Nothing recorded to roll back."
+  [ ! -f "$STATE_DIR/hotfix" ] || die "The routing hotfix is applied. First: VIDEO_HOTFIX_CONFIRM=hotfix-rollback scripts/video-routing-hotfix.sh rollback"
   [ ! -f "$STATE_DIR/enable" ] || die "Video is enabled. First: VIDEO_RELEASE_CONFIRM=enable-rollback $0 enable-rollback"
   ! unit_installed || die "The worker unit is installed. First: VIDEO_RELEASE_CONFIRM=worker-rollback $0 worker-rollback"
   restore_files "$(cat "$STATE_DIR/backend")"
