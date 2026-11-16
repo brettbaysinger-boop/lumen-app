@@ -4,7 +4,7 @@
 // element across every view change, the whole 3:2 frame, a reachable message box, no tab bar.
 //   EXPO_PUBLIC_SUPABASE_URL=http://127.0.0.1:54321 EXPO_PUBLIC_SUPABASE_ANON_KEY=test \
 //   EXPO_PUBLIC_LUMEN_API_URL=http://127.0.0.1:8001 npx expo export --platform web
-//   node scripts/test-live-room-browser.cjs            (LIVE_ROOM_SHOTS=dir also saves screenshots)
+//   node scripts/test-animated-live-room-browser.cjs            (LIVE_ROOM_SHOTS=dir also saves screenshots)
 const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path');
 const {chromium}=require(process.env.LUMEN_PLAYWRIGHT_MODULE||'playwright');
 const server=require('./serve-web.cjs').createWebServer(path.resolve('dist'));

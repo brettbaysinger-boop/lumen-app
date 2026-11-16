@@ -138,15 +138,19 @@ Write down what you see for each. If any step restarts the video, that is a FAIL
 
 - Anything on the phone: the native screen, the keyboard inside Android System WebView, the system
   bars, sound, TalkBack. **Full screen on Android 16 in particular**: that the bars hide and the
-  phone rotates is read from the web view's source, not seen on the S22. The native keyboard handling (`KeyboardAvoidingView` around the web view) is
+  phone rotates is read from the web view's source, not seen on the S22. Orientation problems have
+  been reported against react-native-webview 13.x, so treat it as unproven until step 8a passes.
+- `scripts/animated-web-update.sh check` on the Lumen host. The files this PR changes all match the
+  updater's unchanged frontend-only rule (tested in `tests/live-room.test.cjs`), but the read-only
+  `check` itself can only be run there. The native keyboard handling (`KeyboardAvoidingView` around the web view) is
   the least certain part and is step 6.
 - The real avatar. The browser test uses a stand-in WebRTC connection that delivers a 768x512 picture.
 - The cause of the color mismatch (see above).
 
 ## Tests
 
-- `node --test tests/*.test.cjs`: 123 pass (113 before; `tests/live-room.test.cjs` is new).
-- `scripts/test-live-room-browser.cjs` (new; headless Chromium against the web build, at 320x568,
+- `node --test tests/*.test.cjs`: 124 pass (113 before; `tests/live-room.test.cjs` is new).
+- `scripts/test-animated-live-room-browser.cjs` (new; headless Chromium against the web build, at 320x568,
   360x660, 390x844 and 412x915): no tab bar, header / buttons / video / conversation / message box
   inside the window and not overlapping, real buttons, whole 3:2 frame in both views, keyboard-height
   window, Theater and its messages panel, a sideways window, full screen, Back, the account's colors, only the fixed words posted,

@@ -1,6 +1,6 @@
 const {test}=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs'),ts=require('typescript'),vm=require('node:vm');
 // The Live Room (Video Chat + Companion Theater). No device, browser, avatar service or server is used.
-// The rendered layout is checked separately, in a browser, by scripts/test-live-room-browser.cjs.
+// The rendered layout is checked separately, in a browser, by scripts/test-animated-live-room-browser.cjs.
 function load({search='',stored=null,embedded=false,noWindow=false}={}){
   const mod={exports:{}},posted=[],events=[],session=new Map(stored===null?[]:[['lumen.room',stored]]);
   const window=noWindow?undefined:{location:{search},sessionStorage:{getItem:key=>session.get(key)??null,setItem:(key,value)=>session.set(key,value),removeItem:key=>session.delete(key)},
@@ -115,4 +115,17 @@ test('appearance: the account synchronization reports where it stands, and nothi
   assert.equal((theme.match(/from\('user_appearance_preferences'\)/g)||[]).length,2);   // the same one read and one write as before
   assert.match(controls,/Not saved to your account/);assert.match(controls,/Saved to your account/);
   for(const file of ['app/live-video.tsx','lib/live-room.ts','components/LiveRoom.tsx'])assert.doesNotMatch(read(file),/appearance|schemeId|scheme_id/i,file);   // no second theme path through the web view
+});
+test('the guarded web updater accepts this change as it stands: its allowlist is not widened',()=>{
+  const updater=read('scripts/animated-web-update.sh');
+  const pattern=updater.match(/^FRONTEND_ONLY='(.+)'$/m)[1];
+  // Unchanged, character for character: the room's files fit the rule instead of the rule being bent.
+  assert.equal(pattern,String.raw`^(app/|components/|lib/|hooks/|types/|tests/|docs/|scripts/(test-)?(animated[-_][A-Za-z0-9_.-]+|android-refresh\.sh)$)`);
+  const allowed=new RegExp(pattern);
+  for(const file of ['app/(tabs)/_layout.tsx','app/(tabs)/index.tsx','app/live-video.tsx','components/AnimatedCompanion.tsx','components/AppearanceControls.tsx','components/LiveRoom.tsx','docs/live-room.md','lib/live-room.ts','lib/live-video-web.ts','lib/theme-context.tsx','scripts/test-animated-size-component.cjs','scripts/test-animated-live-room-browser.cjs','tests/live-room.test.cjs','tests/live-video-web.test.cjs']){
+    assert.ok(fs.existsSync(file),file);assert.ok(allowed.test(file),`accepted: ${file}`);}
+  // Still refused: the backend, the database, dependencies, native configuration, service scripts, and a browser test under any other name.
+  for(const file of ['backend/app.py','supabase/migrations/20261116000000_x.sql','package.json','package-lock.json','app.json','infra/lumen-web.service','scripts/animated-deploy.sh.bak/x','scripts/lumen-rmc.sh','scripts/serve-web.cjs','scripts/test-live-room-browser.cjs','scripts/install-static-web.sh','.env'])
+    assert.equal(allowed.test(file),false,`refused: ${file}`);
+  assert.equal(fs.existsSync('scripts/test-live-room-browser.cjs'),false);
 });
