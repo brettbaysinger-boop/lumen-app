@@ -1,8 +1,14 @@
 # BigLust SDXL still images: owner-gated backend release (images only)
 
-Status 2026-11-16: **prepared, not run.** Nothing here has touched the live server. Every step below is
-run by the owner. Video stays off; FramePack-Studio is a separate later step; Local Media Studio is
-retired and plays no part.
+Status 2026-11-16: **applied in production by the owner; live acceptance PASSED.** The owner's
+screenshot of desktop web **Private** Chat shows a generated lighthouse image with provider details
+`image · comfyui · bigLust_v16.safetensors · completed · 12.34s` and `Model: bigLust_v16.safetensors`, and
+the owner confirms the same image is in Gallery. The script's own `check`/`apply`/`status` output has not
+been shared here, so it is not quoted. Do not re-run the canary or re-apply. S22 phone check: casual, when
+the owner next uses the phone. Video stays off; FramePack-Studio is the next, separate step.
+
+Still open, not fixed by this release: **the live Gallery tab can still show private media in Public
+mode.** The Public lock is in PR #51's frontend, which is not deployed.
 
 Evidence so far: the owner's isolated GPU canary (`scripts/canary-comfyui-image.py --run-gpu`) PASSED on
 Heavy through the live `COMFYUI_URL` route: `bigLust_v16.safetensors`, 832x1216, about 23 s.
