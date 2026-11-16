@@ -8,7 +8,8 @@ writes the MP4 locally. It never calls end_process, clear or cancel endpoints, a
 touch Supabase, Chat, Gallery, lumen-api or any service setting. Video stays off in Lumen.
 
   python scripts/canary-framepack-studio.py --run-gpu --url http://127.0.0.1:7863 \
-      --image /tmp/lumen-canary/lumen-canary.png --seconds 3 --out /tmp/lumen-fps-canary
+      --image /tmp/lumen-canary/lumen-canary.png --seconds 3 --out /tmp/lumen-fps-canary \
+      [--comfy-url http://127.0.0.1:<comfy port>]   # release ComfyUI's VRAM first
 
 Needs a Python with httpx and pydantic-settings (the lumen backend virtualenv has both).
 Prints a JSON summary: FP-Studio job id, latency, size, sha256 and the file written.
@@ -27,7 +28,7 @@ PROMPT = "gentle camera push-in, waves rolling against the rocks, the lighthouse
 
 
 async def run(args) -> int:
-    from lumen.video_providers import FramePackStudioProvider
+    from lumen.video_providers import FramePackStudioProvider, free_comfy_memory
     settings = SimpleNamespace(framepack_url=args.url, framepack_api_name="/handle_start_button",
                                video_generation_timeout=args.timeout)
     provider = FramePackStudioProvider(settings)
@@ -36,6 +37,10 @@ async def run(args) -> int:
                                                       "contract this adapter was written for; run "
                                                       "check-framepack-endpoint.py --api-name /handle_start_button"}))
         return 1
+    if args.comfy_url:
+        # Same step Lumen's video jobs take: ComfyUI unloads its models (BigLust) so FramePack has the
+        # 16 GB GPU. Nothing is deleted; the next image request loads the checkpoint again.
+        await free_comfy_memory(args.comfy_url)
     image = Path(args.image).read_bytes()
     mime = "image/png" if image[:8] == b"\x89PNG\r\n\x1a\n" else "image/jpeg"
 
@@ -66,6 +71,7 @@ def main() -> int:
     parser.add_argument("--prompt", default=PROMPT)
     parser.add_argument("--negative", default="")
     parser.add_argument("--timeout", type=int, default=900)
+    parser.add_argument("--comfy-url", default="", help="ComfyUI URL to release VRAM first (as Lumen's video jobs do)")
     args = parser.parse_args()
     if not args.run_gpu:
         print("Refusing: add --run-gpu to confirm one GPU job (owner-approved canary only).")

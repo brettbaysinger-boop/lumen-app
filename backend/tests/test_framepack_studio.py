@@ -280,6 +280,49 @@ class StudioCanaryScriptTests(unittest.TestCase):
         self.assertEqual(result.returncode, 2)
 
 
+class StudioCanaryRunTests(unittest.IsolatedAsyncioTestCase):
+    async def test_canary_end_to_end_against_fake_studio(self):
+        import importlib.util, io, tempfile
+        from contextlib import redirect_stdout
+        from pathlib import Path
+        from types import SimpleNamespace
+        script = Path(__file__).resolve().parents[2] / "scripts" / "canary-framepack-studio.py"
+        spec = importlib.util.spec_from_file_location("fps_canary", script)
+        canary = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(canary)
+        fake = FakeStudio()
+        freed = []
+
+        def handler(request):
+            if request.url.host == "comfy.test":
+                freed.append(request.url.path)
+                return httpx.Response(200, json={})
+            if request.url.path.startswith("/gradio_api/file="):
+                fake.calls.append(("GET", request.url.path))
+                return httpx.Response(200, content=b"\x00\x00\x00\x18ftypmp42" + b"0" * 64)
+            return fake(request)
+
+        original = httpx.AsyncClient
+        with tempfile.TemporaryDirectory() as tmp:
+            image = Path(tmp) / "still.png"
+            image.write_bytes(b"\x89PNG\r\n\x1a\n" + b"0" * 32)
+            args = SimpleNamespace(url="http://127.0.0.1:17863", image=str(image), seconds=3.0, out=tmp,
+                                   prompt="waves", negative="", timeout=60, comfy_url="http://comfy.test:18188")
+            out = io.StringIO()
+            with patch("lumen.video_providers.httpx.AsyncClient",
+                       side_effect=lambda **kw: original(transport=httpx.MockTransport(handler), **kw)), \
+                    redirect_stdout(out):
+                code = await canary.run(args)
+            summary = json.loads(out.getvalue())
+            self.assertEqual(code, 0, out.getvalue())
+            self.assertEqual(summary["result"], "PASS")
+            self.assertEqual(summary["fp_studio_job_id"], JOB)
+            self.assertTrue((Path(tmp) / "lumen-fps-canary.mp4").exists())
+        self.assertEqual(freed, ["/free"])
+        self.assertEqual(fake.start_data[0], "Original")
+        self.assertFalse(any("end_process" in p for _, p in fake.calls))
+
+
 class OldFramePackTimeoutTests(unittest.IsolatedAsyncioTestCase):
     async def test_old_provider_timeout_calls_no_global_stop(self):
         from tests.test_media_generation import FRAMEPACK_PARAMETERS
