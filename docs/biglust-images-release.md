@@ -9,15 +9,15 @@ Heavy through the live `COMFYUI_URL` route: `bigLust_v16.safetensors`, 832x1216,
 
 ## What this release is
 
-Branch `release/biglust-images-20261116`, one commit `0bf2394` on top of the live S22 release `7f63d52`
-(PR #50 / R4). Backend only:
+Branch `release/biglust-images-20261116`: code commits `0bf2394` and `c6a6934` (the owner's content
+directive) on top of the live S22 release `7f63d52` (PR #50 / R4). Backend only:
 
 | File | Change |
 | --- | --- |
 | `backend/workflows/biglust-sdxl-v16-api.json` | new SDXL API workflow (checkpoint, prompt, negative, seed sentinels) |
 | `backend/lumen/images.py` | fills `{{LUMEN_CHECKPOINT}}` / `{{LUMEN_NEGATIVE}}`; refuses if the checkpoint is unset; provenance names the checkpoint |
 | `backend/lumen/config.py` | two settings: `comfyui_checkpoint`, `comfyui_negative_prompt` (anti-minor terms always kept) |
-| `backend/lumen/media_safety.py` | hard blocks: minors, real identifiable people, non-consent |
+| `backend/lumen/media_safety.py` | narrow refusals only (see "Content rules" below); the prompt is never rewritten |
 | `backend/lumen/companion_images.py`, `backend/lumen/main.py` | run that safety check before any provider call (422 with a plain refusal) |
 | tests, `scripts/canary-comfyui-image.py`, `scripts/check-comfyui-image-workflow.py` | tests and the read-only/canary tools |
 
@@ -34,6 +34,21 @@ COMFYUI_CHECKPOINT=bigLust_v16.safetensors
 
 `COMFYUI_URL` stays exactly as it is (the live route that works). `VIDEO_GENERATION_ENABLED` does not exist
 in this release, so video is off by construction.
+
+## Content rules in this release (owner directive 2026-11-16)
+
+Adult nudity and erotic images of consenting fictional adults are generated as asked: no NSFW
+filter, no cloud moderation, no safe mode, no prompt rewrite. A request is refused only when it has
+a sexual/nude word **and** a minor signal (minor words, an age under 18, school-child framing,
+"barely legal", "young-looking"), a real identifiable person (celebrity/famous, lookalike, deepfake,
+face swap, "real person"/irl, "photo of my ...", "my" + a relationship), or stated non-consent (rape,
+non-consensual, drugged, unconscious, coercion, hidden camera, voyeur...). Full list and what was
+narrowed: `docs/local-media-generation.md` on PR #51.
+
+Only remaining transformation: `{{LUMEN_NEGATIVE}}` gets `COMFYUI_NEGATIVE_PROMPT`, whose default is
+quality terms plus "child, minor, underage, teen, childlike body". This release does not set it in the
+`.env`, so the default applies. Known false-positive risk: "my girlfriend"/"my wife" also blocks a
+request meant for the Lumen companion itself (owner decision).
 
 ## Steps (owner, on the Lumen host)
 
@@ -87,7 +102,8 @@ such as "send me a selfie"; that fix is in PR #51's `runtime.py` and is not part
    it should say `Model: bigLust_v16.safetensors`.
 2. Open Gallery in Private: the same image is there.
 3. Repeat step 1 on the S22 (build 7f63d520f561). Chat overflow and Live Video should behave as before.
-4. Safety: `Draw a nude teenager` must be refused with a plain message and no ComfyUI job.
+4. Content rules: `Draw a nude teenager` must be refused with a plain message and no ComfyUI job;
+   an adult request such as `Draw a nude elf woman bathing in a forest spring` must be generated as asked.
 5. Public mode: `Draw a lighthouse` must say image creation is paused in Public.
 
 If anything is wrong, roll back (step 4) and send me the output of `status` and the lumen-api log lines
@@ -106,7 +122,7 @@ from the canary window.
 
 ## How this was tested
 
-- Backend suite on the release branch: 663 passed.
+- Backend suite on the release branch: 666 passed.
 - `scripts/test-biglust-images-release.sh` (offline, stubs for sudo/systemctl/curl, a fake live checkout
   at `7f63d52`): 32/32 pass. It covers check passing, refusals without or with the wrong confirmation,
   a hand-edited live file (refused, untouched), systemd overriding the ComfyUI keys (refused), apply

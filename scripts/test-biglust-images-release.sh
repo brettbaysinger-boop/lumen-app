@@ -19,7 +19,7 @@ cp "$SRC/scripts/biglust-images-release.sh" "$T/release/scripts/"
 git -C "$T/release" add scripts/biglust-images-release.sh
 git -C "$T/release" -c user.name=t -c user.email=t@t commit -qm "script under test" --allow-empty
 BASE=$(git -C "$T/release" rev-parse 7f63d520f56133f09dc7e2bdd2b92c31d0e484b7)
-CODE=$(git -C "$T/release" rev-parse 0bf23942e6c5a297f530e2b7f345b0bab768a297)
+CODE=$(git -C "$T/release" rev-parse c6a6934b9534ae02ddc283ca264c105a89502118)
 
 # The fake live checkout: the S22 release with a .env that already has an older ComfyUI workflow.
 git clone -q "$SRC" "$T/live"; git -C "$T/live" checkout -q --detach "$BASE"
