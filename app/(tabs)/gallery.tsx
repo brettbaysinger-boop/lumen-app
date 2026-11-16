@@ -14,10 +14,13 @@ import {
   useWindowDimensions,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Plus, X, Trash2, Image as ImageIcon, Video, Sparkles } from 'lucide-react-native';
+import { Plus, X, Trash2, Image as ImageIcon, Video, Sparkles, Lock } from 'lucide-react-native';
 import { supabase } from '@/lib/supabase';
 import { useSignedUrl } from '@/lib/media';
 import { useTheme } from '@/lib/theme-context';
+import { usePrivacyMode } from '@/lib/privacy-mode';
+import { PrivacyToggle } from '@/components/PrivacyToggle';
+import { StoredVideo } from '@/components/ChatAttachments';
 import { Spacing, Radius, Typography, type ExtendedThemeColors } from '@/lib/theme';
 import type { Companion, GalleryItem, GalleryCategory } from '@/types/database';
 
@@ -27,6 +30,12 @@ const CATEGORIES: Array<{ key: GalleryCategory | 'all'; label: string }> = [
   { key: 'user_showed', label: 'Things You Showed Me' },
   { key: 'companion_sent', label: 'Images I Sent Back' },
 ];
+
+function storagePath(item: GalleryItem): string | null {
+  const metadata = item.metadata ?? {};
+  if (typeof metadata.storage_path === 'string') return metadata.storage_path;
+  return !/^https?:\/\//i.test(item.url) ? item.url : null;
+}
 
 /**
  * Gallery records may contain an external URL or a private chat-media path.
@@ -89,6 +98,9 @@ export default function GalleryScreen() {
   const [newCategory, setNewCategory] = useState<GalleryCategory>('moment');
   const [newMediaType, setNewMediaType] = useState<'image' | 'video'>('image');
   const [previewItem, setPreviewItem] = useState<GalleryItem | null>(null);
+  // Gallery holds private photos and generated media: nothing is read or shown unless Private is on.
+  const privacy = usePrivacyMode();
+  const isPrivate = privacy.loaded && privacy.mode === 'private';
 
   const loadCompanion = useCallback(async () => {
     const { data, error: err } = await supabase
@@ -101,17 +113,18 @@ export default function GalleryScreen() {
   }, []);
 
   const loadItems = useCallback(async () => {
-    if (!companion) return;
+    if (!companion || !isPrivate) return;
     let query = supabase.from('gallery_items').select('*')
       .eq('companion_id', companion.id).order('created_at', { ascending: false });
     if (filterCategory !== 'all') query = query.eq('category', filterCategory);
     const { data, error: err } = await query;
     if (err) { setError(err.message); return; }
     setItems((data as GalleryItem[]) || []);
-  }, [companion, filterCategory]);
+  }, [companion, filterCategory, isPrivate]);
 
   useEffect(() => { loadCompanion(); }, [loadCompanion]);
   useEffect(() => { if (companion) loadItems(); }, [companion, loadItems]);
+  useEffect(() => { if (!isPrivate) { setItems([]); setPreviewItem(null); setShowAddModal(false); } }, [isPrivate]);
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true); await loadItems(); setRefreshing(false);
@@ -141,6 +154,19 @@ export default function GalleryScreen() {
     return (
       <SafeAreaView style={styles.loadingContainer} edges={['top']}>
         <ActivityIndicator size="large" color={c.primary[400]} />
+      </SafeAreaView>
+    );
+  }
+
+  if (!isPrivate) {
+    return (
+      <SafeAreaView style={styles.container} edges={['top']}>
+        <View style={styles.emptyState} accessibilityLabel="Gallery is hidden while Public mode is on">
+          <Lock color={c.neutral[500]} size={40} strokeWidth={1.5} />
+          <Text style={styles.emptyTitle}>Gallery is hidden in 👥 Public</Text>
+          <Text style={styles.emptySubtitle}>Your photos, images and videos stay private. Switch to 🔒 Private to see them.</Text>
+          <View style={{ marginTop: Spacing.md }}><PrivacyToggle c={c} /></View>
+        </View>
       </SafeAreaView>
     );
   }
@@ -277,6 +303,9 @@ export default function GalleryScreen() {
             </View>
             {previewItem?.media_type === 'image' ? (
               <GalleryImage item={previewItem} style={styles.previewImage} resizeMode="contain" loadingColor={c.primary[400]} />
+            ) : previewItem && storagePath(previewItem) ? (
+              <StoredVideo path={storagePath(previewItem)!} width={Math.min(screenWidth - Spacing.lg * 2, 640)}
+                height={Math.min(screenWidth - Spacing.lg * 2, 640)} colors={c} />
             ) : (
               <View style={[styles.previewImage, styles.videoPlaceholder]}>
                 <Video color={c.neutral[400]} size={48} strokeWidth={1.5} />

@@ -50,6 +50,26 @@ class Settings(BaseSettings):
     comfyui_workflow: str = ""
     image_generation_timeout: int = Field(default=300, ge=30, le=1800)
 
+    # Short video generation (Private mode only). Off until the owner enables it
+    # on the host. Heavy's endpoints are reached only by this backend; clients
+    # never receive them. Five-minute video is a separate, later capability.
+    video_generation_enabled: bool = False
+    # Image-to-video: the existing FramePack Gradio app on Heavy (demo_gradio.py).
+    framepack_url: str = ""
+    framepack_api_name: str = "/process"
+    # Optional ComfyUI API-format workflows. A Wan2.2 text-to-video workflow is
+    # preferred for text requests when set; otherwise Lumen makes a still with
+    # the image workflow and animates it with FramePack.
+    comfyui_t2v_workflow: str = ""
+    # Optional ComfyUI image-to-video workflow, used instead of FramePack when set.
+    comfyui_i2v_workflow: str = ""
+    video_default_seconds: float = Field(default=5.0, ge=1.0, le=10.0)
+    video_max_seconds: float = Field(default=10.0, ge=1.0, le=10.0)
+    video_fps: int = Field(default=16, ge=8, le=30)
+    video_generation_timeout: int = Field(default=1800, ge=60, le=7200)
+    video_max_bytes: int = Field(default=50 * 1024 * 1024, ge=1024 * 1024, le=50 * 1024 * 1024)
+    video_max_pending_per_user: int = Field(default=2, ge=1, le=10)
+
     # Memory backend selector. "supabase" (default) keeps the existing Lumen
     # memory tables as the only store. "rmc" routes chat memory reads and
     # explicit saves to the installed Raialume Memory Core through its

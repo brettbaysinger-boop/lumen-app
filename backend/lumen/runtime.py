@@ -13,6 +13,10 @@ from .vision import load_images, VisionError
 from .image_actions import extract_image_action, extract_standalone_image_action, ImageActionStreamFilter
 from .companion_images import create_companion_image
 from .image_response import image_reply, clean_image_intro
+from .media_jobs import (image_request, image_subject, plan_video_job, record_video_job,
+                         start_video_job, video_request)
+from .image_actions import ImageAction
+from .media_safety import check_media_prompt, refusal_text
 from .stream_guard import LegacyImageJSONGuard
 from .natural_memory_updates import natural_memory_update
 from .memory_turn_context import memory_turn_context
@@ -103,7 +107,22 @@ class CognitionRuntime:
                 "is saved, and do not guess what was saved."})
         vision_used = False
         action = None
-        if attachments:
+        # Short video jobs (Private only). Planning never runs GPU work; the job starts
+        # after the reply is saved and delivers the clip to this message later.
+        video_plan = None
+        if (not document_id and not practice and getattr(self, "privacy_mode", "private") == "private"
+                and video_request(user_message)):
+            if emit:
+                await emit({"type": "activity", "text": "Getting a video ready…"})
+            planned = await plan_video_job(
+                self.settings, privacy_mode="private", user_id=self.user_id, companion=companion,
+                conversation_id=conversation_id, user_message=user_message, attachments=attachments,
+                recent=recent)
+            video_plan = planned.plan
+            action = {"content": planned.reply, "model": "media-job"}
+        if action:
+            messages.append({"role": "user", "content": user_message})
+        elif attachments:
             model = companion.get("conversation_model") or self.settings.conversation_model
             if emit:
                 await emit({"type": "activity", "text": "Checking photo support…"})
@@ -277,6 +296,36 @@ class CognitionRuntime:
             ):
                 result["content"] = clean_image_intro(result["content"])
 
+            # Small local models sometimes answer a clear picture request with prose
+            # ("the image didn't come through") and no action. Honour the request.
+            if (image_action is None and not attachments
+                    and getattr(self, "privacy_mode", "private") == "private"
+                    and image_request(user_message)):
+                image_action = ImageAction(prompt=user_message.strip()[:1000],
+                                           subject=image_subject(user_message))
+                visible = ""
+
+            if image_action is not None and (
+                getattr(self, "privacy_mode", "private") != "private"
+            ):
+                # Public mode never starts GPU work, even if the model asks for it.
+                result["content"] = (clean_image_intro(visible)
+                                     or "Let's save picture-making for when we're back in 🔒 Private.")
+                image_action = None
+            if image_action is not None and image_action.kind == "video":
+                planned = await plan_video_job(
+                    self.settings, privacy_mode="private", user_id=self.user_id, companion=companion,
+                    conversation_id=conversation_id, user_message=user_message,
+                    prompt=image_action.prompt, subject=image_action.subject)
+                video_plan = planned.plan
+                intro = clean_image_intro(visible)
+                result["content"] = f"{intro}\n\n{planned.reply}" if intro else planned.reply
+                image_action = None
+            if image_action is not None:
+                verdict = check_media_prompt(image_action.prompt)
+                if not verdict.allowed:
+                    result["content"] = refusal_text(verdict)
+                    image_action = None
             if image_action is not None:
                 if emit:
                     await emit({
@@ -310,6 +359,15 @@ class CognitionRuntime:
                         (companion_image_metadata or {}).get('image_model','ComfyUI workflow'),image_status,
                         time.perf_counter()-image_started,provider=setting(self.settings,'image_provider','comfyui'),
                         endpoint=setting(self.settings,'comfyui_url')))
+
+        if video_plan is not None:
+            try:
+                await record_video_job(self.settings, video_plan)
+            except Exception:
+                logging.getLogger(__name__).exception("Could not record the video job")
+                video_plan = None
+                result["content"] = ("I couldn't start the video because video jobs aren't set up "
+                                     "on this Lumen server yet.")
 
         if emit and result.get("model") not in (
             "explicit-memory-command", "memory-recall"
@@ -381,8 +439,10 @@ class CognitionRuntime:
             "tokens_in": result["tokens_in"],
             "tokens_out": result["tokens_out"],
             "latency_ms": result["latency_ms"],
-            "metadata": {**(companion_image_metadata or {}), "provider_requests": provider_requests, "provider": provider.name, "runtime": "v0.1", "memory_backend": ("rmc" if rmc_memory is not None else "supabase"), "memory_status": memory_status, "memory_subject": saved_subject, "timings_ms": result.get("timings_ms", {}), "memory_recall_attribute": action.get("memory_recall_attribute") if action else None, "memory_update_proposal": {**action["memory_update_proposal"], "source_message_id": user_row["id"]} if action and action.get("memory_update_proposal") else None, "memory_correction_pending": action.get("memory_correction_pending") if action else None, "memory_revision": action.get("memory_revision") if action else None, "my_day_item": action.get("item") if action else None, "unstuck_draft": action.get("unstuck_draft") if action else None, "pending_reminder": action.get("pending_reminder") if action else None, "web_search": action.get("web_search") if action else None, "goal_session": action.get("goal_session") if action else None, "goal_summary_method": action.get("goal_summary_method") if action else None, "vision_used": vision_used, "document_sources": action.get("document_sources") if action else None, "document_action_draft": action.get("document_action_draft") if action else None, "document_work_context": {**action["document_work_context"], "request_message_id": user_row["id"]} if action and action.get("document_work_context") else None},
+            "metadata": {**(companion_image_metadata or {}), **({"media_job": video_plan.message_metadata()} if video_plan else {}), "provider_requests": provider_requests, "provider": provider.name, "runtime": "v0.1", "memory_backend": ("rmc" if rmc_memory is not None else "supabase"), "memory_status": memory_status, "memory_subject": saved_subject, "timings_ms": result.get("timings_ms", {}), "memory_recall_attribute": action.get("memory_recall_attribute") if action else None, "memory_update_proposal": {**action["memory_update_proposal"], "source_message_id": user_row["id"]} if action and action.get("memory_update_proposal") else None, "memory_correction_pending": action.get("memory_correction_pending") if action else None, "memory_revision": action.get("memory_revision") if action else None, "my_day_item": action.get("item") if action else None, "unstuck_draft": action.get("unstuck_draft") if action else None, "pending_reminder": action.get("pending_reminder") if action else None, "web_search": action.get("web_search") if action else None, "goal_session": action.get("goal_session") if action else None, "goal_summary_method": action.get("goal_summary_method") if action else None, "vision_used": vision_used, "document_sources": action.get("document_sources") if action else None, "document_action_draft": action.get("document_action_draft") if action else None, "document_work_context": {**action["document_work_context"], "request_message_id": user_row["id"]} if action and action.get("document_work_context") else None},
         })
+        if video_plan is not None:
+            start_video_job(self.settings, video_plan, assistant_row["id"])
         if companion_image_metadata:
             image_path = companion_image_metadata["attachments"][0]["path"]
             gallery_id = str(uuid5(
@@ -517,7 +577,9 @@ When you decide to create one, write a short natural reply followed by
 exactly one image action in this format:
 <lumen_image_action>{{"action":"generate_image","action_input":"A detailed visual description","subject":"self"}}</lumen_image_action>
 Use subject="self" only when depicting your own appearance, and
-subject="other" for other subjects. Your saved Appearance defines
+subject="other" for other subjects. For a short video clip (a few seconds), use
+"action":"generate_video" with a description of the scene and its motion. The
+video is made in the background and appears later; never claim it is ready. Your saved Appearance defines
 your visual identity. Do not invent conflicting identifying traits.
 Never print raw action JSON outside these tags.
 Never claim an image was created before the backend confirms success.

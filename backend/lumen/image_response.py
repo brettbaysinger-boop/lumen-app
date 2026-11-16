@@ -13,7 +13,7 @@ _CREATION_CLAIM = re.compile(
 )
 
 _ACTION_JSON = re.compile(
-    r'\{[^{}]{0,4096}"action"\s*:\s*"generate_image"[^{}]*\}',
+    r'\{[^{}]{0,4096}"action"\s*:\s*"generate_(?:image|video)"[^{}]*\}',
     re.IGNORECASE,
 )
 

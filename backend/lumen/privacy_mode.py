@@ -25,6 +25,7 @@ from typing import Literal
 from .db import SupabaseRepository
 from .documents import document_command
 from .goal_actions import save_session_request
+from .media_jobs import video_request
 from .memory import is_memory_recall, memory_request
 from .my_day import parse_action
 from .runtime import CognitionRuntime
@@ -67,6 +68,7 @@ DISCREET_REPLIES = {
     "my_day": "Let's look at your plans when it's just us. Switch to 🔒 Private and I'll read them out.",
     "practice": "I'll save practice sessions once we're back in 🔒 Private.",
     "private_data": "I'd rather keep that between us for now. Ask me again in 🔒 Private.",
+    "media": "I'll make pictures and videos once we're back in 🔒 Private.",
 }
 
 PUBLIC_GUIDANCE = """
@@ -81,7 +83,7 @@ private life, relationships, health, money, location, plans or anything they tol
 If the user asks for something personal, answer in one short, kind line without hinting at the
 content, and offer to pick it up when they switch to Private.
 Do not announce Public mode on every turn; mention it only when it explains a choice.
-Do not create images in this mode.
+Do not create images or videos in this mode.
 """
 
 
@@ -182,6 +184,8 @@ def private_request_kind(message: str, companion_name: str, document_id: str | N
         return "memory_recall"
     if save_session_request(message, companion_name):
         return "practice"
+    if video_request(message):
+        return "media"
     try:
         command = parse_action(message, "UTC", companion_name=companion_name)
     except Exception:

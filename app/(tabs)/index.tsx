@@ -70,7 +70,7 @@ import { respondToMessage, generateImage, isImageRequest } from '@/lib/cognition
 import { EffortControl } from '@/components/EffortControl';
 import { imagePromptFromConfirmation } from '@/lib/image-followup';
 import { pickImages, uploadImage, removeStoredFiles, MediaError, type PickedImage } from '@/lib/media';
-import { MessageImages, PendingAttachments, readAttachments } from '@/components/ChatAttachments';
+import { MediaJobStatus, MessageImages, PendingAttachments, readAttachments } from '@/components/ChatAttachments';
 import { recordMicrophone, transcribeRecording, type RecordingHandle } from '@/lib/recording';
 import { ConversationList, type ConversationListHandle } from '@/components/ConversationList';
 import { useTheme } from '@/lib/theme-context';
@@ -874,6 +874,7 @@ export default function ChatScreen() {
             >
               {!!item.metadata?.document_title && <Text style={{ color: colors.primary[300], marginBottom: 8 }}>Document: {String(item.metadata.document_title)}</Text>}
               <MessageImages attachments={readAttachments(item.metadata)} colors={colors} />
+              {item.role === 'assistant' && <MediaJobStatus metadata={item.metadata} colors={colors} />}
               <ChatText
                 content={item.content}
                 citations={item.role === 'assistant' ? item.metadata?.web_search : undefined}
