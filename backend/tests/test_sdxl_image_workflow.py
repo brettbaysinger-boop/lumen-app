@@ -151,3 +151,19 @@ class CanaryScriptTests(unittest.TestCase):
         header = b"\x89PNG\r\n\x1a\n" + b"\x00\x00\x00\x0dIHDR" + (832).to_bytes(4, "big") + (1216).to_bytes(4, "big")
         self.assertEqual(canary.png_size(header), (832, 1216))
         self.assertIsNone(canary.png_size(b"not a png"))
+
+
+class CanaryEnvFileTests(unittest.TestCase):
+    def test_reads_comfyui_url_from_env_file_without_printing_it(self):
+        import importlib.util, tempfile
+        spec = importlib.util.spec_from_file_location("canary", ROOT / "scripts" / "canary-comfyui-image.py")
+        canary = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(canary)
+        with tempfile.NamedTemporaryFile("w", suffix=".env", delete=False) as handle:
+            handle.write("IMAGE_PROVIDER=comfyui\nexport COMFYUI_URL='http://private.test:8188'\n")
+        self.assertEqual(canary.env_value(handle.name, "COMFYUI_URL"), "http://private.test:8188")
+        result = subprocess.run([sys.executable, str(ROOT / "scripts" / "canary-comfyui-image.py"),
+                                 "--env-file", handle.name, "--workflow", str(WORKFLOW),
+                                 "--checkpoint", CHECKPOINT, "--out", "/tmp/x"], capture_output=True, text=True, timeout=30)
+        self.assertEqual(result.returncode, 2)            # still refuses without --run-gpu
+        self.assertNotIn("private.test", result.stdout + result.stderr)

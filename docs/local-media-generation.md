@@ -63,12 +63,12 @@ Keyword checks are a backstop, not a classifier.
   of `biglust-sdxl-v16-api.json` are installed.
 * Settings: `COMFYUI_WORKFLOW=<checkout>/backend/workflows/biglust-sdxl-v16-api.json`,
   `COMFYUI_CHECKPOINT=bigLust_v16.safetensors`. No other checkpoint is needed.
-* UNTESTED: any generation with this workflow; the route from the lumen-api host to Heavy (ComfyUI
-  answers on Heavy's loopback; the old `COMFYUI_URL` pointed at a LAN address); Chat and Gallery
-  delivery; desktop and S22 display.
-* Worth checking first (read-only, on the lumen-api host): `curl -sS -m 5 "$COMFYUI_URL/system_stats"`
-  with the live `COMFYUI_URL`. If ComfyUI now listens only on loopback, today's live image path
-  cannot reach it either, which would also explain failed image requests.
+* Route verified (owner, from the lumen-api host): lumen-api's existing private `COMFYUI_URL`
+  answers `/system_stats` with ComfyUI 0.39.0. It is reused as is; no new ComfyUI route is needed.
+  The live backend has `COMFYUI_URL` and `COMFYUI_WORKFLOW` set, `COMFYUI_CHECKPOINT` not yet set
+  (the current workflow does not need it; the BigLust one does).
+* UNTESTED: any generation with the BigLust workflow; Chat and Gallery delivery; desktop and S22
+  display.
 
 ### FramePack video: NOT READY
 * Verified: a FramePack-Studio Gradio app on Heavy `127.0.0.1:7863`. It has no `/process`; its
@@ -84,26 +84,20 @@ Keyword checks are a backstop, not a classifier.
   written against that file, then tested with one short canary.
 * UNTESTED: everything about video generation, delivery and playback.
 
-### Private route from lumen-api to Heavy (decision needed)
-Both services bind Heavy's loopback, and must stay private. Options:
-1. **SSH local forward from the lumen-api host** (recommended: only that host gets access):
-   `ssh -N -L 127.0.0.1:18188:127.0.0.1:8188 -L 127.0.0.1:17863:127.0.0.1:7863 <user>@aiLumen-llm-heavy`,
-   later as a supervised service. Lumen then uses `http://127.0.0.1:18188` / `:17863`.
-2. Tailscale Serve on Heavy (tailnet-only HTTPS). Simpler, but every tailnet device could reach
-   unauthenticated ComfyUI/FramePack.
-Neither is set up by this PR. A persistent tunnel is a service change: owner go-ahead first.
+### Private route to FramePack-Studio (decision needed later)
+ComfyUI already has a working private route (above). FramePack-Studio listens on Heavy's loopback
+`7863`; how lumen-api reaches it is open until the adapter exists. It must stay private, and the
+existing ComfyUI route must not be changed.
 
 ### Gated step A: isolated BigLust canary (no service, database or app change)
 On the lumen-api host, from a throwaway checkout of this PR (never the live checkout):
 ```bash
 git clone --branch feat/local-media-generation-20261116 https://github.com/brettbaysinger-boop/lumen-app /tmp/lumen-pr51
-ssh -N -L 127.0.0.1:18188:127.0.0.1:8188 <user>@aiLumen-llm-heavy &   # temporary, foreground job
-curl -sS -m 5 http://127.0.0.1:18188/system_stats                          # read-only reachability
 cd /tmp/lumen-pr51 && <live-checkout>/backend/.venv/bin/python scripts/canary-comfyui-image.py --run-gpu \
-  --url http://127.0.0.1:18188 --workflow backend/workflows/biglust-sdxl-v16-api.json \
+  --env-file <live-checkout>/backend/.env --workflow backend/workflows/biglust-sdxl-v16-api.json \
   --checkpoint bigLust_v16.safetensors --out /tmp/lumen-canary
-kill %1
 ```
+It uses lumen-api's existing `COMFYUI_URL` (read from its `.env`, never printed or changed).
 PASS means one 832×1216 PNG whose model is `bigLust_v16.safetensors`. It runs one GPU job on Heavy
 (about 30 SDXL steps) and writes only `/tmp/lumen-canary/lumen-canary.png`. Rollback: none needed;
 delete `/tmp/lumen-pr51` and `/tmp/lumen-canary`. Chat/Gallery delivery is tested later, after the

@@ -3,11 +3,11 @@
 
 Runs ONE generation on the GPU (owner-approved step only) and writes the PNG to a local folder.
 It does not touch Supabase, Chat, Gallery, the running lumen-api or any service. Run it from
-the backend virtualenv on the machine that hosts lumen-api, against the private route to
-ComfyUI (e.g. an SSH tunnel to Heavy's loopback 8188):
+the backend virtualenv on the machine that hosts lumen-api, through the same private
+COMFYUI_URL that lumen-api already uses (read from its .env, never printed):
 
   backend/.venv/bin/python scripts/canary-comfyui-image.py --run-gpu \
-      --url http://127.0.0.1:18188 --workflow backend/workflows/biglust-sdxl-v16-api.json \
+      --env-file <live checkout>/backend/.env --workflow backend/workflows/biglust-sdxl-v16-api.json \
       --checkpoint bigLust_v16.safetensors --out /tmp/lumen-canary
 Prints a JSON summary: checkpoint (provenance), latency, size, PNG dimensions and sha256.
 """
@@ -23,6 +23,16 @@ from types import SimpleNamespace
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "backend"))
 
 PROMPT = "a lighthouse on a rocky coast at dusk, warm light in the window, photographic, detailed"
+
+
+def env_value(path: str, key: str) -> str:
+    for line in Path(path).read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if line.startswith("export "):
+            line = line[7:].lstrip()
+        if line.startswith(f"{key}="):
+            return line.split("=", 1)[1].strip().strip("'\"")
+    return ""
 
 
 def png_size(data: bytes) -> tuple[int, int] | None:
@@ -58,7 +68,9 @@ async def run(args) -> int:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--run-gpu", action="store_true", help="required: confirms one GPU generation is intended")
-    parser.add_argument("--url", required=True)
+    url = parser.add_mutually_exclusive_group(required=True)
+    url.add_argument("--url")
+    url.add_argument("--env-file", help="read COMFYUI_URL from lumen-api's .env (the value is never printed)")
     parser.add_argument("--workflow", required=True)
     parser.add_argument("--checkpoint", required=True)
     parser.add_argument("--out", required=True)
@@ -68,6 +80,11 @@ def main() -> int:
     if not args.run_gpu:
         print("Refusing: add --run-gpu to confirm one GPU generation (owner-approved canary only).")
         return 2
+    if args.env_file:
+        args.url = env_value(args.env_file, "COMFYUI_URL")
+        if not args.url:
+            print("Refusing: COMFYUI_URL is not set in --env-file.")
+            return 2
     return asyncio.run(run(args))
 
 
