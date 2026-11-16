@@ -6,7 +6,7 @@ function compile(file,stubs={}){const mod=new Module(require('node:path').resolv
 let windowSize={width:1920,height:1000};
 const stored=new Map();globalThis.localStorage={getItem:key=>stored.get(key)??null,setItem:(key,value)=>stored.set(key,String(value))};
 const native={Platform:{OS:'web'},View:'View',Text:'Text',TouchableOpacity:'TouchableOpacity',useWindowDimensions:()=>windowSize};
-const {AnimatedCompanion}=compile('components/AnimatedCompanion.tsx',{'react-native':native,'@/lib/animated-companion-core':compile('lib/animated-companion-core.ts'),'@/lib/animated-companion':{}});
+const {AnimatedCompanion}=compile('components/AnimatedCompanion.tsx',{'react-native':native,'@/lib/animated-companion-core':compile('lib/animated-companion-core.ts'),'@/lib/animated-companion':{},'@/lib/live-room':compile('lib/live-room.ts')});
 // A stand-in for the session that records every call the screen makes on it.
 const calls=[];const session=new Proxy({},{get:(_,name)=>(...args)=>{calls.push([name,...args]);}});
 const element={tagName:'VIDEO'};
@@ -88,5 +88,32 @@ const label=root=>root.root.findAllByType('Text').find(text=>String(text.props.a
   assert.deepEqual(calls,[['attach',element]]);
   await press(root,'Shrink');assert.equal(full(root),undefined);                     // square, cropped sizes: not offered
   await act(async()=>root.unmount());delete globalThis.document;
+
+  // --- The Live Room: Video Chat <-> Companion Theater is again only a different box ---
+  const room=view=>React.createElement(AnimatedCompanion,{session,borderColor:'#111',controlColor:'#222',room:view});
+  const controls=root=>root.root.findAllByType('TouchableOpacity').length;
+  windowSize={width:360,height:660};calls.length=0;
+  await act(async()=>{root=create(room('chat'),{createNodeMock:node=>node.type==='video'?element:null});});
+  await act(async()=>outer(root).props.onLayout({nativeEvent:{layout:{width:360,height:248}}}));
+  const roomFirst=video(root).instance??video(root);
+  assert.equal(box(root).width,360);assert.equal(box(root).height,240);              // Video Chat: the whole 3:2 frame, 36% of the height
+  assert.equal(video(root).props.style.objectFit,'contain');assert.equal(box(root).borderRadius,0);assert.equal(controls(root),0);   // no size choices in the room
+  for(let round=0;round<3;round++){
+    await act(async()=>{root.update(room('theater'));});
+    await act(async()=>outer(root).props.onLayout({nativeEvent:{layout:{width:360,height:612}}}));
+    assert.equal(box(root).width,360);assert.equal(box(root).height,240);            // portrait Theater: letterboxed, never cropped or stretched
+    assert.equal(outer(root).props.style.some(part=>part&&part.flex===1),true);       // and centred in the whole space
+    await act(async()=>outer(root).props.onLayout({nativeEvent:{layout:{width:360,height:200}}}));
+    assert.equal(box(root).width,300);assert.equal(box(root).height,200);            // a short space (messages panel open): limited by its height
+    assert.equal(video(root).props.style.objectFit,'contain');
+    await act(async()=>{root.update(room('chat'));});
+    await act(async()=>outer(root).props.onLayout({nativeEvent:{layout:{width:360,height:248}}}));
+    assert.equal(box(root).height,240);
+  }
+  windowSize={width:360,height:343};await act(async()=>{root.update(room('chat'));});   // the keyboard opens
+  assert.equal(box(root).width,195);assert.equal(box(root).height,130);
+  assert.equal(video(root).instance??video(root),roomFirst);                         // the same element throughout
+  assert.deepEqual(calls,[['attach',element]]);                                      // and the session was never touched
+  await act(async()=>root.unmount());
   console.log('animated size component: all checks passed');
 })().catch(error=>{console.error(error);process.exit(1);});
