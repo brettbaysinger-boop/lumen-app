@@ -25,7 +25,7 @@ STATE_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/lumen-biglust-release"
 PYTHON="${BIGLUST_RELEASE_PYTHON:-$LIVE_DIR/backend/.venv/bin/python}"
 # Pinned and reviewed: the live S22 release, and the images-only change on top of it.
 BASE="${BIGLUST_RELEASE_BASE:-7f63d520f56133f09dc7e2bdd2b92c31d0e484b7}"
-CODE="${BIGLUST_RELEASE_CODE:-1c8b2ab5378d65c93811ad42516f7b64b669d854}"
+CODE="${BIGLUST_RELEASE_CODE:-27fa0bcc1a5101f283b6e53afa8116e1f35473d6}"
 CHECKPOINT=bigLust_v16.safetensors
 WORKFLOW_REL=backend/workflows/biglust-sdxl-v16-api.json
 problems=0

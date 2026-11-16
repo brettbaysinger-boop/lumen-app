@@ -10,7 +10,7 @@ Heavy through the live `COMFYUI_URL` route: `bigLust_v16.safetensors`, 832x1216,
 ## What this release is
 
 Branch `release/biglust-images-20261116`: code commits `0bf2394`, `c6a6934` (the owner's content
-directive) and `1c8b2ab` (tests) on top of the live S22 release `7f63d52` (PR #50 / R4). Backend only:
+directive) and two test-only commits on top of the live S22 release `7f63d52` (PR #50 / R4). Backend only:
 
 | File | Change |
 | --- | --- |
@@ -44,7 +44,7 @@ negative-prompt default. Everything is in `backend/lumen/media_safety.py` and `c
 | | Live now (`7f63d52`) | After this release |
 | --- | --- | --- |
 | Positive prompt | user text + companion identity when the request is about the companion | **same, nothing added** (the "consenting adults over 25" line from an earlier draft is gone) |
-| Negative prompt | none from Lumen (live `images.py` has no `{{LUMEN_NEGATIVE}}` support) | `COMFYUI_NEGATIVE_PROMPT`; default `lowres, bad anatomy, bad hands, extra fingers, deformed, blurry, watermark, text, child, minor, underage, teen, childlike body`. Setting the variable replaces all of it. |
+| Negative prompt | none from Lumen (live `images.py` has no `{{LUMEN_NEGATIVE}}` support) | **Yes, a default still modifies it:** `COMFYUI_NEGATIVE_PROMPT` defaults to `lowres, bad anatomy, bad hands, extra fingers, deformed, blurry, watermark, text, child, minor, underage, teen, childlike body`. An owner-set value takes precedence and is used verbatim, with nothing appended; `COMFYUI_NEGATIVE_PROMPT=` (empty) sends no negative at all. This release does not set it, so the default applies until you do. |
 | Refusals | none | only when the prompt has a sexual/nude word **and** (a) a minor signal, (b) a real identifiable person, or (c) stated non-consent (word lists below) |
 | Public mode | image creation refused (403) | unchanged |
 
@@ -59,7 +59,9 @@ classmate, teacher, student, crush, family member, roommate, landlord, employee.
 coercion, drugged, unconscious, incapacitated, blackmail, hidden camera, spy cam, upskirt, voyeur,
 revenge porn.
 
-Tested as **not refused** (`backend/tests/test_media_safety.py`): "topless woman on a beach at sunset",
+Tested: the positive prompt reaches the workflow byte-identical, and an owner negative prompt (including an
+empty one) is used verbatim (`backend/tests/test_sdxl_image_workflow.py`). Tested as **not refused**
+(`backend/tests/test_media_safety.py`): "topless woman on a beach at sunset",
 "erotic boudoir photo of a redhead woman", "sexy nurse costume", "sexy teacher roleplay, lingerie",
 "nude couple in bed, explicit", "a curvy naked woman in a bathtub", "draw yourself nude", "sexy actress
 character", "a sleeping nude woman, oil painting", "hey baby ... lingerie", "nude photo with forced
@@ -128,7 +130,7 @@ from the canary window.
 
 ## How this was tested
 
-- Backend suite on the release branch: 666 passed.
+- Backend suite on the release branch: 668 passed.
 - `scripts/test-biglust-images-release.sh` (offline, stubs for sudo/systemctl/curl, a fake live checkout
   at `7f63d52`): 33/33 pass. It covers check passing (also with a live venv that has no pytest), refusals without or with the wrong confirmation,
   a hand-edited live file (refused, untouched), systemd overriding the ComfyUI keys (refused), apply
