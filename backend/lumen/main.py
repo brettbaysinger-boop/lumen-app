@@ -18,6 +18,7 @@ from .config import get_settings
 from .ollama import OllamaProvider
 from .runtime import CognitionRuntime
 from .memory_backend import memory_backend, supabase_memory_enabled
+from .rmc.memory_routes import router as rmc_memory_router
 from .schemas import (
     HealthResponse,
     RespondRequest,
@@ -65,6 +66,7 @@ app.include_router(goals_router)
 app.include_router(providers_router)
 app.include_router(unstuck_router)
 app.include_router(handoff_router)
+app.include_router(rmc_memory_router)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origins,

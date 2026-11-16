@@ -18,6 +18,7 @@ import {
 } from 'lucide-react-native';
 import { useFocusEffect } from 'expo-router';
 import { MemoryCorrectionCard } from '@/components/MemoryCorrectionCard';
+import { RmcMemoriesPanel } from '@/components/RmcMemoriesPanel';
 import { authHeaders } from '@/lib/auth';
 import { useMemoryBackend, backendNotice, MUTATION_BLOCKED_MESSAGE } from '@/lib/memory-backend';
 import { supabase } from '@/lib/supabase';
@@ -243,8 +244,12 @@ export default function MemoriesScreen() {
     );
   }
 
+  if (backendState.kind === 'rmc') {
+    return <RmcMemoriesPanel companion={companion} />;
+  }
+
   if (!supabaseMemories) {
-    // RMC active, or the active store can't be confirmed: fail closed.
+    // Backend not confirmed: fail closed, including for Supabase writes.
     return (
       <SafeAreaView style={styles.container} edges={['top']}>
         <View style={styles.header}>
