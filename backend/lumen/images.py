@@ -26,6 +26,9 @@ class ComfyUIProvider:
         self.base_url = settings.comfyui_url.rstrip("/")
         self.workflow_path = settings.comfyui_workflow.strip()
         self.timeout = settings.image_generation_timeout
+        self.checkpoint = (getattr(settings, "comfyui_checkpoint", "") or "").strip()
+        self.negative = getattr(settings, "comfyui_negative_prompt", "") or ""
+        self.model_name = "comfyui-workflow"
 
     async def health_check(self) -> bool:
         if not self.base_url:
@@ -61,13 +64,20 @@ class ComfyUIProvider:
         prompt_replaced = False
         seed = secrets.randbelow(2**32)
 
+        checkpoint_missing = False
+
         def substitute(value: Any) -> Any:
-            nonlocal prompt_replaced
+            nonlocal prompt_replaced, checkpoint_missing
             if isinstance(value, str) and value == "{{LUMEN_PROMPT}}":
                 prompt_replaced = True
                 return prompt
             if isinstance(value, str) and value == "{{LUMEN_SEED}}":
                 return seed
+            if isinstance(value, str) and value == "{{LUMEN_NEGATIVE}}":
+                return self.negative
+            if isinstance(value, str) and value == "{{LUMEN_CHECKPOINT}}":
+                checkpoint_missing = not self.checkpoint
+                return self.checkpoint
             if isinstance(value, list):
                 return [substitute(item) for item in value]
             if isinstance(value, dict):
@@ -80,7 +90,12 @@ class ComfyUIProvider:
             raise ImageProviderNotConfigured(
                 "ComfyUI workflow must contain {{LUMEN_PROMPT}}."
             )
+        if checkpoint_missing:
+            raise ImageProviderNotConfigured(
+                "The image workflow needs COMFYUI_CHECKPOINT (the exact checkpoint filename)."
+            )
 
+        self.model_name = workflow_model_name(workflow)
         return workflow
 
     async def generate(self, prompt: str) -> dict[str, Any]:
@@ -158,7 +173,7 @@ class ComfyUIProvider:
                                 "content-type", "image/png"
                             ).split(";")[0],
                             "provider": self.name,
-                            "model": "comfyui-workflow",
+                            "model": self.model_name,
                             "latency_ms": round(
                                 (time.perf_counter() - started) * 1000
                             ),
@@ -169,6 +184,22 @@ class ComfyUIProvider:
         raise ImageProviderError(
             "ComfyUI timed out while generating the image."
         )
+
+
+_MODEL_INPUTS = ("ckpt_name", "unet_name")
+
+
+def workflow_model_name(workflow: dict[str, Any]) -> str:
+    """Provenance: the checkpoint (or UNet) file the workflow actually loads."""
+    for node in workflow.values():
+        inputs = node.get("inputs") if isinstance(node, dict) else None
+        if not isinstance(inputs, dict):
+            continue
+        for key in _MODEL_INPUTS:
+            value = inputs.get(key)
+            if isinstance(value, str) and value.strip():
+                return value.strip()
+    return "comfyui-workflow"
 
 
 def create_image_provider(settings: Settings):

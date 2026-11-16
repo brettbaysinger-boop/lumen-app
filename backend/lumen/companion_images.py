@@ -3,6 +3,7 @@
 from uuid import uuid4
 
 from .images import compose_image_prompt, create_image_provider
+from .media_safety import check_media_prompt, refusal_text
 
 
 async def create_companion_image(
@@ -23,6 +24,10 @@ async def create_companion_image(
         companion.get("name", ""),
         companion.get("visual_identity"),
     )
+
+    verdict = check_media_prompt(prompt)
+    if not verdict.allowed:
+        raise ValueError(refusal_text(verdict))
 
     provider = create_image_provider(settings)
     result = await provider.generate(resolved_prompt)
