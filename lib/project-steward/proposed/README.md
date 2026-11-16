@@ -1,5 +1,9 @@
 # Proposed Project Snapshot v1.1 (NOT approved)
 
+> Coordinator decision in issue #41: this shape (inline optional `insights`,
+> `stale_after_seconds: 172800`) is the single proposed v1.1. PS-02's earlier
+> `freshness_policy_hours` key is not part of it and the UI rejects it as an unknown key.
+
 Proposal from the UI lane (PS-01, PR #32) for the coordinator and PS-02. The approved
 contract is still `contracts/project-steward/project-snapshot.v1.schema.json`; this folder
 does not replace it. Machine-readable form: `project-snapshot.v1.1.schema.json` here.
@@ -10,7 +14,7 @@ The UI already reads both `"1.0"` and `"1.1"`.
 | Where | Field | Type | Meaning |
 | --- | --- | --- | --- |
 | top level | `version` | `"1.1"` | |
-| top level | `stale_after_seconds` | integer 3600..2592000, optional | The backend's staleness window. The UI uses it for every STALE mark. Omitted: UI default 72 h (same as PS-02's `stale_threshold_hours` default). |
+| top level | `stale_after_seconds` | integer 3600..2592000, optional | The backend's staleness window; canonical value `172800` (48 h, issue #41). The UI uses it for every STALE mark. Omitted, or a v1.0 snapshot: UI default 48 h, the same as PS-02's `stale_threshold_hours`. |
 | project | `insights` | object, optional | Omitted = nothing collected for this project. |
 
 Everything else in v1.0 is unchanged.

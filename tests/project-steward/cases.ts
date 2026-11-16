@@ -113,7 +113,7 @@ import { demoInsights } from '../../lib/project-steward/fixtures-insights';
 function v11(fn: (s: Json) => void = () => {}): Json {
   const s = clone();
   s.version = '1.1';
-  s.stale_after_seconds = 259200;
+  s.stale_after_seconds = 172800;
   for (const p of s.projects) {
     const ins = (demoInsights as Json)[p.id];
     if (ins) p.insights = JSON.parse(JSON.stringify(ins));
@@ -132,6 +132,7 @@ export const CONTRACT_CASES_V11: ContractCase[] = [
   { name: 'v1.1 stale_after_seconds too small', valid: false, data: v11((s) => (s.stale_after_seconds = 60)) },
   { name: 'v1.1 stale_after_seconds not integer', valid: false, data: v11((s) => (s.stale_after_seconds = 3600.5)) },
   { name: 'v1.1 unknown top-level key', valid: false, data: v11((s) => (s.demo = true)) },
+  { name: 'v1.1 freshness_policy_hours (superseded PS-02 draft key)', valid: false, data: v11((s) => (s.freshness_policy_hours = 48)) },
   { name: 'v1.1 unknown insights key', valid: false, data: v11((s) => (lumen(s).insights.health = 'green')) },
   { name: 'v1.1 insights missing a group', valid: false, data: v11((s) => delete lumen(s).insights.ci) },
   { name: 'v1.1 bad ci state', valid: false, data: v11((s) => (lumen(s).insights.ci.state = 'green')) },

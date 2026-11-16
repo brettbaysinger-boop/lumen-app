@@ -339,7 +339,7 @@ async function main() {
       assert(banner.includes('contract v1.1') && banner.includes('Stale after 24h'), banner);
       const sig = await tid(page, 'ps-signals-synthetic-live-a').innerText();
       assert(sig.includes('Your decision needed') && sig.includes('CI failing'), sig);
-      // Row B was checked 30h ago: stale under the server's 24h window (fresh under the 72h default).
+      // Row B was checked 30h ago: stale under the server's 24h window (fresh under the 48h default).
       assert((await tid(page, 'ps-card-synthetic-live-b').innerText()).includes('STALE'), 'server window not applied');
       assert((await tid(page, 'ps-signals-synthetic-live-b').count()) === 0, 'B has no insights');
       const name = await tid(page, 'ps-card-synthetic-live-a').innerText();
@@ -366,6 +366,59 @@ async function main() {
       await page.goto(`${baseLive}/project-steward/synthetic-live-b`);
       const m = await tid(page, 'ps-insights-missing').innerText({ timeout: 20000 });
       assert(m.includes('have not been collected'), m);
+    });
+    await ctx.close();
+  }
+
+  // ---------- 60-hour case: STALE under v1.0 default and under canonical v1.1 ----------
+  for (const [label, extra, expectWindow] of [
+    ['v1.0 (48h default)', {}, 'Stale after 48h'],
+    ['v1.1 stale_after_seconds 172800', { version: '1.1', stale_after_seconds: 172800 }, 'Stale after 48h'],
+  ]) {
+    const { ctx, page } = await newPage(360, 800);
+    // Snapshot generated now-ish; the project itself was last checked 60h before NOW.
+    const body = { ...liveSnapshot('2026-11-16T02:00:00Z'), ...extra };
+    body.projects[0].observed_at = '2026-11-13T14:30:00Z';
+    await page.route(SNAPSHOT_URL, (r) => r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(body) }));
+    await page.goto(`${baseLive}/project-steward`);
+    await check(`60h-old project is STALE: ${label}`, async () => {
+      const banner = await tid(page, 'ps-origin-live').innerText({ timeout: 20000 });
+      assert(banner.includes(expectWindow), banner);
+      const card = await tid(page, 'ps-card-synthetic-live-a').innerText();
+      assert(card.includes('STALE') && card.includes('3d ago'), card);
+      assert((await tid(page, 'ps-attention').innerText()).includes('Status is stale'), 'queue');
+      await tid(page, 'ps-card-synthetic-live-a').click();
+      await tid(page, 'ps-detail-stale').waitFor({ timeout: 5000 });
+    });
+    await ctx.close();
+  }
+
+  // ---------- PS-02-produced v1.1 payload (canonical form) served as the API response ----------
+  {
+    const { ctx, page, errors } = await newPage(360, 800);
+    const body = JSON.parse(fs.readFileSync(path.join(__dirname, 'samples', 'ps02-proposed_snapshot_v1.1.json'), 'utf8'));
+    const asIs = JSON.stringify(body);
+    delete body.freshness_policy_hours;
+    body.stale_after_seconds = 172800;
+    let serve = JSON.stringify(body);
+    await page.route(SNAPSHOT_URL, (r) => r.fulfill({ status: 200, contentType: 'application/json', body: serve }));
+    await page.goto(`${baseLive}/project-steward/${body.projects[0].id}`);
+    await check('PS-02 v1.1 payload (canonical): detail shows its PRs, CI and links as live data', async () => {
+      await page.locator('[data-testid="ps-detail"] [data-testid^="ps-origin-live"]').waitFor({ timeout: 20000 });
+      assert((await tid(page, 'ps-detail-prs').innerText()).includes(body.projects[0].insights.open_prs.items[0].title), 'pr title');
+      await tid(page, 'ps-link-repo').waitFor();
+      await tid(page, 'ps-tab-evidence').click();
+      assert((await tid(page, 'ps-detail-ci').innerText()).includes('Passing'), 'ci');
+      assert((await page.locator('[data-testid="ps-demo-badge"]').count()) === 0, 'DEMO on live');
+      assert(errors.length === 0, errors.join(' | '));
+    });
+    await page.screenshot({ path: path.join(SHOTS, 'live-ps02-v11-payload-360.png'), fullPage: true });
+    serve = asIs;
+    await page.goto(`${baseLive}/project-steward`);
+    await check('PS-02 v1.1 payload as shipped (freshness_policy_hours): rejected, nothing shown', async () => {
+      const t = await tid(page, 'ps-state-invalid').innerText({ timeout: 20000 });
+      assert(t.includes('freshness_policy_hours'), t);
+      assert((await page.locator('[data-testid^="ps-card-"]').count()) === 0, 'cards leaked');
     });
     await ctx.close();
   }

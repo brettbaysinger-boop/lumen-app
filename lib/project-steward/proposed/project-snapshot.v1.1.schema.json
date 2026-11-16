@@ -28,7 +28,7 @@
       "type": "integer",
       "minimum": 3600,
       "maximum": 2592000,
-      "description": "The backend's staleness window. The UI marks anything older as STALE. Omitted = UI default (72h)."
+      "description": "The backend's staleness window. The UI marks anything older as STALE. Canonical value 172800 (48h). Omitted = UI default (48h)."
     }
   },
   "$defs": {

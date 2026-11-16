@@ -16,11 +16,12 @@ import type { InsightsMap, ProjectInsights } from './insights';
 export type Tone = 'good' | 'info' | 'warn' | 'bad' | 'muted';
 
 /**
- * Default staleness window: 72 hours, the same default the backend registry uses
- * (PS-02 `stale_threshold_hours`). A v1.1 snapshot can state its own window in
- * `stale_after_seconds`, which then wins, so the two sides cannot disagree.
+ * Default staleness window: 48 hours. This is the single agreed value (issue #41):
+ * the PS-02 backend's `stale_threshold_hours` is 48 and canonical v1.1 sends
+ * `stale_after_seconds: 172800`. It applies to v1.0 snapshots and to v1.1 snapshots
+ * that omit the field; when a v1.1 snapshot states a window, that value wins.
  */
-export const STALE_AFTER_MS = 72 * 60 * 60 * 1000;
+export const STALE_AFTER_MS = 48 * 60 * 60 * 1000;
 
 export const PRIORITY_LABEL: Record<Priority, string> = {
   p0: 'P0',

@@ -1,8 +1,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { writeFileSync } from 'node:fs';
+import { readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { validateSnapshot } from '../../lib/project-steward/validate';
+import { validateInsights } from '../../lib/project-steward/insights';
 import { fetchSnapshot } from '../../lib/project-steward/client';
 import { isSafeUrl, safeText, sanitizeDeep } from '../../lib/project-steward/text';
 import {
@@ -11,6 +12,7 @@ import {
   filterProjects,
   EMPTY_QUERY,
   freshness,
+  knownAndUnknown,
   refNumber,
   refUrl,
   sourceUrl,
@@ -39,7 +41,7 @@ test('v1.1 live response: insights and stale window reach the UI, projects stay 
   if (r.status !== 'ok') return;
   assert.equal(r.origin, 'live-api');
   assert.equal(r.snapshot.version, '1.1');
-  assert.equal(r.staleAfterMs, 259200 * 1000);
+  assert.equal(r.staleAfterMs, 172800 * 1000);
   assert.equal(r.insights?.['lumen'].open_prs?.items.length, 17);
   assert.equal(r.insights?.['chorusfall'], undefined, 'no insights sent -> not collected');
   assert.ok(r.snapshot.projects.every((p) => !('insights' in p)));
@@ -57,17 +59,62 @@ test('one bad insights record rejects the whole v1.1 snapshot (nothing partial)'
   assert.equal('snapshot' in r, false);
 });
 
-test('default stale window is 72h (backend default); a server window overrides it', () => {
-  assert.equal(STALE_AFTER_MS, 72 * 3_600_000);
+test('freshness window is 48h: a 60-hour-old check is STALE in every code path', () => {
+  assert.equal(STALE_AFTER_MS, 48 * 3_600_000);
+  assert.equal(STALE_AFTER_MS, 172800 * 1000, 'must equal canonical stale_after_seconds');
   const now = Date.parse('2026-11-16T00:00:00Z');
   const at60h = '2026-11-13T12:00:00Z';
-  assert.equal(freshness(at60h, now), 'fresh');
-  assert.equal(freshness(at60h, now, 48 * 3_600_000), 'stale');
+  const at47h = '2026-11-14T01:00:00Z';
+  const at49h = '2026-11-13T23:00:00Z';
+  assert.equal(freshness(at60h, now), 'stale');
+  assert.equal(freshness(at47h, now), 'fresh');
+  assert.equal(freshness(at49h, now), 'stale');
   const p = { ...demoSnapshot.projects[0], observed_at: at60h };
-  assert.deepEqual(attentionReasons(p, now, null), []);
-  assert.deepEqual(attentionReasons(p, now, null, 48 * 3_600_000), ['stale']);
-  assert.equal(filterProjects([p], { ...EMPTY_QUERY, quick: 'stale' }, now, null).length, 0);
-  assert.equal(filterProjects([p], { ...EMPTY_QUERY, quick: 'stale' }, now, null, 48 * 3_600_000).length, 1);
+  assert.deepEqual(attentionReasons(p, now, null), ['stale']);
+  assert.equal(filterProjects([p], { ...EMPTY_QUERY, quick: 'stale' }, now, null).length, 1);
+  assert.equal(filterProjects([p], { ...EMPTY_QUERY, quick: 'attention' }, now, null).length, 1);
+  assert.ok(knownAndUnknown(p, now).unknown.some((u) => u.startsWith('Last check is stale')));
+});
+
+test('60-hour case through the client: v1.0 uses the 48h default, v1.1 uses the server window', async () => {
+  const now = Date.parse('2026-11-16T00:00:00Z');
+  const base = JSON.parse(JSON.stringify(demoSnapshot));
+  base.projects = [{ ...base.projects[0], observed_at: '2026-11-13T12:00:00Z' }];
+  const windowOf = async (body: unknown) => {
+    const r = await fetchSnapshot({ url: URL_, fetchImpl: respond(body) });
+    assert.equal(r.status, 'ok');
+    return r.status === 'ok' ? { r, ms: r.staleAfterMs ?? STALE_AFTER_MS } : null;
+  };
+  const v10 = (await windowOf(base))!;
+  assert.equal(v10.r.staleAfterMs, null);
+  assert.equal(freshness(v10.r.snapshot.projects[0].observed_at, now, v10.ms), 'stale');
+  const v11 = (await windowOf({ ...base, version: '1.1', stale_after_seconds: 172800 }))!;
+  assert.equal(freshness(v11.r.snapshot.projects[0].observed_at, now, v11.ms), 'stale');
+  // The server stays authoritative: a longer declared window is honoured.
+  const v11long = (await windowOf({ ...base, version: '1.1', stale_after_seconds: 259200 }))!;
+  assert.equal(freshness(v11long.r.snapshot.projects[0].observed_at, now, v11long.ms), 'fresh');
+});
+
+const PS02_SAMPLE = join(process.cwd(), 'tests/project-steward/samples/ps02-proposed_snapshot_v1.1.json');
+
+test('PS-02-produced v1.1 payload: rejected as-is only for freshness_policy_hours', () => {
+  const r = validateSnapshot(JSON.parse(readFileSync(PS02_SAMPLE, 'utf8')));
+  assert.equal(r.ok, false);
+  if (!r.ok) assert.deepEqual(r.errors, ['snapshot: unexpected property "freshness_policy_hours"']);
+});
+
+test('PS-02-produced v1.1 payload in canonical form passes the strict UI validator', async () => {
+  const body = JSON.parse(readFileSync(PS02_SAMPLE, 'utf8'));
+  delete body.freshness_policy_hours;
+  body.stale_after_seconds = 172800;
+  writeFileSync(join(__dirname, 'ps02-v11-canonical.json'), JSON.stringify(body));
+  const r = await fetchSnapshot({ url: URL_, fetchImpl: respond(body) });
+  assert.equal(r.status, 'ok', r.status === 'invalid' ? r.errors.join('; ') : '');
+  if (r.status !== 'ok') return;
+  assert.equal(r.staleAfterMs, 172800 * 1000);
+  const ins = r.insights?.[r.snapshot.projects[0].id];
+  assert.ok(ins?.open_prs && ins.ci && ins.last_commit && ins.last_deploy === null);
+  assert.deepEqual(validateInsights(ins), [], 'the /projects/{id}/insights body shape is valid on its own');
 });
 
 test('URL safety: only clean https URLs are ever opened', () => {
