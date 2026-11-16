@@ -45,6 +45,8 @@ import { CameraCapture } from '@/components/CameraCapture';
 import { CompanionPortrait } from '@/components/CompanionPortrait';
 import { AnimatedCompanion } from '@/components/AnimatedCompanion';
 import { LiveRoomActions, LiveRoomHeader, LiveRoomTheaterBar } from '@/components/LiveRoom';
+import { PrivacyBar, PrivacyToggle } from '@/components/PrivacyToggle';
+import { conversationLabel, emptyComposer, getPrivacyMode, listenForAppPrivacy, messageVisible, returnFailedTurn, swapComposer, turnHidden, usePrivacyMode, type ComposerDraft, type ComposerSlots, type PrivacyMode } from '@/lib/privacy-mode';
 import { ROOM_BACK_EVENT, ROOM_LANDSCAPE_EVENT, ROOM_PORTRAIT_EVENT, getRoomMode, isLiveRoom, postRoomEvent, roomEmbedded, setRoomMode, turnRoom, useRoomMode, type RoomView } from '@/lib/live-room';
 import { AnimatedCompanionSession, animatedCompanionAvailable, type AnimatedState } from '@/lib/animated-companion';
 import { AutoSpeak } from '@/lib/animated-companion-core';
@@ -103,6 +105,12 @@ export default function ChatScreen() {
   const [pendingSpeak, setPendingSpeak] = useState<Message | null>(null);
   const blockedReplyRef = useRef<Message | null>(null);
 
+  // 🔒 Private | 👥 Public (Issue #39). Requests read the current choice with getPrivacyMode().
+  const privacy = usePrivacyMode();
+  // The mode the reply now on its way was asked for in. A Private turn is hidden the moment the
+  // switch says Public, including anything that arrives after (lib/privacy-mode.ts turnHidden).
+  const [turnMode, setTurnMode] = useState<PrivacyMode | null>(null);
+  const hideTurn = turnHidden(privacy.mode, turnMode);
   const [companion, setCompanion] = useState<Companion | null>(null);
   const { state: companionState } = useCompanionState(companion?.id);
   const [conversations, setConversations] = useState<Conversation[]>([]);
@@ -157,12 +165,18 @@ export default function ChatScreen() {
   }, []);
   const inputRef = useRef(inputText);
   inputRef.current = inputText;
+  const pendingImagesRef = useRef(pendingImages);
+  pendingImagesRef.current = pendingImages;
+  const pendingDocumentRef = useRef(pendingDocument);
+  pendingDocumentRef.current = pendingDocument;
+  const composerSlots = useRef<ComposerSlots<PickedImage, PrivateDocument>>({ private: emptyComposer(), public: emptyComposer() });
   const setInputText = useCallback((value: string | ((previous: string) => string)) => {
     const text = typeof value === 'function' ? value(inputRef.current) : value;
     inputRef.current = text;
     setInputTextState(text);
     const snapshot = cacheRef.current;
-    if (snapshot) {
+    // Saved drafts are Private drafts: a draft typed in Public is kept in memory only.
+    if (snapshot && getPrivacyMode() === 'private') {
       cacheRef.current = { ...snapshot, drafts: { ...snapshot.drafts, [activeIdRef.current ?? 'new']: text } };
       persistCache();
     }
@@ -303,7 +317,7 @@ export default function ChatScreen() {
       if (mountedRef.current && playbackRef.current === controller) { setPlayingId(null); setSpeakingId(null); }
     };
     try {
-      await playReply(message.content, controller.signal, finished, { companionId: companion?.id, player: animated.state === 'ready' ? animated.player : undefined, onError: err => { if (mountedRef.current && !controller.signal.aborted) setError(err.message); }, onStart: () => { if (mountedRef.current && !controller.signal.aborted) setSpeakingId(message.id); } });
+      await playReply(message.content, controller.signal, finished, { companionId: companion?.id, privacy: { mode: getPrivacyMode(), messageId: message.id }, player: animated.state === 'ready' ? animated.player : undefined, onError: err => { if (mountedRef.current && !controller.signal.aborted) setError(err.message); }, onStart: () => { if (mountedRef.current && !controller.signal.aborted) setSpeakingId(message.id); } });
     } catch (err) {
       if (mountedRef.current && !controller.signal.aborted) {
         // Started without a click, the browser may refuse sound: offer Enable sound instead of an error.
@@ -369,6 +383,22 @@ export default function ChatScreen() {
   // replaces the avatar session when the view changes: `roomMode` only feeds styles.
   const room = Platform.OS === 'web' && isLiveRoom();
   const roomMode = useRoomMode();
+  // Inside the phone app the room follows the app's Public / Private choice (two fixed lines, no data).
+  useEffect(() => room ? listenForAppPrivacy() : undefined, [room]);
+  // Switching to Public stops any reply being read aloud right now; the video keeps running.
+  useEffect(() => { if (privacy.mode === 'public') { playbackRef.current?.abort(); autoSpeak.cancel(); } }, [privacy.mode, autoSpeak]);
+  // The message box keeps one draft per mode (text, photos, document): flipping parks one and shows the other.
+  const composerMode = useRef<PrivacyMode>(privacy.mode);
+  useEffect(() => {
+    const from = composerMode.current, to = privacy.mode;
+    composerMode.current = to;
+    if (from === to) return;
+    const next = swapComposer<PickedImage, PrivateDocument>(composerSlots.current, from, to,
+      { text: inputRef.current, images: pendingImagesRef.current, document: pendingDocumentRef.current });
+    composerSlots.current = next.slots;
+    inputRef.current = next.show.text;
+    setInputTextState(next.show.text); setPendingImages(next.show.images); setPendingDocument(next.show.document);
+  }, [privacy.mode]);
   const theater = room && roomMode === 'theater' && animatedState === 'ready';
   const [theaterMessages, setTheaterMessages] = useState(false);
   // Opening the room is the request to watch: live video is turned on once, when the server offers it.
@@ -538,7 +568,11 @@ export default function ChatScreen() {
     const id = activeConversation?.id;
     setMessages(id ? cacheRef.current?.messages[id] ?? [] : []);
     const draft = routeDraftRef.current ?? cacheRef.current?.drafts[id ?? 'new'] ?? '';
-    setInputTextState(draft);
+    // In Public the saved draft is put aside for Private, not shown.
+    if (getPrivacyMode() === 'public') {
+      composerSlots.current = { ...composerSlots.current, private: { ...composerSlots.current.private, text: draft } };
+      setInputTextState('');
+    } else setInputTextState(draft);
     if (routeDraftRef.current && cacheRef.current) {
       cacheRef.current = { ...cacheRef.current, drafts: { ...cacheRef.current.drafts, [id ?? 'new']: draft } };
       routeDraftRef.current = null;
@@ -687,6 +721,8 @@ export default function ChatScreen() {
     ) return;
     playbackRef.current?.abort();
     const speakTurn = autoSpeak.begin(activeConversation?.id ?? null, messages.map(message => message.id));
+    const sentMode = getPrivacyMode();
+    setTurnMode(sentMode);
 
     sendBusyRef.current = true;
     memoryWindowRef.current = new Date().toISOString();
@@ -723,6 +759,7 @@ export default function ChatScreen() {
           activeConversation?.id ?? null,
           followupImagePrompt ?? text,
           followupImagePrompt ? text : undefined,
+          sentMode,
         );
       } else {
         for (const image of images) {
@@ -739,6 +776,8 @@ export default function ChatScreen() {
           attachments,
           (event) => {
             if (event.type === 'activity') setActivity(event.text || `${companion.name} thinking…`);
+            // Text from a Private turn that arrives while the switch says Public is never kept.
+            if (turnHidden(getPrivacyMode(), sentMode)) return;
             if (event.type === 'delta') {
               setActivity(`${companion.name} thinking…`);
               setLiveReply(reply => reply + event.text);
@@ -748,6 +787,7 @@ export default function ChatScreen() {
           turnKey.current.id,
           document?.id,
           effort,
+          sentMode,
         );
       }
       const { data, error: refreshError } = await supabase
@@ -767,32 +807,43 @@ export default function ChatScreen() {
         if (conversation) setActiveConversation(conversation as Conversation);
       }
       const loaded = await loadMessages(response.conversation_id);
-      const newReply = autoSpeak.claim(speakTurn, response.conversation_id, loaded ?? [], animated.state === 'ready');
+      // A reply is read aloud only if the switch has not changed since it was asked for.
+      const newReply = getPrivacyMode() === sentMode ? autoSpeak.claim(speakTurn, response.conversation_id, loaded ?? [], animated.state === 'ready') : (autoSpeak.cancel(), null);
       if (newReply) setPendingSpeak(newReply);
       if (cacheRef.current) {
         cacheRef.current = { ...cacheRef.current, drafts: { ...cacheRef.current.drafts, [draftKey]: '' } };
         persistCache();
       }
-      setInputTextState('');
+      if (getPrivacyMode() === sentMode) setInputTextState('');   // never clear a draft started in the other mode
       turnKey.current = null;
     } catch (err) {
       autoSpeak.cancel();
       if (!handedToServer) await removeStoredFiles('chat-media', uploaded);
       setError(err instanceof Error ? err.message : 'Lumen could not respond.');
-      setInputText(text);
-      setPendingImages(images);
+      // The question goes back to the message box only in the mode it was asked in.
+      const back = returnFailedTurn<PickedImage, PrivateDocument>(composerSlots.current, sentMode, getPrivacyMode(),
+        { text, images, document: null });
+      composerSlots.current = back.slots;
+      if (back.show) { setInputText(back.show.text); setPendingImages(back.show.images); }
     } finally {
       sendBusyRef.current = false;
       setSending(false);
       setPendingQuestion('');
       setLiveReply('');
       setActivity('');
+      setTurnMode(null);
       setCreatingImage(false);
     }
   }, [inputText, pendingImages, pendingDocument, documentBusy, companion, session?.user.id, sending, activeConversation, loadMessages, messages, autoSpeak, animated]);
 
   const renderMessage = useCallback(
-    ({ item }: { item: Message }) => (
+    ({ item }: { item: Message }) => !messageVisible(privacy.mode, item) ? (
+          <View style={[styles.messageWrapper, item.role === 'user' ? styles.messageWrapperUser : styles.messageWrapperAI]}>
+            <View accessibilityLabel="Message hidden while Public mode is on" style={[styles.messageBubble, item.role === 'user' ? styles.messageBubbleUser : styles.messageBubbleAI, { opacity: 0.6 }]}>
+              <Text style={[styles.messageText, item.role === 'user' ? styles.messageTextUser : styles.messageTextAI, { fontStyle: 'italic' }]}>Hidden while 👥 Public is on</Text>
+            </View>
+          </View>
+        ) : (
           <View
             style={[
               styles.messageWrapper,
@@ -878,7 +929,7 @@ export default function ChatScreen() {
         ),
     [styles, colors, isMobile, companion?.portrait_url,
      companion?.name, companionState, speakingId,
-     expandedActivity, playingId, voiceBusy, togglePlayback],
+     expandedActivity, playingId, voiceBusy, togglePlayback, privacy.mode],
   );
 
   useEffect(() => {
@@ -954,6 +1005,8 @@ export default function ChatScreen() {
           </Text>}
         </View>
       </View>}
+      {/* In the Live Room with video on, the switch sits over the picture (as in Theater) so the conversation keeps its height. */}
+      {!theater && !(room && animatedState === 'ready') && <PrivacyBar c={colors} />}
 
       {syncStatus === 'cached' && !theater && <TouchableOpacity accessibilityRole="button" accessibilityLabel="Retry connection"
         onPress={() => { void loadCompanion().then(() => { if (activeIdRef.current) void loadMessages(activeIdRef.current); }); }}
@@ -1016,7 +1069,7 @@ export default function ChatScreen() {
                   <TouchableOpacity style={{ flex: 1, minHeight: 48, justifyContent: 'center' }}
                     disabled={sending || voiceBusy || managementBusy}
                     accessibilityRole="button"
-                    accessibilityLabel={`Open chat ${item.title}`}
+                    accessibilityLabel={`Open chat ${conversationLabel(privacy.mode, item.title, item.last_message_at)}`}
                     onLongPress={() => { setManagedChat(item); setManagementError(null); }}
                     onPress={() => {
                       setActiveConversation(item);
@@ -1024,13 +1077,13 @@ export default function ChatScreen() {
                     }}>
                     <Text style={[styles.conversationTitle,
                       activeConversation?.id === item.id && styles.conversationTitleActive]}
-                      numberOfLines={1}>{item.title}</Text>
+                      numberOfLines={1}>{conversationLabel(privacy.mode, item.title, item.last_message_at)}</Text>
                     <Text style={styles.conversationDate}>
                       {new Date(item.last_message_at).toLocaleDateString()}
                     </Text>
                   </TouchableOpacity>
                   <TouchableOpacity accessibilityRole="button"
-                    accessibilityLabel={`Chat options for ${item.title}`}
+                    accessibilityLabel={`Chat options for ${conversationLabel(privacy.mode, item.title, item.last_message_at)}`}
                     disabled={sending || voiceBusy || managementBusy}
                     style={{ width: 44, height: 44, alignItems: 'center', justifyContent: 'center' }}
                     onPress={() => { setManagedChat(item); setManagementError(null); }}>
@@ -1082,15 +1135,16 @@ export default function ChatScreen() {
         }} />}
       <ChatManagement collections={collections} key={managedChat?.id ?? 'closed'} chat={managedChat} busy={managementBusy}
         error={managementError} onClose={() => { if (!managementBusyRef.current) setManagedChat(null); }} onChange={changeChat} />
-      {activeConversation?.handoff && !theater && <HandoffCard key={activeConversation.id}
+      {activeConversation?.handoff && !theater && privacy.mode === 'private' && <HandoffCard key={activeConversation.id}
         chat={activeConversation} chats={conversations}
         disabled={sending || voiceBusy || managementBusy || documentBusy}
         onOpen={chat => setActiveConversation(chat)} />}
       {/* One element in one place for both room views: Theater only changes the box around it. */}
       {animatedState === 'ready' && <View testID="live-video-area" style={theater ? { flex: 1, minHeight: 0, backgroundColor: '#000' } : { alignItems: 'center', paddingVertical: room ? 4 : 8 }}>
         <AnimatedCompanion session={animated} borderColor={colors.primary[400]} controlColor={colors.primary[300]} room={room ? (theater ? 'theater' : 'chat') : undefined} />
+        {room && !theater && <View pointerEvents="box-none" style={{ position: 'absolute', top: 10, left: 10 }}><PrivacyToggle c={colors} overlay /></View>}
         {theater && <LiveRoomTheaterBar messagesOpen={theaterMessages} onChat={() => { turned.current = null; setRoomMode('chat'); }} onMessages={() => setTheaterMessages(open => !open)}
-          fullScreen={fullScreen} onFullScreen={canFullScreen ? toggleFullScreen : undefined} />}
+          fullScreen={fullScreen} onFullScreen={canFullScreen ? toggleFullScreen : undefined} privacy={<PrivacyToggle c={colors} overlay />} />}
       </View>}
       {/* The conversation and the message box. In Theater this is the collapsible messages panel:
           the same elements, so nothing is reloaded and no text is drawn over the picture. */}
@@ -1099,7 +1153,9 @@ export default function ChatScreen() {
       <ConversationList
         ref={flatListRef}
         data={messages}
-        ListFooterComponent={sending ? <View style={{ gap: 12, padding: 16 }}>
+        ListFooterComponent={sending && hideTurn ? <View style={{ gap: 12, padding: 16 }}>
+          <Text accessibilityLiveRegion="polite" style={{ color: colors.neutral[300], fontStyle: 'italic' }}>{companion?.name || 'Lumen'} is finishing a reply that's hidden while 👥 Public is on.</Text>
+        </View> : sending ? <View style={{ gap: 12, padding: 16 }}>
           <Text style={{ color: colors.neutral[100], textAlign: 'right' }}>{pendingQuestion}</Text>
           <View style={{ flexDirection: 'row', gap: 12, alignItems: 'flex-start' }}>
             <CompanionPortrait colors={colors} size={isMobile ? 36 : 46} portraitUrl={companion?.portrait_url} mood="thinking" />
@@ -1134,7 +1190,7 @@ export default function ChatScreen() {
           <Text style={styles.errorBannerText}>{error}</Text>
         </View>
       )}
-      {memoryQuestions.map(question => <View key={question.id} style={styles.errorBanner}>
+      {privacy.mode === 'private' && memoryQuestions.map(question => <View key={question.id} style={styles.errorBanner}>
         <Text style={styles.errorBannerText}>Should I remember this? {question.content} (About: {question.subject})</Text>
         <Text style={styles.errorBannerText}>You can edit the wording and ownership in Memories.</Text>
         <View style={{ flexDirection: 'row', gap: 20 }}>
@@ -1146,7 +1202,7 @@ export default function ChatScreen() {
           }}><Text style={{ color: colors.primary[300] }}>{action === 'approve' ? 'Yes, remember' : 'Skip'}</Text></TouchableOpacity>)}
         </View>
       </View>)}
-      {memoryNotice && <View style={styles.errorBanner}>
+      {memoryNotice && privacy.mode === 'private' && <View style={styles.errorBanner}>
         <Text style={styles.errorBannerText}>Memory saved: {memoryNotice.content}</Text>
         <TouchableOpacity disabled={!supabaseMemories} onPress={async () => {
           if (!(await authorizeMemoryMutation())) { setError(MUTATION_BLOCKED_MESSAGE); return; }
@@ -1208,7 +1264,7 @@ export default function ChatScreen() {
             </TouchableOpacity>
           </View>}
           {pendingDocument && <View style={{ padding: 12, borderRadius: 12, backgroundColor: colors.neutral[900], gap: 8 }}>
-            <Text style={{ color: colors.neutral[100] }}>Using document: {pendingDocument.title}</Text>
+            <Text style={{ color: colors.neutral[100] }}>{privacy.mode === 'private' ? `Using document: ${pendingDocument.title}` : 'Using a document (name hidden while 👥 Public is on)'}</Text>
             <Text style={{ color: colors.neutral[400], fontSize: 12 }}>Your next questions use this document. Remove it to return to ordinary chat. Extracted text is saved in your document library.</Text>
             <View style={{ flexDirection: 'row', gap: 24 }}>
               <TouchableOpacity accessibilityRole="button" disabled={sending || documentBusy} onPress={() => setInputText('Explain this document in plain language.')}>

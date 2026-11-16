@@ -25,6 +25,8 @@ class RespondRequest(BaseModel):
     message: str = Field(min_length=1, max_length=64000)
     document_id: UUID | None = None
     attachments: list[Attachment] = Field(default_factory=list, max_length=4)
+    # Public / Private mode (Issue #39). Any other value is rejected (422), never treated as Private.
+    privacy_mode: Literal["private", "public"] = "private"
 
 
 class RespondResponse(BaseModel):
@@ -91,6 +93,7 @@ class ImageGenerateRequest(BaseModel):
     conversation_id: str | None = None
     prompt: str = Field(min_length=1, max_length=1000)
     user_message: str | None = Field(default=None, min_length=1, max_length=1000)
+    privacy_mode: Literal["private", "public"] = "private"
 
 
 class ImageGenerateResponse(BaseModel):

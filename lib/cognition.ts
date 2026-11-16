@@ -1,6 +1,7 @@
 import { Platform } from 'react-native';
 import { requestKey, userTimezone } from './my-day';
 import { authHeaders } from './auth';
+import type { PrivacyMode } from './privacy-mode';
 
 export interface RespondResponse {
   conversation_id: string;
@@ -38,6 +39,7 @@ export async function generateImage(
   conversationId: string | null,
   prompt: string,
   userMessage?: string,
+  privacyMode: PrivacyMode = 'private',
 ): Promise<{ conversation_id: string; message_id: string }> {
   const baseUrl = process.env.EXPO_PUBLIC_LUMEN_API_URL?.trim().replace(/\/+$/, '');
   if (!baseUrl) {
@@ -56,6 +58,7 @@ export async function generateImage(
         conversation_id: conversationId,
         prompt,
         ...(userMessage ? { user_message: userMessage } : {}),
+        privacy_mode: privacyMode,
       }),
       signal: controller.signal,
     });
@@ -106,6 +109,7 @@ export async function respondToMessage(
   turnKey?: string,
   documentId?: string,
   effort: "quick" | "deep" | "default" = "default",
+  privacyMode: PrivacyMode = 'private',
 ): Promise<RespondResponse> {
   const baseUrl = process.env.EXPO_PUBLIC_LUMEN_API_URL?.trim().replace(/\/+$/, '');
   if (!baseUrl) {
@@ -117,7 +121,7 @@ export async function respondToMessage(
     const response = await fetch(`${baseUrl}${onEvent && Platform.OS === "web" ? "/v0.2/respond/stream" : "/v0.1/respond"}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', ...await authHeaders() },
-      body: JSON.stringify({ companion_id: companionId, conversation_id: conversationId, message, attachments, document_id: documentId, effort, timezone: userTimezone(), request_id: turnKey || requestKey() }),
+      body: JSON.stringify({ companion_id: companionId, conversation_id: conversationId, message, attachments, document_id: documentId, effort, timezone: userTimezone(), request_id: turnKey || requestKey(), privacy_mode: privacyMode }),
       signal: controller.signal,
     });
     if (onEvent && Platform.OS === 'web' && response.ok) {

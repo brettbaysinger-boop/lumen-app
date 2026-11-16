@@ -53,7 +53,8 @@ export function useRoomMode(): RoomMode { return useSyncExternalStore(watchRoomM
 // ready/gone: the room's own header is (not) on screen, so the app hides (shows) its bar.
 // chat/theater: the view now showing. close/browser: the person tapped that control in the room.
 // restored: the page's own full screen has just ended.
-export const ROOM_EVENTS = ['ready', 'gone', 'chat', 'theater', 'close', 'browser', 'restored'] as const;
+// private/public: the person flipped the 🔒 Private | 👥 Public switch in the room (Issue #39).
+export const ROOM_EVENTS = ['ready', 'gone', 'chat', 'theater', 'close', 'browser', 'restored', 'private', 'public'] as const;
 export type RoomEvent = typeof ROOM_EVENTS[number];
 
 /** True when the page is running inside the phone app's own view. */

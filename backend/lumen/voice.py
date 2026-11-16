@@ -1,6 +1,7 @@
 import httpx
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from fastapi.responses import Response
+from typing import Literal
 from pydantic import BaseModel, Field
 
 from .auth import require_user, AuthUser
@@ -16,6 +17,9 @@ class SpeechRequest(BaseModel):
     text: str = Field(min_length=1, max_length=4000)
     companion_id: UUID | None = None
     voice: str | None = Field(default=None, min_length=1, max_length=120)
+    # Public / Private mode (Issue #39). In Public mode only a Public-mode reply may be spoken.
+    privacy_mode: Literal["private", "public"] = "private"
+    message_id: UUID | None = None
 
 
 def speech_settings():
@@ -83,6 +87,11 @@ async def speak(request: SpeechRequest, user: AuthUser = Depends(require_user)):
     settings = speech_settings()
     if not request.text.strip():
         raise HTTPException(400, "Reply text is empty.")
+    if request.privacy_mode != "private":
+        from .privacy_mode import PUBLIC_SPEECH_DENIED, public_speech_allowed
+        db = SupabaseRepository(settings, user.token)
+        if not await public_speech_allowed(db, str(request.message_id) if request.message_id else None, request.text):
+            raise HTTPException(403, PUBLIC_SPEECH_DENIED)
     selected_voice = settings.speech_voice
     if request.companion_id:
         companion = await owned_companion(str(request.companion_id), user)

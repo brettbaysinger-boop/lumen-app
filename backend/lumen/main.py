@@ -17,7 +17,10 @@ from .auth import AuthUser, require_user
 from .config import get_settings
 from .ollama import OllamaProvider
 from .runtime import CognitionRuntime
+from .privacy_mode import PublicCognitionRuntime
 from .memory_backend import memory_backend, supabase_memory_enabled
+from .rmc_auto_ingest import auto_ingest_rmc_user_message
+from .rmc.memory_routes import router as rmc_memory_router
 from .schemas import (
     HealthResponse,
     RespondRequest,
@@ -67,6 +70,7 @@ app.include_router(goals_router)
 app.include_router(providers_router)
 app.include_router(unstuck_router)
 app.include_router(handoff_router)
+app.include_router(rmc_memory_router)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origins,
@@ -97,7 +101,7 @@ async def respond(request: RespondRequest, background_tasks: BackgroundTasks, us
     try:
         await prioritize_chat()
         async with model_lock:
-            instance = CognitionRuntime(settings, user.token, user.id)
+            instance = (PublicCognitionRuntime if request.privacy_mode == "public" else CognitionRuntime)(settings, user.token, user.id)
             instance.effort = request.effort
             instance.timezone = request.timezone
             instance.request_key = str(request.request_id)
@@ -109,11 +113,24 @@ async def respond(request: RespondRequest, background_tasks: BackgroundTasks, us
                 document_id=str(request.document_id) if request.document_id else None,
             )
         queue_supabase_memory_work(background_tasks, user, request.companion_id, response.observation_message_id)
+        queue_rmc_memory_work(background_tasks, user, instance)
         return response
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except Exception as exc:
         raise HTTPException(status_code=502, detail="Lumen could not complete this request. Check the API logs.") from exc
+
+
+def queue_rmc_memory_work(background_tasks: BackgroundTasks, user: AuthUser, instance: CognitionRuntime):
+    """Schedule a scoped RMC ingest *after* a completed persisted reply."""
+    # Public / Private mode (Issue #39), layer 2 of 3: a Public turn is never queued for learning.
+    if getattr(instance, "privacy_mode", "private") != "private":
+        return
+    message_id = getattr(instance, "rmc_auto_message_id", None)
+    if message_id and getattr(settings, "rmc_auto_ingest_enabled", False):
+        background_tasks.add_task(
+            auto_ingest_rmc_user_message, settings, user.token, user.id, message_id
+        )
 
 
 def queue_supabase_memory_work(background_tasks: BackgroundTasks, user: AuthUser, companion_id: str,
@@ -183,6 +200,8 @@ async def generate_image(
     request: ImageGenerateRequest,
     user: AuthUser = Depends(require_user),
 ):
+    if request.privacy_mode != "private":
+        raise HTTPException(status_code=403, detail="Image creation is paused while Public mode is on. Switch to Private to create images.")
     db = SupabaseRepository(settings, user.token)
 
     companion = await db.get_companion(request.companion_id)
@@ -323,7 +342,7 @@ async def generate_image(
 @app.post("/v0.2/respond/stream")
 async def respond_stream(request: RespondRequest, background_tasks: BackgroundTasks,
                          user: AuthUser = Depends(require_user)):
-    instance = CognitionRuntime(settings, user.token, user.id)
+    instance = (PublicCognitionRuntime if request.privacy_mode == "public" else CognitionRuntime)(settings, user.token, user.id)
     instance.effort = request.effort
     instance.timezone = request.timezone
     instance.request_key = str(request.request_id)
@@ -348,6 +367,7 @@ async def respond_stream(request: RespondRequest, background_tasks: BackgroundTa
                         emit=queue.put,
                     )
                 queue_supabase_memory_work(background_tasks, user, request.companion_id, result.observation_message_id)
+                queue_rmc_memory_work(background_tasks, user, instance)
                 await queue.put({"type": "done", "response": result.model_dump()})
             except Exception:
                 await queue.put({"type": "error", "text": "Lumen could not finish this reply. Reload before retrying."})

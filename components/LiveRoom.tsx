@@ -77,8 +77,10 @@ export function LiveRoomActions({ c, live, offered, onLive, onDocuments, onPract
  * Theater: the only controls over the video. Back to Video Chat, the messages panel, and full screen
  * (given only where the browser can do it; inside the phone app it also allows turning the phone).
  */
-export function LiveRoomTheaterBar({ messagesOpen, onChat, onMessages, fullScreen, onFullScreen }: {
+export function LiveRoomTheaterBar({ messagesOpen, onChat, onMessages, fullScreen, onFullScreen, privacy }: {
   messagesOpen: boolean; onChat: () => void; onMessages: () => void; fullScreen?: boolean; onFullScreen?: () => void;
+  /** The 🔒 Private | 👥 Public switch (Issue #39), kept reachable over the video. */
+  privacy?: ReactNode;
 }) {
   const control = (label: string, hint: string, onPress: () => void, expanded?: boolean) =>
     <Pressable accessibilityRole="button" accessibilityLabel={hint} accessibilityState={expanded === undefined ? {} : { expanded }} {...(expanded === undefined ? {} : { 'aria-expanded': expanded })} onPress={onPress} hitSlop={6}
@@ -88,6 +90,7 @@ export function LiveRoomTheaterBar({ messagesOpen, onChat, onMessages, fullScree
   return <View pointerEvents="box-none" style={styles.theaterBar}>
     {control('‹ Video Chat', 'Leave Companion Theater and return to Video Chat', onChat)}
     <View pointerEvents="box-none" style={styles.theaterGroup}>
+      {privacy}
       {control(messagesOpen ? 'Hide messages' : 'Messages', messagesOpen ? 'Hide the conversation' : 'Show the conversation', onMessages, messagesOpen)}
       {onFullScreen && control(fullScreen ? 'Exit full screen' : 'Full screen', fullScreen ? 'Leave full screen' : 'Show the video full screen', onFullScreen)}
     </View>
