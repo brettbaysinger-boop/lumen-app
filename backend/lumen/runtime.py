@@ -320,13 +320,26 @@ class CognitionRuntime:
         # Only eligible ordinary text turns can be screened for automatic RMC
         # learning. Explicit saves, commands/actions, photos and documents are
         # never re-ingested by this background path. Companion preference wins.
+        # A short affirmative reply can close a genuine nickname agreement.
+        # Require a proposal in the immediately preceding assistant turn;
+        # assistant enthusiasm alone must not create a durable memory.
+        from .rmc_shared_nicknames import agreed_nicknames
+        previous_assistant = (
+            recent[0].get("content", "") if recent and
+            recent[0].get("role") == "assistant" else ""
+        )
+        nickname_agreement = agreed_nicknames(
+            user_message, previous_assistant,
+            result.get("content", ""), companion.get("name", "Lumen")
+        ) if (rmc_memory is not None and conversational_model_reply) else None
         rmc_auto_eligible = (
             rmc_memory is not None
             and getattr(self.settings, "rmc_auto_ingest_enabled", False) is True
             and companion.get("auto_memory_enabled") is not False
             and not practice and not attachments and not document_id and not action
             and conversational_model_reply and memory_status == "none"
-            and 12 <= len(user_message.strip()) <= 2000
+            and ((12 <= len(user_message.strip()) <= 2000)
+                 or nickname_agreement is not None)
         )
         user_row = await self.db.create_message({
             "conversation_id": conversation_id,
