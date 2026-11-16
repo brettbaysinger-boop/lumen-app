@@ -545,3 +545,21 @@ class FramePackCheckScriptTests(unittest.TestCase):
         result = self.run_check({"/generate": {"parameters": FRAMEPACK_PARAMETERS}})
         self.assertEqual(result.returncode, 1)
         self.assertIn("/generate", result.stdout)
+
+
+class FramePackStudioShapeTests(unittest.TestCase):
+    """The live Heavy install is FramePack-Studio (/handle_start_button, /partial). Lumen must refuse
+    it rather than guess, until a dedicated adapter is verified."""
+
+    def test_studio_start_button_is_refused(self):
+        from lumen.video_providers import FramePackNeedsAdapter
+        studio = [
+            {"label": "Generation Type", "component": "Radio", "parameter_has_default": True, "parameter_default": "Original"},
+            {"label": "Start Frame (optional)", "component": "Image", "parameter_has_default": True, "parameter_default": None},
+            {"label": "Video Input", "component": "Video", "parameter_has_default": True, "parameter_default": None},
+            {"label": "End Frame (Optional)", "component": "Image", "parameter_has_default": True, "parameter_default": None},
+            {"label": "Prompt", "component": "Textbox", "parameter_has_default": True, "parameter_default": ""},
+            {"label": "Video Length (Seconds)", "component": "Slider", "parameter_has_default": True, "parameter_default": 6},
+        ]
+        with self.assertRaises(FramePackNeedsAdapter):
+            framepack_arguments(studio, image={"path": "x"}, prompt="p", negative="", seed=1, seconds=3.0)

@@ -28,6 +28,8 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--url", required=True)
     parser.add_argument("--api-name", default="/process")
+    parser.add_argument("--dump", help="write every endpoint's inputs and returns to this JSON file "
+                                       "(for designing an adapter; contains no secrets)")
     args = parser.parse_args()
     base = args.url.rstrip("/")
     info, prefix = None, None
@@ -44,6 +46,11 @@ def main() -> int:
     print(f"Gradio API: reachable, prefix '{prefix or '(none)'}'")
     endpoints = info.get("named_endpoints") or {}
     print("Named endpoints:", ", ".join(sorted(endpoints)) or "(none)")
+    if args.dump:
+        with open(args.dump, "w", encoding="utf-8") as handle:
+            json.dump({"prefix": prefix, "named_endpoints": endpoints,
+                       "unnamed_endpoints": info.get("unnamed_endpoints") or {}}, handle, indent=2, default=str)
+        print(f"Wrote full endpoint metadata to {args.dump}")
     endpoint = endpoints.get(args.api_name)
     if not isinstance(endpoint, dict):
         print(f"Endpoint {args.api_name}: MISSING (set FRAMEPACK_API_NAME to one listed above)")

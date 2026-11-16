@@ -9,7 +9,7 @@ the live database or a phone. Not deployed.
 |---|---|---|---|
 | Still images (default) | ComfyUI + **BigLust SDXL v1.6** (`backend/workflows/biglust-sdxl-v16-api.json`, `COMFYUI_CHECKPOINT`) | `images.py`, `companion_images.py` | Owner requirement 2026-11-16; checkpoint not yet confirmed on Heavy |
 | Still images (previous) | ComfyUI + FLUX.2 Klein (`flux2-klein-4b-fp8.json`) | same | Worked live 2026-10-09 |
-| Image to video | Whichever FramePack (Gradio) install on Heavy is operational; not yet identified | `video_providers.FramePackProvider` (Gradio HTTP API) | New; install, port and inputs unverified |
+| Image to video | FramePack-Studio (Gradio) on Heavy `127.0.0.1:7863` (owner discovery 2026-11-16) | none yet: needs a dedicated adapter | NOT READY |
 | Text to video | Wan2.2 ComfyUI workflow, if exported | `video_providers.run_comfy_video_workflow` | New; no Wan2.2 workflow found in any repo |
 | Text to video without Wan2.2 | BigLust SDXL still, then FramePack | `media_jobs.run_video_job` (`t2i2v`) | New, not run on Heavy |
 
@@ -54,6 +54,60 @@ video path: sexual or nude content with any sign of a minor; sexual or nude cont
 identifiable people; non-consent; intimate video made from an uploaded photo. Allowed adult prompts
 get an explicit adult-age line and an anti-minor negative prompt where the workflow supports one.
 Keyword checks are a backstop, not a classifier.
+
+## Readiness (owner-supplied Heavy discovery, 2026-11-16)
+
+### BigLust still images: preflight verified, generation UNTESTED
+* Verified (read-only, on Heavy): ComfyUI 0.39.0 at `127.0.0.1:8188`, RTX 5060 Ti;
+  `CheckpointLoaderSimple` lists exactly one checkpoint, `bigLust_v16.safetensors`; all six nodes
+  of `biglust-sdxl-v16-api.json` are installed.
+* Settings: `COMFYUI_WORKFLOW=<checkout>/backend/workflows/biglust-sdxl-v16-api.json`,
+  `COMFYUI_CHECKPOINT=bigLust_v16.safetensors`. No other checkpoint is needed.
+* UNTESTED: any generation with this workflow; the route from the lumen-api host to Heavy (ComfyUI
+  answers on Heavy's loopback; the old `COMFYUI_URL` pointed at a LAN address); Chat and Gallery
+  delivery; desktop and S22 display.
+* Worth checking first (read-only, on the lumen-api host): `curl -sS -m 5 "$COMFYUI_URL/system_stats"`
+  with the live `COMFYUI_URL`. If ComfyUI now listens only on loopback, today's live image path
+  cannot reach it either, which would also explain failed image requests.
+
+### FramePack video: NOT READY
+* Verified: a FramePack-Studio Gradio app on Heavy `127.0.0.1:7863`. It has no `/process`; its
+  generation endpoints are `/handle_start_button` (generation type, optional start frame, video
+  input, end frame, prompt, negative prompt, seed, length and many more) and `/partial`, plus
+  queue, monitoring and cancel endpoints.
+* Lumen's client only fits the simple FramePack demo (one image input, `/process`, video in the
+  call result). It now refuses FramePack-Studio's shape (`FramePackNeedsAdapter`) instead of
+  guessing. Video stays off (`VIDEO_GENERATION_ENABLED=false`).
+* Next, read-only: `python3 scripts/check-framepack-endpoint.py --url http://127.0.0.1:7863
+  --api-name /handle_start_button --dump /tmp/fp-studio-api.json` on Heavy, then share the JSON.
+  The adapter (generation mode, required fields, job id, queue polling, output file, cancel) is
+  written against that file, then tested with one short canary.
+* UNTESTED: everything about video generation, delivery and playback.
+
+### Private route from lumen-api to Heavy (decision needed)
+Both services bind Heavy's loopback, and must stay private. Options:
+1. **SSH local forward from the lumen-api host** (recommended: only that host gets access):
+   `ssh -N -L 127.0.0.1:18188:127.0.0.1:8188 -L 127.0.0.1:17863:127.0.0.1:7863 <user>@aiLumen-llm-heavy`,
+   later as a supervised service. Lumen then uses `http://127.0.0.1:18188` / `:17863`.
+2. Tailscale Serve on Heavy (tailnet-only HTTPS). Simpler, but every tailnet device could reach
+   unauthenticated ComfyUI/FramePack.
+Neither is set up by this PR. A persistent tunnel is a service change: owner go-ahead first.
+
+### Gated step A: isolated BigLust canary (no service, database or app change)
+On the lumen-api host, from a throwaway checkout of this PR (never the live checkout):
+```bash
+git clone --branch feat/local-media-generation-20261116 https://github.com/brettbaysinger-boop/lumen-app /tmp/lumen-pr51
+ssh -N -L 127.0.0.1:18188:127.0.0.1:8188 <user>@aiLumen-llm-heavy &   # temporary, foreground job
+curl -sS -m 5 http://127.0.0.1:18188/system_stats                          # read-only reachability
+cd /tmp/lumen-pr51 && <live-checkout>/backend/.venv/bin/python scripts/canary-comfyui-image.py --run-gpu \
+  --url http://127.0.0.1:18188 --workflow backend/workflows/biglust-sdxl-v16-api.json \
+  --checkpoint bigLust_v16.safetensors --out /tmp/lumen-canary
+kill %1
+```
+PASS means one 832×1216 PNG whose model is `bigLust_v16.safetensors`. It runs one GPU job on Heavy
+(about 30 SDXL steps) and writes only `/tmp/lumen-canary/lumen-canary.png`. Rollback: none needed;
+delete `/tmp/lumen-pr51` and `/tmp/lumen-canary`. Chat/Gallery delivery is tested later, after the
+backend step, and needs its own go-ahead with backup and rollback commands.
 
 ## Still-image default: BigLust SDXL v1.6
 

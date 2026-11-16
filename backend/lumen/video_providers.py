@@ -186,14 +186,33 @@ _PERCENT = re.compile(r"(\d{1,3})\s*%")
 _VIDEO_LENGTH = re.compile(r"Video length:\s*([\d.]+)\s*seconds", re.IGNORECASE)
 
 
+class FramePackNeedsAdapter(ImageProviderNotConfigured):
+    """The endpoint is not the simple FramePack demo shape; a dedicated adapter is required."""
+
+
+_MEDIA_COMPONENTS = ("image", "video", "file", "imageeditor")
+_UNSUPPORTED_LABELS = ("generation type", "model type", "end frame", "video input")
+
+
 def framepack_arguments(parameters: list[dict[str, Any]], *, image: dict[str, Any], prompt: str,
                         negative: str, seed: int, seconds: float) -> list[Any]:
-    """Map Lumen's values onto FramePack's inputs by label; other inputs keep their defaults."""
+    """Map Lumen's values onto the simple FramePack demo endpoint (one image, prompt, length).
+
+    Fails closed on anything else. FramePack-Studio's ``/handle_start_button`` and ``/partial``
+    (generation type, start/end frames, video input, queue results) are not this shape and are
+    refused here rather than guessed at: they need their own verified adapter.
+    """
+    media = [p for p in parameters if str(p.get("component") or "").lower() in _MEDIA_COMPONENTS]
+    if len(media) != 1:
+        raise FramePackNeedsAdapter(
+            f"This FramePack endpoint has {len(media)} image/video inputs; Lumen only supports exactly one.")
     data: list[Any] = []
     for parameter in parameters:
         label = f'{parameter.get("label") or ""} {parameter.get("parameter_name") or ""}'.strip().lower()
         component = str(parameter.get("component") or "").lower()
-        if component == "image" or label.split(" ")[0] == "image":
+        if any(word in label for word in _UNSUPPORTED_LABELS):
+            raise FramePackNeedsAdapter(f"FramePack input '{label}' needs a dedicated adapter.")
+        if parameter is media[0]:
             data.append(image)
         elif "negative" in label:
             data.append(negative)

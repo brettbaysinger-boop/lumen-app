@@ -132,3 +132,22 @@ class CheckScriptTests(unittest.TestCase):
         result = self.run_check("biglust.safetensors")
         self.assertEqual(result.returncode, 1)
         self.assertIn("MISSING", result.stdout)
+
+
+class CanaryScriptTests(unittest.TestCase):
+    def test_refuses_without_explicit_gpu_flag(self):
+        result = subprocess.run([sys.executable, str(ROOT / "scripts" / "canary-comfyui-image.py"),
+                                 "--url", "http://127.0.0.1:9", "--workflow", str(WORKFLOW),
+                                 "--checkpoint", CHECKPOINT, "--out", "/tmp/x"], capture_output=True, text=True, timeout=30)
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("--run-gpu", result.stdout)
+
+    def test_png_size_reader(self):
+        sys.path.insert(0, str(ROOT / "scripts"))
+        import importlib.util
+        spec = importlib.util.spec_from_file_location("canary", ROOT / "scripts" / "canary-comfyui-image.py")
+        canary = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(canary)
+        header = b"\x89PNG\r\n\x1a\n" + b"\x00\x00\x00\x0dIHDR" + (832).to_bytes(4, "big") + (1216).to_bytes(4, "big")
+        self.assertEqual(canary.png_size(header), (832, 1216))
+        self.assertIsNone(canary.png_size(b"not a png"))
