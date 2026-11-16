@@ -193,7 +193,7 @@ Keyword rules are a backstop and can misfire; each refusal names the rule so it 
   entry). MATCH prints the file, bytes and sha256; REFUSED prints why and copies nothing.
 * Hardware canary 3 (758c2b3, 2026-11-16) rendered on the GPU: FP-Studio's queue.json has job
   `0bb4dd05-…` completed with `result` `outputs/261116_095453_817_1084_19.mp4` (836,627 bytes, H.264
-  512×768, 2.43 s). The adapter rejected it because it expected `<uuid>_` names; fixed in 60b2930.
+  512×768, 2.43 s). The adapter rejected it because it expected `<uuid>_` names; fixed in 34f10dd.
 * Still open: the unattended private route from the worker to FP-Studio; Chat/Gallery delivery and
   playback of video on the S22. `VIDEO_GENERATION_ENABLED` stays false until a real canary passes and the
   owner approves.
