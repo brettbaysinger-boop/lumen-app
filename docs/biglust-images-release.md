@@ -9,8 +9,8 @@ Heavy through the live `COMFYUI_URL` route: `bigLust_v16.safetensors`, 832x1216,
 
 ## What this release is
 
-Branch `release/biglust-images-20261116`: code commits `0bf2394` and `c6a6934` (the owner's content
-directive) on top of the live S22 release `7f63d52` (PR #50 / R4). Backend only:
+Branch `release/biglust-images-20261116`: code commits `0bf2394`, `c6a6934` (the owner's content
+directive) and `1c8b2ab` (tests) on top of the live S22 release `7f63d52` (PR #50 / R4). Backend only:
 
 | File | Change |
 | --- | --- |
@@ -35,63 +35,69 @@ COMFYUI_CHECKPOINT=bigLust_v16.safetensors
 `COMFYUI_URL` stays exactly as it is (the live route that works). `VIDEO_GENERATION_ENABLED` does not exist
 in this release, so video is off by construction.
 
-## Content rules in this release (owner directive 2026-11-16)
+## Content handling: exact before/after (owner directive 2026-11-16)
 
-Adult nudity and erotic images of consenting fictional adults are generated as asked: no NSFW
-filter, no cloud moderation, no safe mode, no prompt rewrite. A request is refused only when it has
-a sexual/nude word **and** a minor signal (minor words, an age under 18, school-child framing,
-"barely legal", "young-looking"), a real identifiable person (celebrity/famous, lookalike, deepfake,
-face swap, "real person"/irl, "photo of my ...", "my" + a relationship), or stated non-consent (rape,
-non-consensual, drugged, unconscious, coercion, hidden camera, voyeur...). Full list and what was
-narrowed: `docs/local-media-generation.md` on PR #51.
+This is **not** zero filtering. It is: no NSFW filter, no cloud moderation, no safe mode, no new
+dependency, and the user's prompt is passed to BigLust unchanged, with three targeted refusals and one
+negative-prompt default. Everything is in `backend/lumen/media_safety.py` and `config.py`.
 
-Only remaining transformation: `{{LUMEN_NEGATIVE}}` gets `COMFYUI_NEGATIVE_PROMPT`, whose default is
-quality terms plus "child, minor, underage, teen, childlike body". This release does not set it in the
-`.env`, so the default applies. Known false-positive risk: "my girlfriend"/"my wife" also blocks a
-request meant for the Lumen companion itself (owner decision).
+| | Live now (`7f63d52`) | After this release |
+| --- | --- | --- |
+| Positive prompt | user text + companion identity when the request is about the companion | **same, nothing added** (the "consenting adults over 25" line from an earlier draft is gone) |
+| Negative prompt | none from Lumen (live `images.py` has no `{{LUMEN_NEGATIVE}}` support) | `COMFYUI_NEGATIVE_PROMPT`; default `lowres, bad anatomy, bad hands, extra fingers, deformed, blurry, watermark, text, child, minor, underage, teen, childlike body`. Setting the variable replaces all of it. |
+| Refusals | none | only when the prompt has a sexual/nude word **and** (a) a minor signal, (b) a real identifiable person, or (c) stated non-consent (word lists below) |
+| Public mode | image creation refused (403) | unchanged |
 
-## Steps (owner, on the Lumen host)
+(a) minor: child, kid, minor, underage, teen(ager), tween, adolescent, juvenile, toddler, infant, newborn,
+an age under 18 ("16 years old", "15yo", "aged 12"), schoolgirl/schoolboy, school uniform,
+middle/high/elementary school, kindergarten, loli/shota/jailbait, little/young girl/boy, "barely legal",
+"young-looking", "childish body", and the same words spelled out letter by letter.
+(b) real person: celebrity, famous, real person/real-life/irl, lookalike, deepfake, face swap,
+"photo/picture of my ...", "my" + wife, girlfriend, boyfriend, partner, ex, boss, coworker, friend,
+classmate, teacher, student, crush, family member, roommate, landlord, employee.
+(c) non-consent: rape, non-consensual, without (her) consent, against her will, forced to/into/sex,
+coercion, drugged, unconscious, incapacitated, blackmail, hidden camera, spy cam, upskirt, voyeur,
+revenge porn.
 
-1. Clean clone of the release branch, anywhere outside the live checkout:
+Tested as **not refused** (`backend/tests/test_media_safety.py`): "topless woman on a beach at sunset",
+"erotic boudoir photo of a redhead woman", "sexy nurse costume", "sexy teacher roleplay, lingerie",
+"nude couple in bed, explicit", "a curvy naked woman in a bathtub", "draw yourself nude", "sexy actress
+character", "a sleeping nude woman, oil painting", "hey baby ... lingerie", "nude photo with forced
+perspective", "an explicit erotic scene between two consenting adults", among others.
 
-   ```
-   git clone -b release/biglust-images-20261116 <repo> ~/lumen-biglust-release
-   cd ~/lumen-biglust-release
-   ```
+Known remaining false positives: "sexy schoolgirl costume" (adult cosplay) and "my girlfriend"/"my wife"
+meant as the Lumen companion are refused. Removing either is a one-line change if you want it.
 
-2. Read-only check. It confirms the live target files are the S22 release byte for byte, the `.env` has
-   `COMFYUI_URL`, systemd does not set the ComfyUI keys, lumen-api is healthy and serves Public/Private,
-   and runs the full backend test suite on a throwaway patched copy of the live backend:
+## Operator commands (owner, on the Lumen host, as the lumen-api user)
 
-   ```
-   scripts/biglust-images-release.sh check
-   ```
+Read-only check, then apply. `check` prints the exact apply line with its patch id; copy it.
 
-   It ends with `READY` and the exact apply command, including a 12-character patch id.
-   If it says `NOT READY`, stop and send me the output.
+```
+git clone -b release/biglust-images-20261116 https://github.com/brettbaysinger-boop/lumen-app.git ~/lumen-biglust-release
+cd ~/lumen-biglust-release && scripts/biglust-images-release.sh check
+BIGLUST_RELEASE_CONFIRM=images:<patch id printed by check> scripts/biglust-images-release.sh apply
+```
 
-3. Apply (backs up every touched file and the `.env` with sha256 first, restarts lumen-api only, checks
-   health and Public/Private; any failure restores the backup automatically):
+Rollback, byte for byte, at any time:
 
-   ```
-   BIGLUST_RELEASE_CONFIRM=images:<patch id from check> scripts/biglust-images-release.sh apply
-   scripts/biglust-images-release.sh status
-   ```
+```
+cd ~/lumen-biglust-release && BIGLUST_RELEASE_CONFIRM=images-rollback scripts/biglust-images-release.sh rollback
+```
 
-   `status` should show `state: applied` and `effective: bigLust_v16.safetensors biglust-sdxl-v16-api.json url-set video-off`.
-
-4. Way back at any time, byte for byte:
-
-   ```
-   BIGLUST_RELEASE_CONFIRM=images-rollback scripts/biglust-images-release.sh rollback
-   ```
+What they do: `check` changes nothing; it confirms the live target files equal `7f63d52` byte for byte,
+`COMFYUI_URL` is set (value never shown), systemd does not override the ComfyUI keys, lumen-api is
+healthy and serves Public/Private, and runs tests on a throwaway patched copy (full suite if the live venv
+has pytest, otherwise the new tests with stdlib unittest plus an import of the whole app; nothing is
+installed). `apply` backs up the touched files and the `.env` with sha256, applies the reviewed patch to
+the working files only, sets `COMFYUI_WORKFLOW` and `COMFYUI_CHECKPOINT=bigLust_v16.safetensors` (no other
+`.env` line changes), restarts lumen-api only, checks health and Public/Private, and restores
+automatically on any failure. `status` should then show
+`effective: bigLust_v16.safetensors biglust-sdxl-v16-api.json url-set video-off`.
 
 Defaults: `LIVE_DIR=/home/brett/lumen-push`, `LUMEN_API_URL=http://127.0.0.1:8001`, Python from
-`$LIVE_DIR/backend/.venv`. Override them with environment variables if the host differs. Run as the user
-lumen-api runs as; `sudo` is used only for `systemctl restart lumen-api`. Backups live in
-`~/.local/state/lumen-biglust-release/<timestamp>/` (mode 700).
+`$LIVE_DIR/backend/.venv`. Backups: `~/.local/state/lumen-biglust-release/<timestamp>/` (mode 700).
 
-## Private Chat → Gallery canary (after step 3)
+## Private Chat → Gallery canary (after apply)
 
 Use a phrase the live client already routes straight to image creation (it starts with draw, sketch,
 illustrate, render or paint). The live build's chat does not yet force generation for other phrasings
@@ -106,7 +112,7 @@ such as "send me a selfie"; that fix is in PR #51's `runtime.py` and is not part
    an adult request such as `Draw a nude elf woman bathing in a forest spring` must be generated as asked.
 5. Public mode: `Draw a lighthouse` must say image creation is paused in Public.
 
-If anything is wrong, roll back (step 4) and send me the output of `status` and the lumen-api log lines
+If anything is wrong, roll back and send me the output of `status` and the lumen-api log lines
 from the canary window.
 
 ## Known gaps, not fixed by this release
@@ -124,7 +130,7 @@ from the canary window.
 
 - Backend suite on the release branch: 666 passed.
 - `scripts/test-biglust-images-release.sh` (offline, stubs for sudo/systemctl/curl, a fake live checkout
-  at `7f63d52`): 32/32 pass. It covers check passing, refusals without or with the wrong confirmation,
+  at `7f63d52`): 33/33 pass. It covers check passing (also with a live venv that has no pytest), refusals without or with the wrong confirmation,
   a hand-edited live file (refused, untouched), systemd overriding the ComfyUI keys (refused), apply
   changing only the reviewed files and the two `.env` keys (mode 600 kept, `COMFYUI_URL` and RMC lines
   untouched, live HEAD unmoved), byte-for-byte rollback, and automatic restore when health fails after

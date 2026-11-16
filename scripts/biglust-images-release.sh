@@ -25,7 +25,7 @@ STATE_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/lumen-biglust-release"
 PYTHON="${BIGLUST_RELEASE_PYTHON:-$LIVE_DIR/backend/.venv/bin/python}"
 # Pinned and reviewed: the live S22 release, and the images-only change on top of it.
 BASE="${BIGLUST_RELEASE_BASE:-7f63d520f56133f09dc7e2bdd2b92c31d0e484b7}"
-CODE="${BIGLUST_RELEASE_CODE:-c6a6934b9534ae02ddc283ca264c105a89502118}"
+CODE="${BIGLUST_RELEASE_CODE:-1c8b2ab5378d65c93811ad42516f7b64b669d854}"
 CHECKPOINT=bigLust_v16.safetensors
 WORKFLOW_REL=backend/workflows/biglust-sdxl-v16-api.json
 problems=0
@@ -88,8 +88,16 @@ test_copy() {  # $1 = record dir; tests the patch on a throwaway copy of the liv
   local p; while read -r p; do
     [ "$(git hash-object --no-filters -- "$copy/$p")" = "$(blob_of "$CODE" "$p")" ] || { rm -rf "$copy"; return 1; }
   done < <(files)
+  # Full suite when the live venv has pytest; otherwise (production venvs usually don't) the new tests
+  # with stdlib unittest plus an import of the whole app. Nothing is installed either way.
+  local run=(-m pytest -q -p no:cacheprovider)
+  "$PYTHON" -c 'import pytest' 2>/dev/null || run=(-c 'import sys, unittest, lumen.main
+r = unittest.TextTestRunner(verbosity=1).run(unittest.defaultTestLoader.loadTestsFromNames(
+    ["tests.test_media_safety", "tests.test_sdxl_image_workflow"]))
+print(f"{r.testsRun} passed (unittest; app imports)" if r.wasSuccessful() else "unittest FAILED")
+sys.exit(0 if r.wasSuccessful() else 1)')
   if (cd "$copy/backend" && env -i PATH="$PATH" HOME="$HOME" LANG=C.UTF-8 PYTHONPATH="$copy/backend" \
-      SUPABASE_URL=http://127.0.0.1:9 SUPABASE_SERVICE_ROLE_KEY=fictional "$PYTHON" -B -m pytest -q -p no:cacheprovider \
+      SUPABASE_URL=http://127.0.0.1:9 SUPABASE_SERVICE_ROLE_KEY=fictional "$PYTHON" -B "${run[@]}" \
       > "$1/tests.log" 2>&1); then rm -rf "$copy"; return 0; fi
   rm -rf "$copy"; return 1
 }

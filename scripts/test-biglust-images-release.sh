@@ -19,7 +19,7 @@ cp "$SRC/scripts/biglust-images-release.sh" "$T/release/scripts/"
 git -C "$T/release" add scripts/biglust-images-release.sh
 git -C "$T/release" -c user.name=t -c user.email=t@t commit -qm "script under test" --allow-empty
 BASE=$(git -C "$T/release" rev-parse 7f63d520f56133f09dc7e2bdd2b92c31d0e484b7)
-CODE=$(git -C "$T/release" rev-parse c6a6934b9534ae02ddc283ca264c105a89502118)
+CODE=$(git -C "$T/release" rev-parse 1c8b2ab5378d65c93811ad42516f7b64b669d854)
 
 # The fake live checkout: the S22 release with a .env that already has an older ComfyUI workflow.
 git clone -q "$SRC" "$T/live"; git -C "$T/live" checkout -q --detach "$BASE"
@@ -78,6 +78,14 @@ expect "check never prints COMFYUI_URL" '! grep -q comfy.invalid <<<"$out"'
 expect "check changes nothing" '[ "$(tree_sum)" = "$BEFORE" ] && [ ! -s "$FAKE_LOG" ]'
 ID=$(sed -n 's/^Patch id: \([0-9a-f]\{12\}\).*/\1/p' <<<"$out")
 expect "check prints a 12-hex patch id" '[ ${#ID} = 12 ]'
+
+echo "== check with a production venv that has no pytest =="
+NOPY="$T/nopytest"; "$PY" -m venv --without-pip "$NOPY" >/dev/null
+SP=$("$PY" -c 'import sysconfig; print(sysconfig.get_paths()["purelib"])')
+mkdir -p "$T/sp"; for d in "$SP"/*; do case "$(basename "$d")" in pytest*|_pytest*|py.py) ;; *) ln -s "$d" "$T/sp/";; esac; done
+echo "$T/sp" > "$("$NOPY/bin/python" -c 'import sysconfig; print(sysconfig.get_paths()["purelib"])')/live.pth"
+out=$(BIGLUST_RELEASE_PYTHON="$NOPY/bin/python" "$R" check 2>&1) && rc=0 || rc=$?
+expect "check passes without pytest (unittest of the new tests + app import)" '[ $rc = 0 ] && grep -q "passed (unittest; app imports)" <<<"$out"'
 
 echo "== refusals =="
 out=$("$R" apply 2>&1) && rc=0 || rc=$?
