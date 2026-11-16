@@ -43,3 +43,12 @@ test('videos in chat use the existing WebView or a web <video>, no new dependenc
   const pkg=JSON.parse(read('package.json'));
   assert.ok(!pkg.dependencies['expo-video']&&!pkg.dependencies['expo-av']);
 });
+
+test('the frontend-only updater refuses this change as a whole: backend and migration need their own gates',()=>{
+  const rule=new RegExp(read('scripts/animated-web-update.sh').match(/^FRONTEND_ONLY='(.+)'$/m)[1]);
+  for(const file of ['backend/lumen/media_jobs.py','backend/lumen/images.py','backend/workflows/biglust-sdxl-v16-api.json',
+    'supabase/migrations/20261116100000_media_generation_jobs.sql','scripts/check-framepack-endpoint.py'])
+    assert.doesNotMatch(file,rule,file);
+  for(const file of ['components/ChatAttachments.tsx','lib/media-jobs.ts','app/(tabs)/gallery.tsx','scripts/test-animated-media-generation-browser.cjs'])
+    assert.match(file,rule,file);
+});

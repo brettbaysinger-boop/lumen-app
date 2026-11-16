@@ -93,8 +93,28 @@ checkpoint and every node exist.
 5. Real S22 acceptance (not covered by these tests): progress shows, the clip plays inline in Chat and
    in Gallery, Public hides both.
 
+## Release gates (not authorized; owner decides each)
+
+PR #51 changes the backend, the database and the frontend, so it can never go out through the
+frontend-only updater (`scripts/animated-web-update.sh`, live blob `97e032f`, unchanged). That
+updater refuses its backend, migration and operator-script files by design
+(`tests/media-jobs.test.cjs`). PR #50 stays the isolated phone repair and ships on its own.
+
+Proposed order, each a separate owner go-ahead, after #50 is accepted on the S22:
+1. Read-only Heavy evidence: `check-comfyui-image-workflow.py` (BigLust checkpoint and nodes) and
+   `check-framepack-endpoint.py` (operational FramePack install). Nothing changes.
+2. Migration only (new table, video MIME types). Nothing reads it until step 3.
+3. Backend with video off (`VIDEO_GENERATION_ENABLED=false`) and `COMFYUI_WORKFLOW`/`COMFYUI_CHECKPOINT`
+   set to BigLust; restart `lumen-api` only. Canary: one Private image appears in Chat and Gallery
+   with the checkpoint as its model.
+4. Frontend web build (chat video player, progress, Gallery lock) through the existing guarded path.
+5. Turn video on; canary: a 3-second image-to-video in Private, then on the S22.
+Not production-ready until the S22 tests in step 5 pass.
+
 ## Not done
 
 * Five-minute video (segmentation, continuity, stitching): separate capability.
 * Cancelling a running job from the app.
 * Jobs do not survive an API restart; unfinished ones are marked failed on next use.
+* No real hardware evidence yet: BigLust filename, a generated image, the operational FramePack
+  API/port and a video canary are all unverified.

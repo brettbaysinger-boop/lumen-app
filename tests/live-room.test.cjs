@@ -131,11 +131,14 @@ test('appearance: the account synchronization reports where it stands, and nothi
   assert.match(video,/injectedJavaScriptBeforeContentLoaded=\{beforeContent\}/);
   assert.match(theme,/!roomEmbedded\(\) \|\| !isLiveRoom\(\)\) return null;/);   // only the phone app's own room, never a browser tab
 });
+const gitBlob=text=>{const body=Buffer.from(text,'utf8');return require('node:crypto').createHash('sha1').update(Buffer.concat([Buffer.from(`blob ${body.length}\0`),body])).digest('hex');};
 test('the guarded web updater accepts this change as it stands: its allowlist is not widened',()=>{
   const updater=read('scripts/animated-web-update.sh');
   const pattern=updater.match(/^FRONTEND_ONLY='(.+)'$/m)[1];
   // Unchanged, character for character: the room's files fit the rule instead of the rule being bent.
-  assert.equal(pattern,String.raw`^(app/|components/|lib/|hooks/|types/|tests/|docs/|scripts/(test-)?(animated[-_][A-Za-z0-9_.-]+|android-refresh\.sh)$)`);
+  // The release ships the live updater (blob 97e032f), not PR #26's widened copy (android-refresh.sh).
+  assert.equal(gitBlob(updater),'97e032f7a7b7c95eecaf403130d23ba0a327959e');
+  assert.equal(pattern,String.raw`^(app/|components/|lib/|hooks/|types/|tests/|docs/|scripts/(test-)?animated[-_][A-Za-z0-9_.-]+$)`);
   const allowed=new RegExp(pattern);
   for(const file of ['app/(tabs)/_layout.tsx','app/(tabs)/index.tsx','app/live-video.tsx','components/AnimatedCompanion.tsx','components/AppearanceControls.tsx','components/LiveRoom.tsx','docs/live-room.md','lib/live-room.ts','lib/live-video-web.ts','lib/theme-context.tsx','scripts/test-animated-size-component.cjs','scripts/test-animated-live-room-browser.cjs','tests/live-room.test.cjs','tests/live-video-web.test.cjs']){
     assert.ok(fs.existsSync(file),file);assert.ok(allowed.test(file),`accepted: ${file}`);}
