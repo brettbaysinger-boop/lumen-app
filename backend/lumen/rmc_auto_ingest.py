@@ -152,6 +152,10 @@ async def auto_ingest_rmc_user_message(settings, token: str, user_id: str, messa
         meta = dict(row["metadata"])
         if meta.get("rmc_auto_state") != "pending":
             return
+        # Public / Private mode (Issue #39), layer 3 of 3: a message written in Public mode is never
+        # screened or written to RMC, and no receipt is changed. Checked again before any write below.
+        if meta.get("privacy_mode") is not None:
+            return
         companion = await db.get_companion(row.get("companion_id"))
         if (not companion or companion.get("owner_user_id") != user_id
                 or companion.get("auto_memory_enabled") is False):
@@ -179,6 +183,11 @@ async def auto_ingest_rmc_user_message(settings, token: str, user_id: str, messa
         # running. Recheck their current RLS-protected companion preference
         # before issuing ANY durable RMC write.
         if candidates is not None:
+            again = await db._request(
+                "GET", "messages", params={"id": "eq." + message_id, "select": "metadata", "limit": "1"})
+            if (not again or not isinstance(again[0].get("metadata"), dict)
+                    or again[0]["metadata"].get("privacy_mode") is not None):
+                return
             latest = await db.get_companion(row["companion_id"])
             if (not latest or latest.get("owner_user_id") != user_id
                     or latest.get("auto_memory_enabled") is False

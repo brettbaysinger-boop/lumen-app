@@ -123,6 +123,9 @@ async def respond(request: RespondRequest, background_tasks: BackgroundTasks, us
 
 def queue_rmc_memory_work(background_tasks: BackgroundTasks, user: AuthUser, instance: CognitionRuntime):
     """Schedule a scoped RMC ingest *after* a completed persisted reply."""
+    # Public / Private mode (Issue #39), layer 2 of 3: a Public turn is never queued for learning.
+    if getattr(instance, "privacy_mode", "private") != "private":
+        return
     message_id = getattr(instance, "rmc_auto_message_id", None)
     if message_id and getattr(settings, "rmc_auto_ingest_enabled", False):
         background_tasks.add_task(

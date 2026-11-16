@@ -33,6 +33,10 @@ SECRETS = {
     "my_day": "collect the engraved compass",
     "document": "lease renewal clause 14b",
     "search": "pharmacy refill for Ortavex",
+    "companion_description": "knows Brett's divorce papers",
+    "companion_persona": "teases Brett about the Lisbon apartment",
+    "companion_system_prompt": "Brett's therapist is Dr. Vell",
+    "companion_visual": "wears the Quillfeather family locket",
 }
 
 
@@ -55,8 +59,11 @@ class FakeSupabase:
 
     def rows(self, table):
         return {
-            "companions": [{"id": COMPANION_ID, "name": "Lumen", "persona": "Warm, playful and curious.",
-                            "description": "A companion.", "visual_identity": "silver hair"}],
+            "companions": [{"id": COMPANION_ID, "name": "Lumen", "pronouns": "she/her",
+                            "persona": f"Warm, playful and curious; {SECRETS['companion_persona']}.",
+                            "description": f"A companion who {SECRETS['companion_description']}.",
+                            "system_prompt": f"Remember: {SECRETS['companion_system_prompt']}.",
+                            "visual_identity": f"silver hair, {SECRETS['companion_visual']}"}],
             "companion_state": [{"companion_id": COMPANION_ID, "current_goal": SECRETS["state"],
                                  "current_context": SECRETS["state"]}],
             "conversations": [{"id": CONVERSATION_ID, "companion_id": COMPANION_ID, "title": "Chat",
@@ -164,6 +171,8 @@ class PrivacyModeTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn(SECRETS["memory"], json.dumps(sent))         # proves the fixture is real
         self.assertIn(SECRETS["profile"], json.dumps(sent))
         self.assertIn(SECRETS["private_message"], json.dumps(sent))
+        for field in ("companion_description", "companion_persona", "companion_system_prompt", "companion_visual"):
+            self.assertIn(SECRETS[field], json.dumps(sent), field)      # Private keeps the owner's own companion
 
     # --- Public mode: ordinary chat stays natural, nothing private reaches the model ---------
     async def test_public_ordinary_chat_reaches_the_model_without_private_context(self):
@@ -171,7 +180,9 @@ class PrivacyModeTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(runtime.provider.calls), 1)
         sent = runtime.provider.calls[0]
         self.assertEqual(leaks(sent), [])
-        self.assertIn("Warm, playful and curious.", sent[0]["content"])   # personality kept
+        self.assertIn(pm.PUBLIC_PERSONA, sent[0]["content"])            # a personality, not a blank
+        self.assertIn("You are Lumen", sent[0]["content"])
+        self.assertIn("she/her", sent[0]["content"])
         self.assertIn("Public mode (people may be nearby)", sent[0]["content"])
         self.assertEqual(response.content, "Sounds lovely! Tell me more.")
         self.assertEqual(leaks(self.events, response.model_dump(), self.written()), [])

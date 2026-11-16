@@ -33,6 +33,11 @@ from .schemas import Attachment, RespondResponse
 PrivacyMode = Literal["private", "public"]
 PRIVACY_MODES = ("private", "public")
 MESSAGE_TAG = "privacy_mode"   # messages.metadata key written on every Public-mode message
+# Background memory learning that must never start from a Public turn (D01-63E, PR #38, and the
+# older Supabase observations). Forced off for the Public runtime's own settings view.
+PUBLIC_DISABLED_SETTINGS = {"rmc_auto_ingest_enabled": False, "memory_observations_enabled": False}
+# Message metadata keys that would queue background learning. Never written from Public.
+LEARNING_METADATA_PREFIXES = ("rmc_auto_",)
 
 # Tables a Public-mode turn may touch, by HTTP method. Everything else is denied.
 PUBLIC_ACCESS: dict[str, frozenset[str]] = {
@@ -43,6 +48,13 @@ PUBLIC_ACCESS: dict[str, frozenset[str]] = {
 }
 # Conversation fields that carry earlier private context into a turn.
 PRIVATE_CONVERSATION_FIELDS = ("handoff", "goal_item_id")
+# The owner writes the companion's description, persona, self-model prompt and appearance freely,
+# and they can hold personal details. In Public only a reviewed subset is used: her name and
+# pronouns from the saved companion, and a built-in personality sketch. A per-companion,
+# owner-reviewed Public persona would need a new column (schema change, owner decision).
+PUBLIC_COMPANION_FIELDS = ("id", "name", "gender", "pronouns", "conversation_model")
+PUBLIC_PERSONA = ("Warm, witty and curious. Speaks naturally and kindly, with light humor, "
+                  "and keeps replies easy to listen to.")
 PUBLIC_PROFILE = {"id": "withheld while Public mode is on", "display_name": "the user"}
 
 DISCREET_REPLIES = {
@@ -101,7 +113,9 @@ class PublicModeRepository(SupabaseRepository):
             raise PublicModeDenied(table)
         if method.upper() == "POST" and table == "messages":
             payload = dict(kwargs.get("json") or {})
-            payload["metadata"] = {**(payload.get("metadata") or {}), MESSAGE_TAG: "public"}
+            metadata = {k: v for k, v in (payload.get("metadata") or {}).items()
+                        if not k.startswith(LEARNING_METADATA_PREFIXES)}
+            payload["metadata"] = {**metadata, MESSAGE_TAG: "public"}
             kwargs["json"] = payload
         rows = await super()._request(method, table, **kwargs)
         if method.upper() == "GET" and table == "messages" and isinstance(rows, list):
@@ -126,6 +140,21 @@ class PublicModeRepository(SupabaseRepository):
         raise PublicModeDenied("storage")
 
 
+class PublicSettings:
+    """The app's settings as a Public turn sees them: background learning is always off."""
+
+    def __init__(self, inner):
+        object.__setattr__(self, "_inner", inner)
+
+    def __getattr__(self, name):
+        if name in PUBLIC_DISABLED_SETTINGS:
+            return PUBLIC_DISABLED_SETTINGS[name]
+        return getattr(self._inner, name)
+
+    def __setattr__(self, name, value):
+        raise AttributeError("Public-mode settings are read-only")
+
+
 class PublicModeMemory:
     """Stands in for the RMC adapter: nothing is recalled, nothing is saved."""
 
@@ -134,6 +163,13 @@ class PublicModeMemory:
 
     async def remember(self, *args, **kwargs):
         return "memory_off"
+
+
+def public_companion(companion: dict) -> dict:
+    """The companion as a Public-mode prompt may describe her: no owner-written free text."""
+    safe = {k: companion.get(k) for k in PUBLIC_COMPANION_FIELDS if k in companion}
+    return {**safe, "description": "", "persona": PUBLIC_PERSONA, "system_prompt": "",
+            "visual_identity": "not described in Public mode"}
 
 
 def private_request_kind(message: str, companion_name: str, document_id: str | None = None) -> str | None:
@@ -161,15 +197,23 @@ class PublicCognitionRuntime(CognitionRuntime):
     privacy_mode: PrivacyMode = "public"
 
     def __init__(self, settings, access_token: str | None = None, user_id: str | None = None):
-        super().__init__(settings, access_token, user_id)
+        super().__init__(PublicSettings(settings), access_token, user_id)
         self.db = PublicModeRepository(self.db)
         self.rmc_memory = PublicModeMemory()
+        self.rmc_auto_message_id = None
+
+    def __setattr__(self, name, value):
+        # Layer 1 of 3 against automatic RMC learning (runtime): a Public turn never hands the
+        # request queue a message to learn from, whatever the inherited runtime computes.
+        if name == "rmc_auto_message_id":
+            value = None
+        super().__setattr__(name, value)
 
     @staticmethod
     def _build_system_prompt(companion: dict, state: dict | None, memories: list[dict],
                              profile: dict | None = None) -> str:
         state = {k: v for k, v in (state or {}).items() if k not in ("current_goal", "current_context")}
-        prompt = CognitionRuntime._build_system_prompt(companion, state, [], dict(PUBLIC_PROFILE))
+        prompt = CognitionRuntime._build_system_prompt(public_companion(companion), state, [], dict(PUBLIC_PROFILE))
         prompt = prompt.replace("- No long-term memories available yet.",
                                 "- Withheld while Public mode is on.")
         return prompt + PUBLIC_GUIDANCE
