@@ -39,7 +39,10 @@ test('RMC save is idempotent on network uncertainty and avoids false success', (
   assert.match(panel, /if \(pendingSave && pendingSave\.text !== content\)/);
   assert.match(panel, /Check search before retrying/);
   assert.match(panel, /reply\.confirmed/);
-  assert.match(panel, /Automatic long-term extraction from ordinary conversations is currently off/);
+  assert.match(panel, /Automatic long-term learning: ON for eligible lasting facts/);
+  assert.match(panel, /Automatic memory activity/);
+  assert.match(panel, /auto_receipts/);
+  assert.doesNotMatch(panel, /Automatic long-term extraction from ordinary conversations is currently off/);
 });
 
 test('backend receipts are tagged RMC-only and no list-all is claimed', () => {
