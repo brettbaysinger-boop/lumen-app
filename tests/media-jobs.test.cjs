@@ -44,7 +44,8 @@ test('Gallery reads nothing unless Private is on and loaded',()=>{
   const src=read('app/(tabs)/gallery.tsx');
   assert.match(src,/const isPrivate = privacy\.loaded && privacy\.mode === 'private';/);
   assert.match(src,/if \(!companion \|\| !isPrivate\) return;/);
-  assert.match(src,/Gallery is hidden in 👥 Public/);
+  assert.match(src,/Gallery opens in 🔒 Private\./);            // Public: one quiet line, the chip, nothing else
+  assert.doesNotMatch(src,/is hidden|hidden in|hidden while/i);
 });
 
 test('videos in chat use the existing WebView or a web <video>, no new dependency',()=>{

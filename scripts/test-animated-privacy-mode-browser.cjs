@@ -77,8 +77,10 @@ async function open(context,{width=390,height=844,query='?conversation='+I,embed
   await page.getByPlaceholder('Message Lumen…').waitFor({timeout:20000});
   return {page,errors};
 }
-const radio=(page,mode)=>page.locator(`[role=radio][aria-label^="${mode==='public'?'Public':'Private'} mode"]`).first();
-const checked=async(page,mode)=>(await radio(page,mode).getAttribute('aria-checked'))==='true';
+// One small chip: role=switch, checked while Public is on. choose() taps it only when the mode differs.
+const chip=page=>page.locator('[role=switch][aria-label="Public mode"]').first();
+const checked=async(page,mode)=>((await chip(page).getAttribute('aria-checked'))==='true')===(mode==='public');
+const choose=async(page,mode)=>{if(!(await checked(page,mode)))await chip(page).click();};
 const shot=async(page,name)=>{if(SHOTS)await page.screenshot({path:path.join(SHOTS,`${name}.png`)});};
 const text=page=>page.evaluate(()=>document.body.innerText);
 
@@ -91,22 +93,40 @@ const text=page=>page.evaluate(()=>document.body.innerText);
   assert.ok((await text(page)).includes(SECRET),'Private shows the whole conversation');
   await shot(page,'chat-private');
   // --- Flip to Public: earlier private messages are hidden at once ----------------------------------
-  await radio(page,'public').click();
-  await page.getByText('Hidden while 👥 Public is on').first().waitFor();
+  await choose(page,'public');
+  await page.waitForFunction(s=>!document.body.innerText.includes(s),SECRET);
   let body=await text(page);
-  assert.ok(!body.includes(SECRET),'Public hides earlier private messages');
+  assert.ok(!body.includes(SECRET),'Public leaves out earlier private messages');
   assert.ok(body.includes('Nice weather today!')&&body.includes('Perfect for a walk'),'Public keeps messages written in Public');
-  assert.ok(body.includes('Chat and Live Room only'),'Public says what it covers');
+  // Discreet (owner, 2026-11-16): no placeholder, banner or count; nothing private in the page or the accessibility tree.
+  assert.ok(!/hidden/i.test(body)&&!body.includes('Chat and Live Room only'),'no "hidden" bubbles and no banner');
+  const html=await page.content();assert.ok(!html.includes(SECRET)&&!/Message hidden/i.test(html),'no private text or placeholder in the DOM');
+  assert.ok(!JSON.stringify(await page.locator('body').ariaSnapshot()).includes(SECRET),'no private text for screen readers');
+  const box=await chip(page).boundingBox(),wide=page.viewportSize().width;
+  assert.ok(box.height<=32&&box.width<=110,`the chip is small ${JSON.stringify(box)}`);
+  assert.ok(box.x+box.width<=wide&&box.x>wide/2&&box.y<80,`the chip is at the right of the header ${JSON.stringify(box)}`);
   await shot(page,'chat-public');
+  await page.getByLabel('What Public mode covers').click();await page.getByText(/Other tabs are not covered/).waitFor();
+  await page.getByLabel('What Public mode covers').click();
+  await choose(page,'private');await page.getByText(`The surprise gift is a ${SECRET}.`).waitFor();   // back at once, same history
+  await choose(page,'public');await page.waitForFunction(s=>!document.body.innerText.includes(s),SECRET);
   await page.getByLabel('Open conversation history').click();await page.getByText('Conversations',{exact:true}).waitFor();
   assert.ok(!(await text(page)).includes(SECRET_TITLE),'Public shows neutral chat names');
   await shot(page,'chat-public-sidebar');
   await page.keyboard.press('Escape');await page.close();
-  // --- Reload: still Public, with a notice, and no private text even for a moment --------------------
+  // --- The chip at S22 (360) and desktop (1280) widths: small, in the header, on the screen ---------------
+  for(const [width,height] of [[360,780],[1280,800]]){
+    ({page,errors}=await open(context,{width,height}));await page.getByText('Nice weather today!').waitFor();
+    const at=await chip(page).boundingBox();
+    assert.ok(at.height<=32&&at.width<=110&&at.y<80&&at.x>=0&&at.x+at.width<=width,`${width}px: chip in the header, on screen ${JSON.stringify(at)}`);
+    assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth),`${width}px: no sideways overflow`);
+    assert.ok(!(await text(page)).includes(SECRET));await shot(page,`chat-public-${width}`);assert.deepEqual(errors,[]);await page.close();
+  }
+  // --- Reload: still Public, and no private text even for a moment -------------------------------------
   ({page,errors}=await open(context));
   await page.getByText('Nice weather today!').waitFor();
   assert.equal(await checked(page,'public'),true,'Public survives a reload');
-  body=await text(page);assert.ok(body.includes('Still in Public mode from before'),'a reload in Public says so');assert.ok(!body.includes(SECRET));
+  body=await text(page);assert.ok(!body.includes(SECRET)&&!(await page.content()).includes(SECRET),'a reload in Public shows no private text');
   // --- The mode goes with each chat request, as a field in the body -----------------------------------
   await page.getByPlaceholder('Message Lumen…').fill('Any cozy ideas for tonight?');await page.keyboard.press('Enter');
   await page.waitForFunction(()=>true);await page.waitForTimeout(800);
@@ -117,7 +137,7 @@ const text=page=>page.evaluate(()=>document.body.innerText);
   const speak=sent.find(s=>s.url.includes('/voice/speak'));
   if(speak){assert.equal(speak.body.privacy_mode,'public');assert.equal(speak.body.message_id,'m4');}
   // --- Back to Private: everything is shown again ---------------------------------------------------
-  await radio(page,'private').click();await page.getByText(`The surprise gift is a ${SECRET}.`).waitFor();
+  await choose(page,'private');await page.getByText(`The surprise gift is a ${SECRET}.`).waitFor();
   assert.deepEqual(errors,[],'no page errors');await page.close();await context.close();
 
   // --- Live Room in the phone app: the switch over the video, and flipping it never touches the video --
@@ -125,9 +145,9 @@ const text=page=>page.evaluate(()=>document.body.innerText);
   ({page,errors}=await open(room,{width:360,height:660,query:'?room=live&conversation='+I,embedded:true}));
   await page.locator('video').waitFor();await page.waitForFunction(()=>document.querySelector('video').videoWidth===768);
   await page.evaluate(()=>{const v=document.querySelector('video');v.__tag='first';window.__stream=v.srcObject;});
-  await radio(page,'public').click();await page.waitForTimeout(300);
-  await radio(page,'private').click();await page.waitForTimeout(300);
-  await radio(page,'public').click();await page.waitForTimeout(300);
+  await choose(page,'public');await page.waitForTimeout(300);
+  await choose(page,'private');await page.waitForTimeout(300);
+  await choose(page,'public');await page.waitForTimeout(300);
   await shot(page,'room-video-chat-public');
   let state=await page.evaluate(()=>({tag:document.querySelector('video').__tag,same:document.querySelector('video').srcObject===window.__stream,rtc:{...window.__rtc},posted:window.__posted}));
   assert.equal(state.tag,'first');assert.equal(state.same,true);assert.deepEqual(state.rtc,{created:1,closed:0});assert.equal(offers,1,'one offer, no reconnection');
@@ -137,7 +157,7 @@ const text=page=>page.evaluate(()=>document.body.innerText);
   assert.equal(await checked(page,'private'),true,'the app\'s choice is followed');
   // Theater: the switch is among its controls.
   await page.getByLabel('Switch to Companion Theater').click();await page.getByLabel('Leave Companion Theater and return to Video Chat').waitFor();
-  await radio(page,'public').click();await page.waitForTimeout(300);
+  await choose(page,'public');await page.waitForTimeout(300);
   assert.equal(await checked(page,'public'),true,'the switch works in Theater');
   await shot(page,'room-theater-public');
   state=await page.evaluate(()=>({tag:document.querySelector('video').__tag,rtc:{...window.__rtc}}));
@@ -150,13 +170,14 @@ const text=page=>page.evaluate(()=>document.body.innerText);
   ({page,errors}=await open(mid,{width:390,height:844,query:'?room=live&conversation='+I,embedded:true}));
   await page.locator('video').waitFor();await page.waitForFunction(()=>document.querySelector('video').videoWidth===768);
   await page.evaluate(()=>{const v=document.querySelector('video');v.__tag='first';window.__stream=v.srcObject;});
-  if(!(await checked(page,'private')))await radio(page,'private').click();
+  await choose(page,'private');
   let release;streamGate={wait:new Promise(resolve=>{release=resolve;})};
   await page.getByPlaceholder('Message Lumen…').fill('Is the party venue sorted?');await page.keyboard.press('Enter');
   await page.getByText(STREAM_FIRST,{exact:false}).waitFor();                   // the first private line is on screen
   assert.ok((await text(page)).includes('Is the party venue sorted?'),'the pending Private question was showing');
-  await radio(page,'public').click();
-  await page.getByText("hidden while 👥 Public is on",{exact:false}).first().waitFor();
+  await choose(page,'public');
+  await page.waitForFunction(t=>!document.body.innerText.includes(t),STREAM_FIRST);
+  assert.ok(!/hidden/i.test(await text(page)),'a Private reply on its way shows nothing in Public, not even a notice');
   body=await text(page);
   assert.ok(!body.includes(STREAM_FIRST),'the partial Private reply disappears at once');
   assert.ok(!body.includes('Is the party venue sorted?'),'the pending Private question disappears at once');
@@ -171,19 +192,19 @@ const text=page=>page.evaluate(()=>document.body.innerText);
   const composer=()=>page.getByPlaceholder('Message Lumen…').inputValue();
 
   // --- The message box: a Private draft typed but not sent is put aside in Public, never erased ------
-  await radio(page,'private').click();await page.waitForTimeout(200);
+  await choose(page,'private');await page.waitForTimeout(200);
   const DRAFT='Draft about the Juniper Hall deposit';
   await page.getByPlaceholder('Message Lumen…').fill(DRAFT);
-  await radio(page,'public').click();await page.waitForTimeout(200);
+  await choose(page,'public');await page.waitForTimeout(200);
   assert.equal(await composer(),'','a Private draft is not shown in Public');
   assert.ok(!(await text(page)).includes('Juniper Hall deposit'));
   await page.getByPlaceholder('Message Lumen…').fill('Public note about the weather');
-  await radio(page,'private').click();await page.waitForTimeout(200);
+  await choose(page,'private');await page.waitForTimeout(200);
   assert.equal(await composer(),DRAFT,'the Private draft comes back in Private');
-  await radio(page,'public').click();await page.waitForTimeout(200);
+  await choose(page,'public');await page.waitForTimeout(200);
   assert.equal(await composer(),'Public note about the weather','a Public draft is kept apart');
   await page.getByPlaceholder('Message Lumen…').fill('');
-  await radio(page,'private').click();await page.waitForTimeout(200);
+  await choose(page,'private');await page.waitForTimeout(200);
   await page.getByPlaceholder('Message Lumen…').fill('');
 
   // --- A Private turn fails after the switch: its question never reappears in Public ----------------
@@ -191,19 +212,20 @@ const text=page=>page.evaluate(()=>document.body.innerText);
   let releaseFail;streamGate={fail:true,wait:new Promise(resolve=>{releaseFail=resolve;})};
   await page.getByPlaceholder('Message Lumen…').fill(QUESTION);await page.keyboard.press('Enter');
   await page.getByText(STREAM_FIRST,{exact:false}).waitFor();
-  await radio(page,'public').click();
-  await page.getByText("hidden while 👥 Public is on",{exact:false}).first().waitFor();
+  await choose(page,'public');
+  await page.waitForFunction(t=>!document.body.innerText.includes(t),STREAM_FIRST);
+  assert.ok(!/hidden/i.test(await text(page)),'a Private reply on its way shows nothing in Public, not even a notice');
   releaseFail();streamGate=null;
   await page.getByText('Lumen could not finish this reply',{exact:false}).waitFor();       // the failure is reported, generically
   await page.waitForTimeout(400);
   assert.equal(await composer(),'','the failed Private question is not put back in the Public message box');
   body=await text(page);assert.ok(!body.includes(QUESTION)&&!body.includes(STREAM_SECOND),'nothing of the failed Private turn is shown');
   await shot(page,'failed-private-turn-in-public');
-  await radio(page,'private').click();await page.waitForTimeout(300);
+  await choose(page,'private');await page.waitForTimeout(300);
   assert.equal(await composer(),QUESTION,'back in Private the question is in the message box to retry');
   state=await page.evaluate(()=>({tag:document.querySelector('video').__tag,same:document.querySelector('video').srcObject===window.__stream,rtc:{...window.__rtc}}));
   assert.equal(state.tag,'first');assert.equal(state.same,true);assert.deepEqual(state.rtc,{created:1,closed:0});assert.equal(offers,1,'the live video was never restarted');
   assert.deepEqual(errors,[],'no page errors');
-  console.log('Public / Private mode: switch in Chat, Video Chat and Theater; Public hides private messages and chat names, survives reload with a notice, is sent with chat'+(speak?' and voice':'')+' requests, hides a Private reply flipped to Public mid-stream (including later lines), keeps Private and Public drafts apart, never puts a failed Private question back in Public, and never reconnects the live video.');
+  console.log('Public / Private mode: switch in Chat, Video Chat and Theater; Public hides private messages and chat names, are left out entirely (no placeholders, banner or DOM text), a small header chip, survives reload, is sent with chat'+(speak?' and voice':'')+' requests, hides a Private reply flipped to Public mid-stream (including later lines), keeps Private and Public drafts apart, never puts a failed Private question back in Public, and never reconnects the live video.');
   if(!speak)console.log('NOTE: no voice request was observed in this browser (sound path unavailable headless); voice is covered by unit and backend tests.');
 }finally{await browser.close();server.close();api.close();}})().catch(error=>{console.error(error);process.exitCode=1;});

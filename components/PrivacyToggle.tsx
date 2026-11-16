@@ -1,58 +1,48 @@
-// The 🔒 Private | 👥 Public switch (Issue #39), shown in ordinary Chat, Video Chat and Theater.
+// The 🔒 Private / 👥 Public chip (Issue #39), shown in ordinary Chat, Video Chat and Theater.
 // It only changes a remembered word (lib/privacy-mode.ts). It never connects, closes or reloads
 // anything, so the conversation and live video keep running while it is flipped.
+// Owner, 2026-11-16: small and discreet. One tap switches; no banner, no confirmation.
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import type { ExtendedThemeColors } from '@/lib/theme';
 import { choosePrivacyMode, usePrivacyMode, type PrivacyMode } from '@/lib/privacy-mode';
 
-// Fixed colours, the same in every theme, so the two states never look alike: calm teal for
-// "just us", amber for "people may be nearby".
-const FILL: Record<PrivacyMode, string> = { private: '#3ac7be', public: '#f5a524' };
 const LABEL: Record<PrivacyMode, string> = { private: '🔒 Private', public: '👥 Public' };
-const HINT: Record<PrivacyMode, string> = {
-  private: 'Private mode: just you. In Chat and Live Room, Lumen can use your memories, documents and earlier chats.',
-  public: 'Public mode for Chat and Live Room: people may be nearby. Lumen keeps personal things to herself here. Other tabs are not covered.',
-};
+/** What the mode covers. Read out with the chip, and shown by the ⓘ button next to it in Chat. */
+export const PRIVACY_SCOPE =
+  'Public mode covers Chat and Live Room only: Lumen keeps personal things to herself and earlier private messages are left out. Other tabs are not covered.';
 
-/** Two-segment switch. `overlay` is the style used over the live video, readable on any frame. */
-export function PrivacyToggle({ c, overlay = false }: { c: ExtendedThemeColors; overlay?: boolean }) {
+/** One chip: tap to switch. `overlay` is the style used over the live video, readable on any frame. */
+export function PrivacyToggle({ c, overlay = false, onInfo }: { c: ExtendedThemeColors; overlay?: boolean; onInfo?: () => void }) {
   const { mode } = usePrivacyMode();
-  const segment = (value: PrivacyMode) => {
-    const selected = mode === value;
-    return <Pressable key={value} accessibilityRole="radio" accessibilityLabel={HINT[value]}
-      accessibilityState={{ selected, checked: selected }} aria-checked={selected}
-      onPress={() => choosePrivacyMode(value)} hitSlop={4}
-      style={({ pressed }) => [styles.segment, overlay && styles.overlaySegment, {
-        backgroundColor: selected ? FILL[value] : 'transparent', opacity: pressed ? 0.75 : 1 }]}>
-      <Text numberOfLines={1} style={[styles.label, overlay && styles.overlayLabel, {
-        color: selected ? '#10141c' : overlay ? '#ffffff' : c.neutral[200] }]}>{LABEL[value]}</Text>
-    </Pressable>;
-  };
-  return <View accessibilityRole="radiogroup" accessibilityLabel="Who might be nearby"
-    style={[styles.group, overlay
-      ? { backgroundColor: 'rgba(0,0,0,0.62)', borderColor: 'rgba(255,255,255,0.28)' }
-      : { backgroundColor: c.neutral[900], borderColor: mode === 'public' ? FILL.public : c.neutral[700] }]}>
-    {segment('private')}{segment('public')}
+  const isPublic = mode === 'public';
+  const chip = <Pressable accessibilityRole="switch" accessibilityLabel="Public mode"
+    accessibilityHint={PRIVACY_SCOPE} accessibilityState={{ checked: isPublic }} aria-checked={isPublic}
+    onPress={() => choosePrivacyMode(isPublic ? 'private' : 'public')} hitSlop={8}
+    style={({ pressed }) => [styles.chip, overlay
+      ? { backgroundColor: 'rgba(0,0,0,0.55)', borderColor: 'rgba(255,255,255,0.25)' }
+      : { backgroundColor: 'transparent', borderColor: c.neutral[700] }, { opacity: pressed ? 0.7 : 1 }]}>
+    <Text numberOfLines={1} style={[styles.label, { color: overlay ? '#ffffff' : c.neutral[300] }]}>{LABEL[mode]}</Text>
+  </Pressable>;
+  if (!onInfo) return <View accessibilityLabel="Who might be nearby" style={styles.row}>{chip}</View>;
+  return <View accessibilityLabel="Who might be nearby" style={styles.row}>
+    {chip}
+    <Pressable accessibilityRole="button" accessibilityLabel="What Public mode covers" onPress={onInfo} hitSlop={8}
+      style={({ pressed }) => [styles.info, { opacity: pressed ? 0.6 : 1 }]}>
+      <Text style={{ color: c.neutral[500], fontSize: 13 }}>ⓘ</Text>
+    </Pressable>
   </View>;
 }
 
-/** The switch with a one-line note under it while Public is on. Used above the conversation. */
+/** Video Chat before the video is on: the chip on its own small row, at the right. */
 export function PrivacyBar({ c }: { c: ExtendedThemeColors }) {
-  const { mode, restored } = usePrivacyMode();
-  return <View style={styles.bar}>
-    <PrivacyToggle c={c} />
-    {mode === 'public' && <Text accessibilityLiveRegion="polite" numberOfLines={2}
-      style={{ color: c.isDark ? '#f7c76b' : '#8a5300', fontSize: 12, textAlign: 'center' }}>
-      {restored ? 'Still in Public mode from before. ' : ''}Chat and Live Room only: personal things stay private here and earlier private messages are hidden. Other tabs are not covered.
-    </Text>}
-  </View>;
+  return <View style={styles.bar}><PrivacyToggle c={c} /></View>;
 }
 
 const styles = StyleSheet.create({
-  bar: { alignItems: 'center', gap: 4, paddingHorizontal: 12, paddingVertical: 6, width: '100%', maxWidth: 800, alignSelf: 'center' },
-  group: { flexDirection: 'row', borderRadius: 999, borderWidth: 1, padding: 3, gap: 2 },
-  segment: { minHeight: 38, minWidth: 104, paddingHorizontal: 14, borderRadius: 999, alignItems: 'center', justifyContent: 'center' },
-  label: { fontSize: 15, fontFamily: 'Inter-SemiBold' },
-  overlaySegment: { minHeight: 36, minWidth: 0, paddingHorizontal: 11 },
-  overlayLabel: { fontSize: 14 },
+  row: { flexDirection: 'row', alignItems: 'center', gap: 2 },
+  bar: { alignItems: 'flex-end', paddingHorizontal: 12, paddingVertical: 4, width: '100%', maxWidth: 800, alignSelf: 'center' },
+  // About 28 px to look at; hitSlop makes the touch target at least 44 px.
+  chip: { minHeight: 28, paddingHorizontal: 10, borderRadius: 999, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
+  label: { fontSize: 12, fontFamily: 'Inter-Medium' },
+  info: { minHeight: 28, minWidth: 24, alignItems: 'center', justifyContent: 'center' },
 });
