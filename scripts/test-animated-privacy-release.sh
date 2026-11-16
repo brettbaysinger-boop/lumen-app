@@ -172,7 +172,8 @@ touch "$S/ln_fail"; out=$(rel baseline-fill $FILL) || true; rm "$S/ln_fail"
   && [ -z "$(find "$L" -name '.privacy-fill.*' -not -path '*/.git/*')" ] && [ ! -f "$H/state/lumen-animated/privacy-release/fill-current" ] \
   && ok "failure on the 4th file: the 3 created are removed, no temporary file left, nothing else touched" || { bad "fill partial"; echo "$out"; }
 mkdir "$L/docs/RMC-MEMORIES-PANEL-20261115.md"
-out=$(rel baseline-fill $FILL) || true; grep -q 'exists (or is a link)' <<<"$out" && [ ! -e "$L/backend/tests/test_rmc_auto_ingest.py" ] && ok "baseline-fill refuses an existing directory at a target" || { bad "fill dir"; echo "$out"; }
+out=$(rel baseline-fill $FILL) || true; grep -q '^STOP' <<<"$out" && [ ! -e "$L/backend/tests/test_rmc_auto_ingest.py" ] && [ -d "$L/docs/RMC-MEMORIES-PANEL-20261115.md" ] \
+  && ok "baseline-fill refuses an existing directory at a target (it is not 'missing', so the word no longer matches), writes nothing" || { bad "fill dir"; echo "$out"; }
 rmdir "$L/docs/RMC-MEMORIES-PANEL-20261115.md"
 touch "$S/ln_dir_race"; out=$(rel baseline-fill $FILL) || true; rm "$S/ln_dir_race"
 [ -d "$L/docs/RMC-MEMORIES-PANEL-20261115.md" ] && [ -z "$(ls -A "$L/docs/RMC-MEMORIES-PANEL-20261115.md")" ] && grep -q 'deleting only what it created' <<<"$out" && [ ! -e "$L/backend/tests/test_rmc_auto_ingest.py" ] \
