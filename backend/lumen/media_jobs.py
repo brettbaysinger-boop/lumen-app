@@ -105,14 +105,40 @@ def image_subject(text: str) -> str:
     return "self" if _SELF.search(text or "") else "other"
 
 
+_WORD_NUMBERS = {"a": 1, "an": 1, "one": 1, "two": 2, "three": 3, "four": 4, "five": 5, "six": 6, "seven": 7,
+                 "eight": 8, "nine": 9, "ten": 10, "fifteen": 15, "twenty": 20, "thirty": 30, "forty": 40,
+                 "forty-five": 45, "fifty": 50, "sixty": 60, "ninety": 90}
+_WORD_LENGTH = re.compile(
+    rf"\b({'|'.join(sorted(_WORD_NUMBERS, key=len, reverse=True))})(?:\s+and\s+a\s+half)?[-\s]+"
+    r"(seconds?|secs?|minutes?|mins?)\b(?:\s+and\s+a\s+half\b)?|\bhalf\s+a\s+minute\b|\b(?:several|a\s+few)[-\s]minutes?\b"
+    r"|\bminute[-\s]long\b", re.IGNORECASE)
+
+
 def requested_seconds(text: str) -> float | None:
-    match = _SECONDS.search(text or "")
+    """The clip length the person asked for, in seconds: "3 seconds", "2 min", "two minutes", "a minute"."""
+    text = text or ""
+    match = _SECONDS.search(text)
+    if match:
+        value = float(match.group(1))
+        return value * 60 if match.group(2).lower().startswith("m") else value
+    match = _WORD_LENGTH.search(text)
     if not match:
-        if re.search(r"\b(?:five|ten|several|a few)[-\s]minutes?\b|\bminute[-\s]long\b", text or "", re.I):
-            return 300.0
         return None
-    value = float(match.group(1))
-    return value * 60 if match.group(2).lower().startswith("m") else value
+    found = match.group(0).lower()
+    if "half a minute" in found:
+        return 30.0
+    if not match.group(1):
+        return 60.0 if "long" in found else 300.0   # "minute-long"; "several minutes" is more than any clip
+    value = _WORD_NUMBERS[match.group(1).lower()] + (0.5 if "half" in found else 0)
+    return value * 60 if match.group(2).lower().startswith("m") else float(value)
+
+
+def render_budget_seconds(settings, seconds: float) -> int:
+    """How long one render may take before Lumen stops waiting. Longer clips get more time, up to 24 h.
+    This is waiting time, not clip length."""
+    base = int(getattr(settings, "video_render_budget_seconds", 4 * 3600))
+    per = int(getattr(settings, "video_render_seconds_per_clip_second", 600))
+    return min(24 * 3600, max(base, int(seconds * per)))
 
 
 def still_prompt(text: str) -> str:
@@ -195,8 +221,8 @@ async def plan_video_job(settings, *, privacy_mode: str, user_id: str, companion
     limit = settings.video_max_seconds
     if requested is not None and requested > limit:
         return PlanResult(
-            f"Right now I can make short clips of up to {limit:g} seconds. Longer videos, like five minutes, "
-            "are a separate feature that isn't ready yet. Want a short clip instead?")
+            f"I can make clips of up to {limit:g} seconds, so I haven't started this one. Longer videos, like "
+            f"five minutes, are a separate feature that isn't ready yet. Want one of {limit:g} seconds or less?")
     seconds = requested or settings.video_default_seconds
     seconds = max(1.0, min(limit, seconds))
     text = (prompt or user_message).strip()[:1000]
@@ -236,8 +262,10 @@ async def plan_video_job(settings, *, privacy_mode: str, user_id: str, companion
                         mode=mode, prompt=text, seconds=seconds, explicit=verdict.explicit,
                         still_prompt=still,
                         source_path=source[0] if source else None, source_mime=source[1] if source else None)
+    wait = ("Rendering can take a while, so feel free to leave and come back." if seconds <= 10 else
+            "A clip this long can take many hours to render, so feel free to leave and come back.")
     return PlanResult(f"I'm making a {seconds:g}-second video now. It will show up right here when it's "
-                      "ready. Rendering can take a while, so feel free to leave and come back.", plan)
+                      f"ready. {wait}", plan)
 
 
 async def record_video_job(settings, plan: VideoJobPlan) -> None:
@@ -342,7 +370,10 @@ async def deliver_video(db: SupabaseRepository, settings, reporter: "JobReporter
     if not str(mime).startswith("video/") or not result["bytes"]:
         raise ImageProviderError("The generator did not return a video.")
     if len(result["bytes"]) > settings.video_max_bytes:
-        raise ImageProviderError("The video was too large to save. Try a shorter clip.")
+        # Never cut a video short to make it fit. The file stays on Heavy.
+        raise ImageProviderError(
+            f"The video was too large to save ({len(result['bytes']) / 1048576:.0f} MB; the limit is "
+            f"{settings.video_max_bytes / 1048576:.0f} MB). Nothing was cut or saved. Try a shorter clip.")
     await reporter.progress(98, "Saving the video…")
     video_path = await _store(db, plan.owner_user_id, result["bytes"], mime, name=f"video-{plan.id}")
     await update_message(db, plan, message_id, job={"status": "completed"},

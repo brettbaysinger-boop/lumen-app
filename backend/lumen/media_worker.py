@@ -127,7 +127,7 @@ class VideoWorker:
 
     async def start(self, row: dict[str, Any]) -> None:
         now = _now()
-        budget = timedelta(seconds=self.settings.video_render_budget_seconds)
+        budget = timedelta(seconds=mj.render_budget_seconds(self.settings, float(row.get("duration_seconds") or 0)))
         claimed = await self.patch(row, {"status": "eq.queued"}, status="running", stage="Starting…", progress=1,
                                    started_at=_iso(now), heartbeat_at=_iso(now), deadline_at=_iso(now + budget))
         if not claimed:
@@ -231,7 +231,9 @@ class VideoWorker:
         log.info("Video job %s delivered (FramePack-Studio job %s)", plan.id, row["provider_job_id"])
 
     async def over_budget(self, row: dict[str, Any]) -> None:
-        hours = self.settings.video_render_budget_seconds / 3600
+        started, deadline = _parse(row.get("started_at")), _parse(row.get("deadline_at"))
+        hours = ((deadline - started).total_seconds() if started and deadline
+                 else mj.render_budget_seconds(self.settings, float(row.get("duration_seconds") or 0))) / 3600
         await self.fail(row, f"This video didn't finish within {hours:g} hours, so I stopped waiting. "
                              f"Nothing was cancelled on Heavy (FramePack-Studio job {row['provider_job_id']}).")
 

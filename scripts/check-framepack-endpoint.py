@@ -26,9 +26,9 @@ def get(url: str):
         return json.load(response)
 
 
-def check_studio(endpoints) -> int:
+def check_studio(endpoints, base: str = "", need_seconds: float | None = None) -> int:
     """FramePack-Studio: check the exact contract Lumen's adapter was written for. Read-only."""
-    from lumen.video_providers import STUDIO_INPUTS, studio_arguments, studio_contract
+    from lumen.video_providers import STUDIO_INPUTS, studio_arguments, studio_contract, studio_max_seconds
     try:
         parameters = studio_contract(endpoints)
     except Exception as exc:  # report, never guess
@@ -42,6 +42,14 @@ def check_studio(endpoints) -> int:
         shown = "<start frame>" if value is image else value
         print(f"  {position:2d} {label}: {shown!r}")
     print("Lumen never calls /end_process_with_update, /partial or any clear/cancel endpoint.")
+    try:
+        longest = studio_max_seconds(get(f"{base}/config")) if base else None
+    except (URLError, OSError, ValueError):
+        longest = None
+    print(f"Longest clip its length slider allows: {f'{longest:g} s' if longest else 'not readable from /config'}")
+    if need_seconds is not None and (longest is None or longest + 0.05 < need_seconds):
+        print(f"RESULT: NOT READY for {need_seconds:g}-second clips (nothing was uploaded or queued)")
+        return 1
     print("RESULT: READY (contract only; nothing was uploaded or queued and no video was generated)")
     return 0
 
@@ -50,6 +58,8 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--url", required=True)
     parser.add_argument("--api-name", default="/process")
+    parser.add_argument("--need-seconds", type=float, help="FramePack-Studio only: fail unless its length "
+                                                           "slider allows clips this long (read from /config)")
     parser.add_argument("--dump", help="write every endpoint's inputs and returns to this JSON file "
                                        "(for designing an adapter; contains no secrets)")
     args = parser.parse_args()
@@ -83,7 +93,7 @@ def main() -> int:
         print(f"  input: label={p.get('label')!r} name={p.get('parameter_name')!r} "
               f"component={p.get('component')!r} default={default!r}")
     if args.api_name == "/handle_start_button":
-        return check_studio(endpoints)
+        return check_studio(endpoints, base, args.need_seconds)
     try:
         from lumen.video_providers import framepack_arguments
         image = {"path": "check", "meta": {"_type": "gradio.FileData"}}

@@ -133,7 +133,9 @@ class SupabaseRepository:
             "Content-Type": content_type,
             "x-upsert": "true" if upsert else "false",
         }
-        async with httpx.AsyncClient(timeout=60) as client:
+        # A long video is tens of megabytes: give the one upload time to finish.
+        timeout = 60 if len(content) < 8 * 1024 * 1024 else httpx.Timeout(60, read=600, write=600)
+        async with httpx.AsyncClient(timeout=timeout) as client:
             response = await client.post(url, headers=headers, content=content)
             response.raise_for_status()
             return response.json() if response.content else {}

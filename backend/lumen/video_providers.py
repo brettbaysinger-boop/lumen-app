@@ -546,6 +546,20 @@ def studio_hidden_state_slots(config: Any, api_name: str = STUDIO_START.lstrip("
     return states
 
 
+def studio_max_seconds(config: Any, label: str = "Video Length (Seconds)") -> float | None:
+    """The longest clip this FramePack-Studio's own length slider allows, from /config (read-only).
+    None when it cannot be read; Lumen then leaves the limit to its own VIDEO_MAX_SECONDS."""
+    if not isinstance(config, dict):
+        return None
+    for component in config.get("components") or []:
+        props = component.get("props") if isinstance(component, dict) else None
+        if isinstance(props, dict) and props.get("label") == label:
+            top = props.get("maximum")
+            if isinstance(top, (int, float)) and not isinstance(top, bool) and top > 0:
+                return float(top)
+    return None
+
+
 def with_state_slots(data: list[Any], states: list[int]) -> list[Any]:
     full = list(data)
     for position in states:
@@ -599,6 +613,7 @@ class FramePackStudioProvider(FramePackProvider):
         except (httpx.HTTPError, ValueError):
             config = None
         self.states = studio_hidden_state_slots(config)
+        self.max_seconds = studio_max_seconds(config)
         return prefix, parameters
 
     async def _events(self, client: httpx.AsyncClient, root: str, api: str, data: list[Any],
@@ -651,6 +666,10 @@ class FramePackStudioProvider(FramePackProvider):
             self.stage = "contract"
             prefix, parameters = await self._endpoint(client)
             root = f"{self.base_url}{prefix}"
+            if self.max_seconds is not None and seconds > self.max_seconds + 0.05:
+                # Never let FP-Studio shorten a clip silently: refuse before anything is uploaded.
+                raise ImageProviderError(f"FramePack-Studio on Heavy makes clips of up to {self.max_seconds:g} "
+                                         f"seconds, so this {seconds:g}-second video was not started.")
             if refuse_if_busy:
                 self.stage = "current_job"
                 current = await self._last(client, root, STUDIO_CURRENT, [], deadline)

@@ -72,16 +72,22 @@ class Settings(BaseSettings):
     comfyui_t2v_workflow: str = ""
     # Optional ComfyUI image-to-video workflow, used instead of FramePack when set.
     comfyui_i2v_workflow: str = ""
-    video_default_seconds: float = Field(default=5.0, ge=1.0, le=10.0)
-    video_max_seconds: float = Field(default=10.0, ge=1.0, le=10.0)
+    video_default_seconds: float = Field(default=5.0, ge=1.0, le=120.0)
+    # Longest clip a person may ask for. 120 s is FramePack's own maximum. The default stays 10 until the
+    # owner sets VIDEO_MAX_SECONDS, because the database must first allow longer clips (migration 20261116210000).
+    video_max_seconds: float = Field(default=10.0, ge=1.0, le=120.0)
     video_fps: int = Field(default=16, ge=8, le=30)
     video_generation_timeout: int = Field(default=1800, ge=60, le=7200)
     # FramePack-Studio renders run in its own queue and are followed by the video worker
     # (python -m lumen.media_worker): how long one job may take end to end, and how often the
     # worker looks at it. A job past its budget is reported, never cancelled on Heavy.
     video_render_budget_seconds: int = Field(default=4 * 3600, ge=600, le=24 * 3600)
+    # Long clips get more time: this many seconds of rendering per second of clip, if that is more than the
+    # budget above, and never more than 24 h. (A 3 s clip took about 510 s on Heavy.)
+    video_render_seconds_per_clip_second: int = Field(default=600, ge=60, le=3600)
     video_poll_seconds: int = Field(default=20, ge=5, le=120)
-    video_max_bytes: int = Field(default=50 * 1024 * 1024, ge=1024 * 1024, le=50 * 1024 * 1024)
+    # Must not exceed what the chat-media bucket and Supabase Storage accept (both 50 MiB today).
+    video_max_bytes: int = Field(default=50 * 1024 * 1024, ge=1024 * 1024, le=200 * 1024 * 1024)
     video_max_pending_per_user: int = Field(default=2, ge=1, le=10)
 
     # Memory backend selector. "supabase" (default) keeps the existing Lumen
