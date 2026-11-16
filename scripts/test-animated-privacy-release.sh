@@ -69,6 +69,7 @@ STUB
 cat > "$B/ln" <<STUB
 #!/usr/bin/env bash
 [[ -f "$S/ln_fail" && "\${@: -1}" == */docs/RMC-MEMORIES-PANEL-20261115.md ]] && { echo "ln: injected failure" >&2; exit 1; }
+[[ -f "$S/ln_dir_race" && "\${@: -1}" == */docs/RMC-MEMORIES-PANEL-20261115.md ]] && mkdir "\${@: -1}"   # a directory appears after the pre-check
 exec /bin/ln "\$@"
 STUB
 chmod +x "$B"/*
@@ -170,6 +171,13 @@ touch "$S/ln_fail"; out=$(rel baseline-fill $FILL) || true; rm "$S/ln_fail"
 [ "$(grep -c '^wrote ' <<<"$out")" = 3 ] && grep -q 'deleting only what it created' <<<"$out" && [ "$(snap)" = "$AFTERG1" ] \
   && [ -z "$(find "$L" -name '.privacy-fill.*' -not -path '*/.git/*')" ] && [ ! -f "$H/state/lumen-animated/privacy-release/fill-current" ] \
   && ok "failure on the 4th file: the 3 created are removed, no temporary file left, nothing else touched" || { bad "fill partial"; echo "$out"; }
+mkdir "$L/docs/RMC-MEMORIES-PANEL-20261115.md"
+out=$(rel baseline-fill $FILL) || true; grep -q 'exists (or is a link)' <<<"$out" && [ ! -e "$L/backend/tests/test_rmc_auto_ingest.py" ] && ok "baseline-fill refuses an existing directory at a target" || { bad "fill dir"; echo "$out"; }
+rmdir "$L/docs/RMC-MEMORIES-PANEL-20261115.md"
+touch "$S/ln_dir_race"; out=$(rel baseline-fill $FILL) || true; rm "$S/ln_dir_race"
+[ -d "$L/docs/RMC-MEMORIES-PANEL-20261115.md" ] && [ -z "$(ls -A "$L/docs/RMC-MEMORIES-PANEL-20261115.md")" ] && grep -q 'deleting only what it created' <<<"$out" && [ ! -e "$L/backend/tests/test_rmc_auto_ingest.py" ] \
+  && ok "a directory appearing at a target after the pre-check: ln -T refuses (no nested link), the 3 created are removed, the directory is left alone" || { bad "fill dir race"; echo "$out"; ls -la "$L/docs/RMC-MEMORIES-PANEL-20261115.md"; }
+rmdir "$L/docs/RMC-MEMORIES-PANEL-20261115.md"; [ "$(snap)" = "$AFTERG1" ] && [ -z "$(find "$L" -name '.privacy-fill.*' -not -path '*/.git/*')" ] || bad "reset dir race"
 out=$(rel baseline-fill $FILL) || { bad "fill run"; echo "$out"; }
 for p in $HOSTMISSING; do [ "$(git hash-object "$L/$p")" = "$(git -C "$C" rev-parse "$BACKEND:$p")" ] || bad "fill wrote $p wrong"; done
 [ "$(grep -c '^wrote ' <<<"$out")" = 5 ] && ok "baseline-fill writes exactly the 5 missing tests/docs from the commit, byte for byte" || { bad "fill"; echo "$out"; }

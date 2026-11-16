@@ -306,7 +306,7 @@ baseline_fill() {
     repo show "$BACKEND_COMMIT:$path" > "$tmp"
     if [ "$(mode_of "$BACKEND_COMMIT" "$path")" = 100755 ]; then chmod 755 "$tmp"; else chmod 644 "$tmp"; fi
     [ "$(git hash-object --no-filters -- "$tmp")" = "$(blob_of "$BACKEND_COMMIT" "$path")" ]
-    ln -- "$tmp" "$LIVE_DIR/$path"
+    ln -T -- "$tmp" "$LIVE_DIR/$path"   # -T: an existing directory at the name is an error, never a destination
     echo "$path" >> "$record/written"                                # recorded only once it was created
     rm -f -- "$tmp"; tmp=
     [ ! -L "$LIVE_DIR/$path" ] && [ "$(classify "$path")" = ok ]
