@@ -45,6 +45,8 @@ import { CameraCapture } from '@/components/CameraCapture';
 import { CompanionPortrait } from '@/components/CompanionPortrait';
 import { AnimatedCompanion } from '@/components/AnimatedCompanion';
 import { LiveRoomActions, LiveRoomHeader, LiveRoomTheaterBar } from '@/components/LiveRoom';
+import { PrivacyBar, PrivacyToggle } from '@/components/PrivacyToggle';
+import { conversationLabel, getPrivacyMode, listenForAppPrivacy, messageVisible, usePrivacyMode } from '@/lib/privacy-mode';
 import { ROOM_BACK_EVENT, ROOM_LANDSCAPE_EVENT, ROOM_PORTRAIT_EVENT, getRoomMode, isLiveRoom, postRoomEvent, roomEmbedded, setRoomMode, turnRoom, useRoomMode, type RoomView } from '@/lib/live-room';
 import { AnimatedCompanionSession, animatedCompanionAvailable, type AnimatedState } from '@/lib/animated-companion';
 import { AutoSpeak } from '@/lib/animated-companion-core';
@@ -103,6 +105,8 @@ export default function ChatScreen() {
   const [pendingSpeak, setPendingSpeak] = useState<Message | null>(null);
   const blockedReplyRef = useRef<Message | null>(null);
 
+  // 🔒 Private | 👥 Public (Issue #39). Requests read the current choice with getPrivacyMode().
+  const privacy = usePrivacyMode();
   const [companion, setCompanion] = useState<Companion | null>(null);
   const { state: companionState } = useCompanionState(companion?.id);
   const [conversations, setConversations] = useState<Conversation[]>([]);
@@ -303,7 +307,7 @@ export default function ChatScreen() {
       if (mountedRef.current && playbackRef.current === controller) { setPlayingId(null); setSpeakingId(null); }
     };
     try {
-      await playReply(message.content, controller.signal, finished, { companionId: companion?.id, player: animated.state === 'ready' ? animated.player : undefined, onError: err => { if (mountedRef.current && !controller.signal.aborted) setError(err.message); }, onStart: () => { if (mountedRef.current && !controller.signal.aborted) setSpeakingId(message.id); } });
+      await playReply(message.content, controller.signal, finished, { companionId: companion?.id, privacy: { mode: getPrivacyMode(), messageId: message.id }, player: animated.state === 'ready' ? animated.player : undefined, onError: err => { if (mountedRef.current && !controller.signal.aborted) setError(err.message); }, onStart: () => { if (mountedRef.current && !controller.signal.aborted) setSpeakingId(message.id); } });
     } catch (err) {
       if (mountedRef.current && !controller.signal.aborted) {
         // Started without a click, the browser may refuse sound: offer Enable sound instead of an error.
@@ -369,6 +373,10 @@ export default function ChatScreen() {
   // replaces the avatar session when the view changes: `roomMode` only feeds styles.
   const room = Platform.OS === 'web' && isLiveRoom();
   const roomMode = useRoomMode();
+  // Inside the phone app the room follows the app's Public / Private choice (two fixed lines, no data).
+  useEffect(() => room ? listenForAppPrivacy() : undefined, [room]);
+  // Switching to Public stops any reply being read aloud right now; the video keeps running.
+  useEffect(() => { if (privacy.mode === 'public') { playbackRef.current?.abort(); autoSpeak.cancel(); } }, [privacy.mode, autoSpeak]);
   const theater = room && roomMode === 'theater' && animatedState === 'ready';
   const [theaterMessages, setTheaterMessages] = useState(false);
   // Opening the room is the request to watch: live video is turned on once, when the server offers it.
@@ -723,6 +731,7 @@ export default function ChatScreen() {
           activeConversation?.id ?? null,
           followupImagePrompt ?? text,
           followupImagePrompt ? text : undefined,
+          getPrivacyMode(),
         );
       } else {
         for (const image of images) {
@@ -748,6 +757,7 @@ export default function ChatScreen() {
           turnKey.current.id,
           document?.id,
           effort,
+          getPrivacyMode(),
         );
       }
       const { data, error: refreshError } = await supabase
@@ -792,7 +802,13 @@ export default function ChatScreen() {
   }, [inputText, pendingImages, pendingDocument, documentBusy, companion, session?.user.id, sending, activeConversation, loadMessages, messages, autoSpeak, animated]);
 
   const renderMessage = useCallback(
-    ({ item }: { item: Message }) => (
+    ({ item }: { item: Message }) => !messageVisible(privacy.mode, item) ? (
+          <View style={[styles.messageWrapper, item.role === 'user' ? styles.messageWrapperUser : styles.messageWrapperAI]}>
+            <View accessibilityLabel="Message hidden while Public mode is on" style={[styles.messageBubble, item.role === 'user' ? styles.messageBubbleUser : styles.messageBubbleAI, { opacity: 0.6 }]}>
+              <Text style={[styles.messageText, item.role === 'user' ? styles.messageTextUser : styles.messageTextAI, { fontStyle: 'italic' }]}>Hidden while 👥 Public is on</Text>
+            </View>
+          </View>
+        ) : (
           <View
             style={[
               styles.messageWrapper,
@@ -878,7 +894,7 @@ export default function ChatScreen() {
         ),
     [styles, colors, isMobile, companion?.portrait_url,
      companion?.name, companionState, speakingId,
-     expandedActivity, playingId, voiceBusy, togglePlayback],
+     expandedActivity, playingId, voiceBusy, togglePlayback, privacy.mode],
   );
 
   useEffect(() => {
@@ -954,6 +970,8 @@ export default function ChatScreen() {
           </Text>}
         </View>
       </View>}
+      {/* In the Live Room with video on, the switch sits over the picture (as in Theater) so the conversation keeps its height. */}
+      {!theater && !(room && animatedState === 'ready') && <PrivacyBar c={colors} />}
 
       {syncStatus === 'cached' && !theater && <TouchableOpacity accessibilityRole="button" accessibilityLabel="Retry connection"
         onPress={() => { void loadCompanion().then(() => { if (activeIdRef.current) void loadMessages(activeIdRef.current); }); }}
@@ -1016,7 +1034,7 @@ export default function ChatScreen() {
                   <TouchableOpacity style={{ flex: 1, minHeight: 48, justifyContent: 'center' }}
                     disabled={sending || voiceBusy || managementBusy}
                     accessibilityRole="button"
-                    accessibilityLabel={`Open chat ${item.title}`}
+                    accessibilityLabel={`Open chat ${conversationLabel(privacy.mode, item.title, item.last_message_at)}`}
                     onLongPress={() => { setManagedChat(item); setManagementError(null); }}
                     onPress={() => {
                       setActiveConversation(item);
@@ -1024,13 +1042,13 @@ export default function ChatScreen() {
                     }}>
                     <Text style={[styles.conversationTitle,
                       activeConversation?.id === item.id && styles.conversationTitleActive]}
-                      numberOfLines={1}>{item.title}</Text>
+                      numberOfLines={1}>{conversationLabel(privacy.mode, item.title, item.last_message_at)}</Text>
                     <Text style={styles.conversationDate}>
                       {new Date(item.last_message_at).toLocaleDateString()}
                     </Text>
                   </TouchableOpacity>
                   <TouchableOpacity accessibilityRole="button"
-                    accessibilityLabel={`Chat options for ${item.title}`}
+                    accessibilityLabel={`Chat options for ${conversationLabel(privacy.mode, item.title, item.last_message_at)}`}
                     disabled={sending || voiceBusy || managementBusy}
                     style={{ width: 44, height: 44, alignItems: 'center', justifyContent: 'center' }}
                     onPress={() => { setManagedChat(item); setManagementError(null); }}>
@@ -1089,8 +1107,9 @@ export default function ChatScreen() {
       {/* One element in one place for both room views: Theater only changes the box around it. */}
       {animatedState === 'ready' && <View testID="live-video-area" style={theater ? { flex: 1, minHeight: 0, backgroundColor: '#000' } : { alignItems: 'center', paddingVertical: room ? 4 : 8 }}>
         <AnimatedCompanion session={animated} borderColor={colors.primary[400]} controlColor={colors.primary[300]} room={room ? (theater ? 'theater' : 'chat') : undefined} />
+        {room && !theater && <View pointerEvents="box-none" style={{ position: 'absolute', top: 10, left: 10 }}><PrivacyToggle c={colors} overlay /></View>}
         {theater && <LiveRoomTheaterBar messagesOpen={theaterMessages} onChat={() => { turned.current = null; setRoomMode('chat'); }} onMessages={() => setTheaterMessages(open => !open)}
-          fullScreen={fullScreen} onFullScreen={canFullScreen ? toggleFullScreen : undefined} />}
+          fullScreen={fullScreen} onFullScreen={canFullScreen ? toggleFullScreen : undefined} privacy={<PrivacyToggle c={colors} overlay />} />}
       </View>}
       {/* The conversation and the message box. In Theater this is the collapsible messages panel:
           the same elements, so nothing is reloaded and no text is drawn over the picture. */}

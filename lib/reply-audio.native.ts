@@ -2,11 +2,11 @@ import { AppState } from 'react-native';
 import { createAudioPlayer, setAudioModeAsync } from 'expo-audio';
 import { File, Paths } from 'expo-file-system';
 import { authHeaders } from './auth';
-import { speechChunks } from './voice';
+import { speechChunks, speechPrivacy, type SpeechPrivacy } from './voice';
 
 // Each chunk lives only in the private app cache and is removed after playback.
 export async function playReply(text: string, signal: AbortSignal, onEnd: () => void,
-  options: { companionId?: string; voice?: string; onStart?: () => void; onError?: (error: Error) => void } = {}): Promise<() => void> {
+  options: { companionId?: string; voice?: string; onStart?: () => void; onError?: (error: Error) => void; privacy?: SpeechPrivacy } = {}): Promise<() => void> {
   const base = process.env.EXPO_PUBLIC_LUMEN_API_URL?.trim().replace(/\/+$/, '');
   if (!base) throw new Error('Voice server address is missing.');
   const chunks = speechChunks(text).filter(value => value.trim());
@@ -40,7 +40,7 @@ export async function playReply(text: string, signal: AbortSignal, onEnd: () => 
     try {
       const response = await fetch(`${base}/v0.1/voice/speak`, {
         method:'POST', headers:{'Content-Type':'application/json',...await authHeaders()},
-        body:JSON.stringify({text,companion_id:options.companionId,voice:options.voice}), signal:controller.signal,
+        body:JSON.stringify({text,companion_id:options.companionId,voice:options.voice,...speechPrivacy(options.privacy)}), signal:controller.signal,
       });
       if (!response.ok) {
         const body = await response.json().catch(() => ({}));

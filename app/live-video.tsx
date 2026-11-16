@@ -15,6 +15,7 @@ import { useAuth } from '@/lib/auth';
 import { IN_APP_PROBE, inAppVideoSupported, liveRoomWebUrl, liveVideoWebUrl, openLiveVideoOnWeb, readInAppProbe, sameWebOrigin, type InAppProbe } from '@/lib/live-video-web';
 import { ROOM_BACK_SCRIPT, ROOM_LANDSCAPE_SCRIPT, ROOM_PORTRAIT_SCRIPT, readRoomEvent, type RoomMode } from '@/lib/live-room';
 import { roomImmersive, roomLock } from '@/lib/room-rotation';
+import { loadPrivacyMode, privacyScript, setPrivacyMode, usePrivacyMode } from '@/lib/privacy-mode';
 import { useKeyboardVisible } from '@/hooks/useKeyboardVisible';
 import { useScreenLandscape } from '@/hooks/useScreenLandscape';
 
@@ -63,6 +64,14 @@ export default function LiveVideoScreen() {
   useEffect(() => { if (!settle) return; const timer = setTimeout(() => setSettle(false), 60); return () => clearTimeout(timer); }, [settle]);
   // The room is told which way the phone is held, in one of two fixed lines. It answers with layout only.
   useEffect(() => { if (roomShown) view.current?.injectJavaScript(landscape ? ROOM_LANDSCAPE_SCRIPT : ROOM_PORTRAIT_SCRIPT); }, [roomShown, landscape]);
+
+  // 🔒 Private | 👥 Public (Issue #39): one choice for this phone. The room is told the app's choice when it
+  // appears, and tells the app when the person flips it there. Two fixed lines each way, no data.
+  const privacy = usePrivacyMode();
+  useEffect(() => {
+    if (room === null) return;
+    void loadPrivacyMode().then(mode => view.current?.injectJavaScript(privacyScript(mode)));
+  }, [room === null, privacy.mode]);
 
   const retry = () => { setProbe(null); setFailed(false); setSilent(false); setNotice(null); setRoom(null); setAttempt(n => n + 1); };
 
@@ -126,6 +135,7 @@ export default function LiveVideoScreen() {
           if (word === 'ready') setRoom(now => now ?? 'chat');
           else if (word === 'gone') setRoom(null);
           else if (word === 'chat' || word === 'theater') setRoom(now => now === null ? now : word);
+          else if (word === 'private' || word === 'public') setPrivacyMode(word);
           else if (word === 'close') close();
           else if (word === 'browser') browser();
         }}

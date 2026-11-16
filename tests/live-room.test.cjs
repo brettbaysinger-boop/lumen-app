@@ -50,7 +50,7 @@ test('the video is always the whole 3:2 frame: compact in Video Chat, as large a
 test('the page tells the phone app only fixed words, and only inside the phone app',()=>{
   const inside=load({embedded:true});
   for(const word of inside.ROOM_EVENTS)inside.postRoomEvent(word);
-  assert.deepEqual(inside.posted.map(data=>JSON.parse(data)),['ready','gone','chat','theater','close','browser','restored'].map(event=>({lumenRoom:1,event})));
+  assert.deepEqual(inside.posted.map(data=>JSON.parse(data)),['ready','gone','chat','theater','close','browser','restored','private','public'].map(event=>({lumenRoom:1,event})));
   const browser=load();browser.postRoomEvent('close');assert.equal(browser.roomEmbedded(),false);assert.deepEqual(browser.posted,[]);
   const {readRoomEvent}=load();
   for(const data of inside.posted)assert.ok(readRoomEvent(data));
@@ -62,7 +62,7 @@ test('the phone app says one fixed line to the page, with no data in it',()=>{
   assert.equal(room.ROOM_BACK_SCRIPT,"window.dispatchEvent(new Event('lumenroomback'));true;");
   vm.runInNewContext(room.ROOM_BACK_SCRIPT,{window:room.window,Event:class{constructor(type){this.type=type;}}});assert.deepEqual(room.events,['lumenroomback']);
   const screen=read('app/live-video.tsx');
-  assert.deepEqual(screen.match(/injectJavaScript\([^)]*\)/g),['injectJavaScript(ROOM_BACK_SCRIPT)','injectJavaScript(landscape ? ROOM_LANDSCAPE_SCRIPT : ROOM_PORTRAIT_SCRIPT)']);   // the only scripts ever sent after load: three fixed lines
+  assert.deepEqual(screen.match(/injectJavaScript\([^)]*\)/g),['injectJavaScript(ROOM_BACK_SCRIPT)','injectJavaScript(landscape ? ROOM_LANDSCAPE_SCRIPT : ROOM_PORTRAIT_SCRIPT)','injectJavaScript(privacyScript(mode)']);   // the only scripts ever sent after load: fixed lines (privacyScript is one of two, see tests/privacy-mode.test.cjs)
   assert.match(screen,/if \(room !== 'theater'\) return;\s+const back = BackHandler\.addEventListener\('hardwareBackPress'/);   // Back leaves the screen everywhere else, as before
   assert.doesNotMatch(screen,/access_token|Authorization|supabase|session\.(access|refresh|user)/);
 });

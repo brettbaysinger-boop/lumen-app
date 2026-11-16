@@ -134,7 +134,7 @@ test('the in-app screen: guarded, allowlisted, closed in the background, with th
   assert.match(screen,/silent && !probe \? 'This phone did not confirm/);
   assert.match(screen,/url && supported && !message \? require/);                       // any message, this one included, takes the web view away
   assert.doesNotMatch(screen,/access_token|Authorization|supabase/);                   // nothing of the app's sign-in goes into the page
-  assert.deepEqual(screen.match(/injectJavaScript\([^)]*\)/g),['injectJavaScript(ROOM_BACK_SCRIPT)','injectJavaScript(landscape ? ROOM_LANDSCAPE_SCRIPT : ROOM_PORTRAIT_SCRIPT)']);   // one fixed line (Back in Theater), see tests/live-room.test.cjs
+  assert.deepEqual(screen.match(/injectJavaScript\([^)]*\)/g),['injectJavaScript(ROOM_BACK_SCRIPT)','injectJavaScript(landscape ? ROOM_LANDSCAPE_SCRIPT : ROOM_PORTRAIT_SCRIPT)','injectJavaScript(privacyScript(mode)']);   // one fixed line (Back in Theater), see tests/live-room.test.cjs
   for(const off of ['allowFileAccess={false}','setSupportMultipleWindows={false}','thirdPartyCookiesEnabled={false}','geolocationEnabled={false}','mixedContentMode="never"'])assert.ok(screen.includes(off),off);
   assert.match(fs.readFileSync('app/(tabs)/index.tsx','utf8'),/choice === 'inapp' \? \{ text: 'Watch here', onPress: \(\) => \{ router\.push\('\/live-video'\); \} \}/);
 });
