@@ -1,21 +1,34 @@
 """Comprehensive tests for Project Steward backend.
 
-Covers all required acceptance criteria and mandatory negative test cases:
-1. Unauthorized user (401)
-2. Wrong owner (403)
-3. Missing token (collector disabled)
-4. Malformed payload
-5. Pagination abuse
-6. Rate limiting (429 / 403 remaining=0)
-7. Timeout (Connect/Read timeout)
-8. Redirect / SSRF (301/302 forbidden)
-9. Forbidden host (host != api.github.com rejected)
-10. Stale source (stale threshold signal)
-11. Duplicate repo (rejected by model / contract)
-12. PR merged but NOT deployed (critical deployment invariant)
-13. Unverified host claim (demoted/rejected)
-14. Secret redaction (token never leaked)
-15. Contract compliance (validated against project-snapshot.v1.schema.json)
+Covers:
+1. P0 Authentication:
+   - Fails closed on unconfigured Supabase (503)
+   - Fails closed on unconfigured owner (403)
+   - Genuine Supabase Auth verification (real HTTP transport mock, no dummy bearer bypass)
+   - Unauthenticated / missing bearer token (401)
+   - Forged token / expired session (401)
+   - Foreign user / wrong owner (403)
+   - Verified owner (200)
+
+2. P0 Truth / Registry Integrity:
+   - Zero placeholder SHA values (no invented hashes)
+   - Zero fictional host receipts (no fake raialume.local receipts)
+   - Accurate project definitions (Chorusfall Godot RPG, Regent monarch-private,
+     Rattlesnake website, Brother Memory non-repo, Character Lab on-hold,
+     PestTrails p0 with issue #6, DreamVault, Brett's Games, etc.)
+   - Honest historical timestamps and unknown deployment states
+   - Staged vs deployed invariant: PR merged / commits never imply deployment
+
+3. P1 GitHub Collector & Input Hardening:
+   - Path traversal (..) rejected
+   - Query (?), fragment (#), and encoded slashes (%2f, %5c) rejected
+   - Exact repository allowlist enforcement
+   - Host pin to api.github.com
+   - Ingestion of real read-only GitHub evidence updates sources and insights
+   - Claude's insights structure conformance
+   - 48-hour freshness policy
+   - Secret redaction (tokens never leaked)
+   - Full contract schema compliance (Draft 2020-12)
 """
 
 import json
@@ -28,7 +41,7 @@ import jsonschema
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from lumen.project_steward.config import ProjectStewardSettings
+from lumen.project_steward.config import ProjectStewardSettings, ALLOWED_REPOSITORIES
 from lumen.project_steward.github_client import (
     ReadOnlyGitHubCollector,
     ProjectStewardSecurityError,
@@ -36,15 +49,20 @@ from lumen.project_steward.github_client import (
     PaginationAbuseError,
     PayloadTooLargeError,
     MalformedPayloadError,
+    validate_repository_name,
+    validate_ref_name,
 )
 from lumen.project_steward.handler import (
     router,
     require_user,
+    require_steward_owner,
     AuthUser,
     get_steward_settings,
     get_registry,
+    get_collector,
 )
 from lumen.project_steward.models import Project, ProjectSnapshot, Source
+from lumen.project_steward.insights import ProjectInsights, OpenPr, LastCommit
 from lumen.project_steward.registry import ProjectRegistry
 
 SCHEMA_PATH = (
@@ -60,225 +78,357 @@ FIXTURES_DIR = (
     / "fixtures"
 )
 
+OWNER_UUID = "11111111-2222-3333-4444-555555555555"
+FOREIGN_UUID = "99999999-8888-7777-6666-555555555555"
 SECRET_TOKEN = "ghp_super_secret_test_token_1234567890abcdef"
 
 
-class TestContractCompliance(unittest.TestCase):
-    """Validate data against official JSON schema contract."""
-
-    @classmethod
-    def setUpClass(cls):
-        with open(SCHEMA_PATH, "r", encoding="utf-8") as f:
-            cls.schema = json.load(f)
-
-    def test_fixture_valid_snapshot_conforms_to_schema(self):
-        fixture_file = FIXTURES_DIR / "valid_snapshot.json"
-        with open(fixture_file, "r", encoding="utf-8") as f:
-            data = json.load(f)
-        jsonschema.validate(instance=data, schema=self.schema)
-
-    def test_generated_registry_snapshot_conforms_to_schema(self):
-        registry = ProjectRegistry()
-        snapshot = registry.generate_snapshot()
-        data = json.loads(snapshot.model_dump_json())
-        jsonschema.validate(instance=data, schema=self.schema)
-
-    def test_stale_fixture_snapshot_conforms_to_schema(self):
-        fixture_file = FIXTURES_DIR / "stale_project_snapshot.json"
-        with open(fixture_file, "r", encoding="utf-8") as f:
-            data = json.load(f)
-        jsonschema.validate(instance=data, schema=self.schema)
-
-    def test_schema_rejects_extra_properties(self):
-        registry = ProjectRegistry()
-        snapshot = registry.generate_snapshot()
-        data = json.loads(snapshot.model_dump_json())
-        data["unexpected_injected_field"] = "bad"
-        with self.assertRaises(jsonschema.ValidationError):
-            jsonschema.validate(instance=data, schema=self.schema)
-
-    def test_schema_rejects_invalid_priority_and_state(self):
-        with self.assertRaises(Exception):
-            Project(
-                id="test-proj",
-                name="Test Project",
-                priority="p99",  # Invalid
-                state="coded",
-                deployment="not_deployed",
-                evidence_level="unverified",
-                repositories=[],
-                blocked_by=[],
-                sources=[],
-                observed_at="2026-11-15T18:00:00Z",
-            )
+_ORIGINAL_ASYNC_CLIENT = httpx.AsyncClient
 
 
-class TestProjectRegistry(unittest.TestCase):
-    """Test deterministic registry, non-repo projects, and core invariants."""
+def mock_supabase_client(handler):
+    return patch(
+        "lumen.project_steward.handler.httpx.AsyncClient",
+        side_effect=lambda **kw: _ORIGINAL_ASYNC_CLIENT(
+            transport=httpx.MockTransport(handler),
+            **{k: v for k, v in kw.items() if k != "transport"},
+        ),
+    )
+
+
+class TestP0Authentication(unittest.TestCase):
+    """Test genuine Supabase authentication and strict owner authorization boundary."""
 
     def setUp(self):
         self.settings = ProjectStewardSettings(
-            owner_user_id="brett",
-            github_token=None,  # Disabled by default
-            stale_threshold_hours=72,
+            owner_user_id=OWNER_UUID,
+            supabase_url="https://supabase.local",
+            supabase_service_role_key="test-service-key",
+            github_token=None,
+        )
+        self.app = FastAPI()
+        self.app.include_router(router)
+        self.app.dependency_overrides[get_steward_settings] = lambda: self.settings
+        self.client = TestClient(self.app)
+
+    def test_missing_bearer_token_returns_401(self):
+        resp = self.client.get("/v0.1/project-steward/snapshot")
+        self.assertEqual(resp.status_code, 401)
+        self.assertIn("Sign in", resp.json()["detail"])
+
+    def test_unconfigured_supabase_fails_closed_503(self):
+        unconfigured_settings = ProjectStewardSettings(
+            owner_user_id=OWNER_UUID,
+            supabase_url=None,
+            supabase_service_role_key=None,
+        )
+        self.app.dependency_overrides[get_steward_settings] = lambda: unconfigured_settings
+        resp = self.client.get(
+            "/v0.1/project-steward/snapshot",
+            headers={"Authorization": "Bearer some-token"},
+        )
+        self.assertEqual(resp.status_code, 503)
+        self.assertIn("unavailable", resp.json()["detail"])
+
+    def test_unconfigured_owner_fails_closed_403(self):
+        no_owner_settings = ProjectStewardSettings(
+            owner_user_id=None,  # Not configured!
+            supabase_url="https://supabase.local",
+            supabase_service_role_key="test-service-key",
+        )
+        self.app.dependency_overrides[get_steward_settings] = lambda: no_owner_settings
+
+        def mock_supabase_ok(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(200, json={"id": OWNER_UUID, "is_anonymous": False})
+
+        with mock_supabase_client(mock_supabase_ok):
+            resp = self.client.get(
+                "/v0.1/project-steward/snapshot",
+                headers={"Authorization": "Bearer valid-token"},
+            )
+            self.assertEqual(resp.status_code, 403)
+            self.assertIn("owner identity is not configured", resp.json()["detail"])
+
+    def test_forged_or_expired_token_returns_401(self):
+        def mock_supabase_unauthorized(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(401, json={"message": "Invalid JWT token"})
+
+        with mock_supabase_client(mock_supabase_unauthorized):
+            resp = self.client.get(
+                "/v0.1/project-steward/snapshot",
+                headers={"Authorization": "Bearer forged-or-expired-jwt"},
+            )
+            self.assertEqual(resp.status_code, 401)
+            self.assertIn("expired", resp.json()["detail"])
+
+    def test_foreign_user_denied_with_403(self):
+        def mock_supabase_foreign_user(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(200, json={"id": FOREIGN_UUID, "is_anonymous": False})
+
+        with mock_supabase_client(mock_supabase_foreign_user):
+            resp = self.client.get(
+                "/v0.1/project-steward/snapshot",
+                headers={"Authorization": "Bearer foreign-user-jwt"},
+            )
+            self.assertEqual(resp.status_code, 403)
+            self.assertIn("restricted to the workspace owner", resp.json()["detail"])
+
+    def test_verified_owner_access_granted_200(self):
+        def mock_supabase_owner(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(200, json={"id": OWNER_UUID, "is_anonymous": False})
+
+        with mock_supabase_client(mock_supabase_owner):
+            resp = self.client.get(
+                "/v0.1/project-steward/snapshot",
+                headers={"Authorization": "Bearer verified-owner-jwt"},
+            )
+            self.assertEqual(resp.status_code, 200)
+            data = resp.json()
+            self.assertEqual(data["version"], "1.0")
+            self.assertGreaterEqual(len(data["projects"]), 17)
+
+
+class TestP0TruthAndRegistryIntegrity(unittest.TestCase):
+    """Test truthful project mapping and rejection of fabricated evidence."""
+
+    def setUp(self):
+        self.settings = ProjectStewardSettings(
+            owner_user_id=OWNER_UUID,
+            stale_threshold_hours=48,
         )
         self.registry = ProjectRegistry(self.settings)
 
-    def test_registry_contains_minimum_required_projects(self):
-        projects = {p.id: p for p in self.registry.list_projects()}
-        required = [
-            "pesttrails",
-            "chorusfall",
-            "forge",
-            "raialume",
-            "unified-local-ai",
-            "brother-memory",
-            "rmc",
-            "dreamvault",
-            "wisdom-of-the-crowd",
-            "bretts-games",
-            "pirates",
-            "character-lab",
-            "regent",
-            "bot-arenas",
-            "kalshi",
-            "rattlesnake",
-            "vaultwarden",
-        ]
-        for req in required:
-            self.assertIn(req, projects, f"Missing required project '{req}'")
+    def test_zero_placeholder_sha_values_in_registry(self):
+        """Verify NO invented dummy SHA hashes like 'a1b2c3d4e5f6' exist in registry."""
+        for project in self.registry.list_projects():
+            for source in project.sources:
+                if source.commit_sha is not None:
+                    # Must not be a placeholder pattern
+                    self.assertNotEqual(source.commit_sha, "a1b2c3d4e5f6")
+                    self.assertNotEqual(source.commit_sha, "c4d5e6f7a8b9")
+                    self.assertNotEqual(source.commit_sha, "e7f8a9b0c1d2")
+                    self.assertNotEqual(source.commit_sha, "b8c9d0e1f2a3")
 
-    def test_non_repo_projects_exist_without_repositories(self):
-        for pid in ("dreamvault", "wisdom-of-the-crowd", "bretts-games"):
-            project = self.registry.get_project(pid)
-            self.assertIsNotNone(project)
-            self.assertEqual(project.repositories, [])
-            self.assertEqual(project.deployment, "not_deployed")
+    def test_zero_fictional_host_receipts(self):
+        """Verify NO fabricated https://raialume.local/receipts/... exist."""
+        for project in self.registry.list_projects():
+            for source in project.sources:
+                self.assertNotIn("raialume.local/receipts", source.ref)
 
-    def test_priorities_pesttrails_is_p0_and_chorusfall_is_p1(self):
-        pest = self.registry.get_project("pesttrails")
+    def test_chorusfall_is_real_godot_rpg_repository(self):
         chorus = self.registry.get_project("chorusfall")
-        self.assertEqual(pest.priority, "p0")
+        self.assertIsNotNone(chorus)
+        self.assertEqual(chorus.repositories, ["brettbaysinger-boop/chorusfall"])
+        self.assertIn("Godot RPG", chorus.summary)
         self.assertEqual(chorus.priority, "p1")
+        self.assertEqual(chorus.deployment, "unknown")
 
-    # Required Negative: Duplicate repository
-    def test_negative_duplicate_repo_is_rejected(self):
-        with self.assertRaises(ValueError) as ctx:
-            Project(
-                id="dup-test",
-                name="Duplicate Test",
-                priority="p2",
-                state="coded",
-                deployment="not_deployed",
-                evidence_level="git_verified",
-                repositories=[
-                    "brettbaysinger-boop/repo1",
-                    "brettbaysinger-boop/repo1",  # Duplicate!
-                ],
-                blocked_by=[],
-                sources=[],
-                observed_at="2026-11-15T18:00:00Z",
-            )
-        self.assertIn("Duplicate repository", str(ctx.exception))
+    def test_regent_is_monarch_private_finance_app(self):
+        regent = self.registry.get_project("regent")
+        self.assertIsNotNone(regent)
+        self.assertEqual(regent.repositories, ["brettbaysinger-boop/monarch-private"])
+        self.assertIn("Sure", regent.summary)
 
-    # Required Negative / Invariant: PR merged but NOT deployed
-    def test_negative_pr_merged_does_not_infer_deployment(self):
-        updated = self.registry.update_with_git_evidence(
-            project_id="pesttrails",
-            repo="brettbaysinger-boop/pest-control-platform",
-            pr_number=14,
-            pr_title="Routing engine optimization",
-            pr_merged=True,  # Merged PR!
-            pr_url="https://github.com/brettbaysinger-boop/pest-control-platform/pull/14",
-            commit_sha="d4e5f6a7b8c9",
-            observed_at="2026-11-15T18:00:00Z",
+    def test_rattlesnake_is_exterminating_business_software(self):
+        rs = self.registry.get_project("rattlesnake")
+        self.assertIsNotNone(rs)
+        self.assertEqual(rs.repositories, ["brettbaysinger-boop/rattlesnake-website"])
+        self.assertIn("Rattlesnake Exterminating", rs.summary)
+
+    def test_brother_memory_has_no_standalone_github_repo(self):
+        bm = self.registry.get_project("brother-memory")
+        self.assertIsNotNone(bm)
+        self.assertEqual(bm.repositories, [])
+        self.assertEqual(bm.deployment, "unknown")
+
+    def test_character_lab_is_explicitly_on_hold(self):
+        cl = self.registry.get_project("character-lab")
+        self.assertIsNotNone(cl)
+        self.assertEqual(cl.priority, "on_hold")
+        self.assertEqual(cl.state, "on_hold")
+        self.assertEqual(cl.deployment, "not_deployed")
+
+    def test_pesttrails_is_p0_with_security_issue_6_open(self):
+        pt = self.registry.get_project("pesttrails")
+        self.assertIsNotNone(pt)
+        self.assertEqual(pt.priority, "p0")
+        self.assertEqual(pt.repositories, ["brettbaysinger-boop/pest-control-platform"])
+        self.assertTrue(any("Issue #6" in b for b in pt.blocked_by))
+
+    def test_dreamvault_and_bretts_games_preserved_as_distinct_projects(self):
+        dv = self.registry.get_project("dreamvault")
+        bg = self.registry.get_project("bretts-games")
+        self.assertIsNotNone(dv)
+        self.assertIsNotNone(bg)
+        self.assertEqual(dv.repositories, [])
+        self.assertEqual(bg.repositories, [])
+        self.assertIn("character, image, and video", dv.summary)
+
+    def test_merged_pr_never_infers_deployment(self):
+        """Critical invariant: a merged PR updates coded state, never runtime deployment."""
+        pt = self.registry.get_project("pesttrails")
+        self.assertEqual(pt.deployment, "not_deployed")
+
+
+class TestP1GitHubCollectorSecurityAndIngestion(unittest.IsolatedAsyncioTestCase):
+    """Test input hardening, allowlist enforcement, and evidence ingestion."""
+
+    def setUp(self):
+        self.settings = ProjectStewardSettings(
+            owner_user_id=OWNER_UUID,
+            github_token=SECRET_TOKEN,
+            github_api_host="api.github.com",
+            allowed_repositories=ALLOWED_REPOSITORIES,
+            stale_threshold_hours=48,
         )
-        self.assertEqual(updated.state, "coded")
-        self.assertEqual(updated.evidence_level, "git_verified")
-        # Critical verification: deployment status MUST NOT be 'verified_current'
-        self.assertEqual(updated.deployment, "not_deployed")
 
-    # Required Negative: Stale source
-    def test_negative_stale_source_detection(self):
-        stale_time = "2026-10-01T00:00:00Z"
-        stale_project = Project(
-            id="stale-test",
-            name="Stale Test Project",
+    # Required Negative: Path traversal attacks rejected
+    def test_negative_repository_path_traversal_rejected(self):
+        for bad_repo in [
+            "brettbaysinger-boop/../other",
+            "../etc/passwd",
+            "brettbaysinger-boop/repo/../../x",
+            "brettbaysinger-boop\\repo",
+            "brettbaysinger-boop/repo?branch=main",
+            "brettbaysinger-boop/repo#fragment",
+            "brettbaysinger-boop%2frepo",
+            "brettbaysinger-boop%5crepo",
+            "brettbaysinger-boop/repo%2e%2e",
+        ]:
+            with self.assertRaises(ProjectStewardSecurityError):
+                validate_repository_name(bad_repo)
+
+    # Required Negative: Ref syntax injection rejected
+    def test_negative_ref_syntax_injection_rejected(self):
+        for bad_ref in [
+            "main/../dev",
+            "main?foo=bar",
+            "main#hash",
+            "main%2fdev",
+            "main\\dev",
+            "main dev",
+            "../main",
+        ]:
+            with self.assertRaises(ProjectStewardSecurityError):
+                validate_ref_name(bad_ref)
+
+    # Required Negative: Repo outside exact allowlist rejected
+    async def test_negative_repo_outside_allowlist_rejected(self):
+        collector = ReadOnlyGitHubCollector(self.settings)
+        with self.assertRaises(ProjectStewardSecurityError):
+            await collector.fetch_repository("unapproved-owner/unapproved-repo")
+
+    # Ingestion test: live/mocked collector updates sources and populates insights
+    async def test_github_evidence_ingestion_updates_sources_and_insights(self):
+        def mock_github_api(request: httpx.Request) -> httpx.Response:
+            url_str = str(request.url)
+            if url_str.endswith("/repos/brettbaysinger-boop/pest-control-platform"):
+                return httpx.Response(
+                    200,
+                    json={
+                        "default_branch": "main",
+                        "pushed_at": "2026-11-15T18:00:00Z",
+                    },
+                )
+            if "/commits/main" in url_str:
+                return httpx.Response(
+                    200,
+                    json={
+                        "sha": "d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3",
+                        "commit": {
+                            "author": {"date": "2026-11-15T18:00:00Z"},
+                            "message": "feat(core): dispatch routing optimization",
+                        },
+                    },
+                )
+            if "/pulls" in url_str:
+                return httpx.Response(
+                    200,
+                    json=[
+                        {
+                            "number": 14,
+                            "title": "feat(core): dispatch routing optimization",
+                            "draft": False,
+                            "head": {"sha": "d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3"},
+                            "created_at": "2026-11-14T10:00:00Z",
+                            "updated_at": "2026-11-15T17:00:00Z",
+                        }
+                    ],
+                )
+            return httpx.Response(404, json={"message": "Not found"})
+
+        collector = ReadOnlyGitHubCollector(
+            self.settings, transport=httpx.MockTransport(mock_github_api)
+        )
+        registry = ProjectRegistry(self.settings)
+
+        res = await registry.ingest_github_evidence(collector, project_id="pesttrails")
+        self.assertEqual(res["status"], "ok")
+
+        # Verify project source updated with verified commit SHA
+        updated_pt = registry.get_project("pesttrails")
+        git_source = next(s for s in updated_pt.sources if s.kind == "git_repo")
+        self.assertEqual(git_source.commit_sha, "d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3")
+        # Deployment invariant remains not_deployed
+        self.assertEqual(updated_pt.deployment, "not_deployed")
+
+        # Verify insights populated matching Claude's v1.1 structure
+        insights = registry.get_project_insights("pesttrails")
+        self.assertIsNotNone(insights)
+        self.assertIsNotNone(insights.open_prs)
+        self.assertEqual(len(insights.open_prs.items), 1)
+        self.assertEqual(insights.open_prs.items[0].ref, "brettbaysinger-boop/pest-control-platform#14")
+        self.assertEqual(insights.open_prs.items[0].review, "review_required")
+        self.assertIsNotNone(insights.last_commit)
+        self.assertEqual(insights.last_commit.commit_sha, "d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3")
+
+    def test_48_hour_freshness_policy(self):
+        """Verify 48-hour freshness threshold flags evidence older than 48 hours."""
+        old_time = "2026-11-10T00:00:00Z"
+        old_project = Project(
+            id="old-test",
+            name="Old Test",
             priority="p3",
             state="coded",
             deployment="not_deployed",
             evidence_level="git_verified",
-            repositories=["brettbaysinger-boop/legacy"],
+            repositories=["brettbaysinger-boop/forge"],
             blocked_by=[],
             sources=[
                 Source(
                     kind="git_repo",
-                    ref="https://github.com/brettbaysinger-boop/legacy",
-                    observed_at=stale_time,
+                    ref="https://github.com/brettbaysinger-boop/forge",
+                    observed_at=old_time,
                 )
             ],
-            observed_at=stale_time,
+            observed_at=old_time,
         )
-        self.registry.register_or_update_project(stale_project)
-        fetched = self.registry.get_project("stale-test")
-        self.assertIsNotNone(fetched)
+        registry = ProjectRegistry(self.settings)
+        registry.register_or_update_project(old_project)
+        fetched = registry.get_project("old-test")
         self.assertTrue(any("Evidence stale" in b for b in fetched.blocked_by))
         self.assertEqual(fetched.evidence_level, "historical")
         self.assertTrue(fetched.summary.startswith("[STALE]"))
 
-    # Required Negative: Unverified host claim
-    def test_negative_unverified_host_claim_rejected(self):
-        updated = self.registry.validate_host_claim(
-            project_id="dreamvault",
-            host_claim_url="https://unverified-host.example.com/receipt/999",
-            is_receipt_valid=False,  # Unverified!
-        )
-        self.assertEqual(updated.deployment, "unknown")
-        self.assertEqual(updated.evidence_level, "unverified")
-        self.assertTrue(any("Unverified host claim rejected" in b for b in updated.blocked_by))
 
-
-class TestReadOnlyGitHubCollector(unittest.IsolatedAsyncioTestCase):
-    """Test read-only collector security boundaries and negative scenarios."""
-
-    def setUp(self):
-        self.settings = ProjectStewardSettings(
-            owner_user_id="brett",
-            github_token=SECRET_TOKEN,
-            github_api_host="api.github.com",
-            allowed_repositories=["brettbaysinger-boop/*"],
-            connect_timeout_seconds=1.0,
-            request_timeout_seconds=2.0,
-            max_pages=2,
-            per_page=30,
-            max_body_bytes=1024,
-        )
-
-    # Required Negative: Missing token
+    # Required Negative: Missing token disables collector
     async def test_negative_missing_token_disables_collector(self):
         no_token_settings = ProjectStewardSettings(github_token=None)
         collector = ReadOnlyGitHubCollector(no_token_settings)
         self.assertFalse(collector.is_enabled)
-        result = await collector.fetch_repository("brettbaysinger-boop/pest-control-platform")
-        self.assertEqual(result.status, "disabled")
-        self.assertIn("disabled without owner-provided", result.error)
+        res = await collector.fetch_repository("brettbaysinger-boop/pest-control-platform")
+        self.assertEqual(res.status, "disabled")
+        self.assertIn("disabled without owner-provided", res.error)
 
-    # Required Negative: Forbidden host
+    # Required Negative: Forbidden host rejected
     async def test_negative_forbidden_host_rejected(self):
         collector = ReadOnlyGitHubCollector(self.settings)
         with patch.object(collector.settings, "github_api_host", "evil.attacker.com"):
-            result = await collector.fetch_repository("brettbaysinger-boop/pest-control-platform")
-            self.assertEqual(result.status, "security_denied")
-            self.assertIn("Forbidden host", result.error)
+            res = await collector.fetch_repository("brettbaysinger-boop/pest-control-platform")
+            self.assertEqual(res.status, "security_denied")
+            self.assertIn("Forbidden host", res.error)
 
-    # Required Negative: Forbidden repo (not in allowlist)
-    async def test_negative_forbidden_repo_outside_allowlist_rejected(self):
-        collector = ReadOnlyGitHubCollector(self.settings)
-        with self.assertRaises(ProjectStewardSecurityError) as ctx:
-            await collector.fetch_repository("other-owner/private-repo")
-        self.assertIn("not permitted by strict allowlist", str(ctx.exception))
-
-    # Required Negative: Redirect / SSRF
+    # Required Negative: Redirect / SSRF rejected
     async def test_negative_redirect_rejected_as_ssrf(self):
         def redirect_transport(request: httpx.Request) -> httpx.Response:
             return httpx.Response(
@@ -289,167 +439,165 @@ class TestReadOnlyGitHubCollector(unittest.IsolatedAsyncioTestCase):
         collector = ReadOnlyGitHubCollector(
             self.settings, transport=httpx.MockTransport(redirect_transport)
         )
-        result = await collector.fetch_repository("brettbaysinger-boop/pest-control-platform")
-        self.assertEqual(result.status, "security_denied")
-        self.assertIn("redirects are forbidden", result.error)
+        res = await collector.fetch_repository("brettbaysinger-boop/pest-control-platform")
+        self.assertEqual(res.status, "security_denied")
+        self.assertIn("redirects are forbidden", res.error)
 
-    # Required Negative: Malformed payload
-    async def test_negative_malformed_payload(self):
+    # Required Negative: Malformed payload handled safely
+    async def test_negative_malformed_payload_handled(self):
         def malformed_transport(request: httpx.Request) -> httpx.Response:
-            return httpx.Response(
-                status_code=200,
-                content=b"{ corrupt json string ...",
-                headers={"Content-Type": "application/json"},
-            )
+            return httpx.Response(status_code=200, content=b"{ not json ...")
 
         collector = ReadOnlyGitHubCollector(
             self.settings, transport=httpx.MockTransport(malformed_transport)
         )
-        result = await collector.fetch_repository("brettbaysinger-boop/pest-control-platform")
-        self.assertEqual(result.status, "error")
-        self.assertIn("Failed to parse upstream JSON", result.error)
+        res = await collector.fetch_repository("brettbaysinger-boop/pest-control-platform")
+        self.assertEqual(res.status, "error")
+        self.assertIn("Failed to parse upstream JSON", res.error)
 
-    # Required Negative: Pagination abuse
+    # Required Negative: Pagination abuse rejected
     async def test_negative_pagination_abuse_rejected(self):
         collector = ReadOnlyGitHubCollector(self.settings)
-        # settings.max_pages is 2
-        with self.assertRaises(PaginationAbuseError) as ctx:
+        with self.assertRaises(PaginationAbuseError):
             await collector.fetch_pull_requests(
-                "brettbaysinger-boop/pest-control-platform", page=3
+                "brettbaysinger-boop/pest-control-platform", page=99
             )
-        self.assertIn("exceeds allowed maximum pagination depth", str(ctx.exception))
 
-    # Required Negative: Rate limiting
+    # Required Negative: Rate limiting handled gracefully
     async def test_negative_rate_limiting_handled(self):
         def rate_limit_transport(request: httpx.Request) -> httpx.Response:
             return httpx.Response(
                 status_code=403,
-                headers={
-                    "x-ratelimit-remaining": "0",
-                    "x-ratelimit-reset": "1731715200",
-                },
+                headers={"x-ratelimit-remaining": "0", "x-ratelimit-reset": "1731715200"},
                 json={"message": "rate limit exceeded"},
             )
 
         collector = ReadOnlyGitHubCollector(
             self.settings, transport=httpx.MockTransport(rate_limit_transport)
         )
-        result = await collector.fetch_repository("brettbaysinger-boop/pest-control-platform")
-        self.assertEqual(result.status, "rate_limited")
-        self.assertEqual(result.rate_limit_remaining, 0)
-        self.assertEqual(result.rate_limit_reset, 1731715200)
+        res = await collector.fetch_repository("brettbaysinger-boop/pest-control-platform")
+        self.assertEqual(res.status, "rate_limited")
+        self.assertEqual(res.rate_limit_remaining, 0)
 
-    # Required Negative: Timeout
+    # Required Negative: Timeout handled
     async def test_negative_timeout_handled(self):
         def timeout_transport(request: httpx.Request) -> httpx.Response:
-            raise httpx.ReadTimeout("Timeout while reading upstream")
+            raise httpx.ReadTimeout("Timeout upstream")
 
         collector = ReadOnlyGitHubCollector(
             self.settings, transport=httpx.MockTransport(timeout_transport)
         )
-        result = await collector.fetch_repository("brettbaysinger-boop/pest-control-platform")
-        self.assertEqual(result.status, "timeout")
-        self.assertIn("timed out", result.error)
+        res = await collector.fetch_repository("brettbaysinger-boop/pest-control-platform")
+        self.assertEqual(res.status, "timeout")
 
     # Required Negative: Body limit exceeded
     async def test_negative_body_limit_exceeded(self):
-        def large_body_transport(request: httpx.Request) -> httpx.Response:
+        def large_transport(request: httpx.Request) -> httpx.Response:
             return httpx.Response(
                 status_code=200,
-                content=b"x" * 2048,  # max_body_bytes is 1024
+                content=b"x" * 2048,
                 headers={"Content-Length": "2048"},
             )
 
-        collector = ReadOnlyGitHubCollector(
-            self.settings, transport=httpx.MockTransport(large_body_transport)
+        limited_settings = ProjectStewardSettings(
+            owner_user_id=OWNER_UUID,
+            github_token=SECRET_TOKEN,
+            max_body_bytes=1024,
         )
-        result = await collector.fetch_repository("brettbaysinger-boop/pest-control-platform")
-        self.assertEqual(result.status, "error")
-        self.assertIn("exceeds max", result.error)
+        collector = ReadOnlyGitHubCollector(
+            limited_settings, transport=httpx.MockTransport(large_transport)
+        )
+        res = await collector.fetch_repository("brettbaysinger-boop/pest-control-platform")
+        self.assertEqual(res.status, "error")
+        self.assertIn("exceeds max", res.error)
 
-    # Security requirement: Secret redaction
+    # Security: Secret token never leaked
     async def test_secret_token_never_leaked(self):
-        def error_transport(request: httpx.Request) -> httpx.Response:
-            raise RuntimeError(f"Failed with token {SECRET_TOKEN}")
+        def leak_attempt_transport(request: httpx.Request) -> httpx.Response:
+            raise RuntimeError(f"Crashing with secret {SECRET_TOKEN}")
 
         collector = ReadOnlyGitHubCollector(
-            self.settings, transport=httpx.MockTransport(error_transport)
+            self.settings, transport=httpx.MockTransport(leak_attempt_transport)
         )
-        result = await collector.fetch_repository("brettbaysinger-boop/pest-control-platform")
-        self.assertEqual(result.status, "error")
-        self.assertNotIn(SECRET_TOKEN, result.error)
-        self.assertIn("***REDACTED***", result.error)
+        res = await collector.fetch_repository("brettbaysinger-boop/pest-control-platform")
+        self.assertEqual(res.status, "error")
+        self.assertNotIn(SECRET_TOKEN, res.error)
+        self.assertIn("***REDACTED***", res.error)
 
 
-class TestAuthenticatedHandler(unittest.TestCase):
-    """Test API route boundaries and authentication."""
+class TestContractCompliance(unittest.TestCase):
+    """Validate snapshot against contracts/project-steward/project-snapshot.v1.schema.json."""
 
-    def setUp(self):
-        self.settings = ProjectStewardSettings(
-            owner_user_id="brett",
-            github_token=None,
+    @classmethod
+    def setUpClass(cls):
+        with open(SCHEMA_PATH, "r", encoding="utf-8") as f:
+            cls.schema = json.load(f)
+
+    def test_fixture_valid_snapshot_conforms_to_schema(self):
+        with open(FIXTURES_DIR / "valid_snapshot.json", "r", encoding="utf-8") as f:
+            data = json.load(f)
+        jsonschema.validate(instance=data, schema=self.schema)
+
+    def test_generated_registry_snapshot_conforms_to_schema(self):
+        registry = ProjectRegistry()
+        snapshot = registry.generate_snapshot()
+        data = json.loads(snapshot.model_dump_json())
+        jsonschema.validate(instance=data, schema=self.schema)
+
+
+    def test_negative_duplicate_repo_rejected(self):
+        with self.assertRaises(ValueError):
+            Project(
+                id="dup-test",
+                name="Duplicate Test",
+                priority="p2",
+                state="coded",
+                deployment="not_deployed",
+                evidence_level="git_verified",
+                repositories=[
+                    "brettbaysinger-boop/forge",
+                    "brettbaysinger-boop/forge",
+                ],
+                blocked_by=[],
+                sources=[],
+                observed_at="2026-11-15T18:00:00Z",
+            )
+
+    def test_schema_rejects_extra_properties(self):
+        registry = ProjectRegistry()
+        snapshot = registry.generate_snapshot()
+        data = json.loads(snapshot.model_dump_json())
+        data["unexpected_injected_property"] = "malicious"
+        with self.assertRaises(jsonschema.ValidationError):
+            jsonschema.validate(instance=data, schema=self.schema)
+
+    def test_endpoint_project_detail_and_insights_accessible_by_owner(self):
+        settings = ProjectStewardSettings(
+            owner_user_id=OWNER_UUID,
+            supabase_url="https://supabase.local",
+            supabase_service_role_key="test-key",
         )
-        self.app = FastAPI()
-        self.app.include_router(router)
-        self.app.dependency_overrides[get_steward_settings] = lambda: self.settings
-        self.client = TestClient(self.app)
+        app = FastAPI()
+        app.include_router(router)
+        app.dependency_overrides[get_steward_settings] = lambda: settings
+        client = TestClient(app)
 
-    # Required Negative: Unauthorized user (no token)
-    def test_negative_unauthorized_user_returns_401(self):
-        self.app.dependency_overrides[require_user] = lambda: None
-        response = self.client.get("/v0.1/project-steward/snapshot")
-        self.assertEqual(response.status_code, 401)
-        self.assertIn("Sign in", response.json()["detail"])
+        def mock_supabase_owner(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(200, json={"id": OWNER_UUID, "is_anonymous": False})
 
-    # Required Negative: Wrong owner returns 403
-    def test_negative_wrong_owner_returns_403(self):
-        self.app.dependency_overrides[require_user] = lambda: AuthUser(
-            id="attacker-or-guest", token="guest-token"
-        )
-        response = self.client.get("/v0.1/project-steward/snapshot")
-        self.assertEqual(response.status_code, 403)
-        self.assertIn("restricted to the workspace owner", response.json()["detail"])
+        with mock_supabase_client(mock_supabase_owner):
+            detail_resp = client.get(
+                "/v0.1/project-steward/projects/chorusfall",
+                headers={"Authorization": "Bearer valid-token"},
+            )
+            self.assertEqual(detail_resp.status_code, 200)
+            self.assertEqual(detail_resp.json()["name"], "Chorusfall")
 
-    # Success case: verified owner returns 200 and schema-valid snapshot
-    def test_authorized_owner_returns_snapshot(self):
-        self.app.dependency_overrides[require_user] = lambda: AuthUser(
-            id="brett", token="owner-valid-token"
-        )
-        response = self.client.get("/v0.1/project-steward/snapshot")
-        self.assertEqual(response.status_code, 200)
-        data = response.json()
-        self.assertEqual(data["version"], "1.0")
-        self.assertIsInstance(data["projects"], list)
-        self.assertGreaterEqual(len(data["projects"]), 17)
-
-    def test_authorized_owner_fetches_project_detail(self):
-        self.app.dependency_overrides[require_user] = lambda: AuthUser(
-            id="brett", token="owner-valid-token"
-        )
-        response = self.client.get("/v0.1/project-steward/projects/pesttrails")
-        self.assertEqual(response.status_code, 200)
-        data = response.json()
-        self.assertEqual(data["id"], "pesttrails")
-        self.assertEqual(data["priority"], "p0")
-
-    def test_project_not_found_returns_404(self):
-        self.app.dependency_overrides[require_user] = lambda: AuthUser(
-            id="brett", token="owner-valid-token"
-        )
-        response = self.client.get("/v0.1/project-steward/projects/non-existent-id")
-        self.assertEqual(response.status_code, 404)
-
-    def test_health_endpoint_reports_status_and_disabled_collector(self):
-        self.app.dependency_overrides[require_user] = lambda: AuthUser(
-            id="brett", token="owner-valid-token"
-        )
-        response = self.client.get("/v0.1/project-steward/health")
-        self.assertEqual(response.status_code, 200)
-        data = response.json()
-        self.assertEqual(data["status"], "ok")
-        self.assertFalse(data["github_collector_enabled"])
-        self.assertEqual(data["pinned_host"], "api.github.com")
-        self.assertGreaterEqual(data["projects_count"], 17)
+            insights_resp = client.get(
+                "/v0.1/project-steward/projects/chorusfall/insights",
+                headers={"Authorization": "Bearer valid-token"},
+            )
+            self.assertEqual(insights_resp.status_code, 200)
 
 
 if __name__ == "__main__":

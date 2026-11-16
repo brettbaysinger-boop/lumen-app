@@ -10,7 +10,18 @@ from .models import (
     DeploymentStatus,
     EvidenceLevel,
 )
-from .config import ProjectStewardSettings, get_steward_settings
+from .insights import (
+    ProjectInsights,
+    OpenPr,
+    OpenPrsGroup,
+    CiEvidence,
+    LastCommit,
+    LastDeploy,
+    NextStep,
+    ActivityEvent,
+    ProjectLink,
+)
+from .config import ProjectStewardSettings, get_steward_settings, ALLOWED_REPOSITORIES
 from .github_client import (
     ReadOnlyGitHubCollector,
     CollectorResult,
@@ -21,7 +32,7 @@ from .github_client import (
     MalformedPayloadError,
 )
 from .registry import ProjectRegistry
-from .handler import router, require_steward_owner
+from .handler import router, require_steward_owner, require_user, AuthUser
 
 __all__ = [
     "Project",
@@ -32,8 +43,18 @@ __all__ = [
     "ProjectState",
     "DeploymentStatus",
     "EvidenceLevel",
+    "ProjectInsights",
+    "OpenPr",
+    "OpenPrsGroup",
+    "CiEvidence",
+    "LastCommit",
+    "LastDeploy",
+    "NextStep",
+    "ActivityEvent",
+    "ProjectLink",
     "ProjectStewardSettings",
     "get_steward_settings",
+    "ALLOWED_REPOSITORIES",
     "ReadOnlyGitHubCollector",
     "CollectorResult",
     "ProjectStewardSecurityError",
@@ -44,4 +65,6 @@ __all__ = [
     "ProjectRegistry",
     "router",
     "require_steward_owner",
+    "require_user",
+    "AuthUser",
 ]

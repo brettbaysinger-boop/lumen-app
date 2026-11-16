@@ -4,20 +4,22 @@ Security guarantees:
 1. Disabled without server-side owner-provided credentials.
 2. Read-only: only HTTP GET operations are supported.
 3. Strict host pin: strictly pinned to https://api.github.com.
-4. Strict repository allowlist: only approved repos/patterns can be queried.
-5. No redirects: follow_redirects=False prevents SSRF.
-6. Bounded pagination: page requests beyond max_pages are rejected.
-7. Body limits: responses exceeding max_body_bytes are rejected.
-8. Rate-limit resilience: 429/403 rate limits handled gracefully without leaking credentials.
-9. Secret redaction: tokens are never logged or returned in error strings.
-10. Fail closed: any invalid state or security violation aborts safely.
+4. Strict repository allowlist: only exact approved repos can be queried.
+5. Strict path & ref validation: rejects traversal (..), fragments (#), query params (?),
+   encoded characters (%), backslashes, and control characters.
+6. No redirects: follow_redirects=False prevents SSRF.
+7. Bounded pagination: page requests beyond max_pages are rejected.
+8. Body limits: responses exceeding max_body_bytes are rejected.
+9. Rate-limit resilience: 429/403 rate limits handled gracefully without leaking credentials.
+10. Secret redaction: tokens are never logged or returned in error strings.
+11. Fail closed: any invalid state or security violation aborts safely.
 """
 
 from __future__ import annotations
 
-import fnmatch
 import json
 import logging
+import re
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Literal, Optional
@@ -29,8 +31,9 @@ from .config import ProjectStewardSettings, get_steward_settings
 
 logger = logging.getLogger("lumen.project_steward.github")
 
-
 PINNED_GITHUB_API_HOST = "api.github.com"
+REPO_NAME_REGEX = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
+REF_NAME_REGEX = re.compile(r"^[A-Za-z0-9_.-]+$")
 
 
 class ProjectStewardSecurityError(Exception):
@@ -65,18 +68,39 @@ class CollectorResult:
     rate_limit_reset: Optional[int] = None
 
 
-def is_repo_allowed(repo: str, allowlist: List[str]) -> bool:
-    """Check if repository matches any pattern in the allowlist."""
-    if not repo or "/" not in repo:
-        return False
-    parts = repo.split("/")
-    if len(parts) != 2 or not parts[0] or not parts[1]:
-        return False
+def validate_repository_name(repo: str) -> None:
+    """Strictly validate repository name syntax and prevent path traversal / injection."""
+    if not repo or not isinstance(repo, str):
+        raise ProjectStewardSecurityError("Repository must be a non-empty string.")
+    # Reject dangerous traversal or encoding patterns
+    if ".." in repo or "\\" in repo or "?" in repo or "#" in repo or "%" in repo or " " in repo:
+        raise ProjectStewardSecurityError(
+            f"Dangerous characters detected in repository name '{repo}'."
+        )
+    if not REPO_NAME_REGEX.match(repo):
+        raise ProjectStewardSecurityError(
+            f"Invalid repository format '{repo}'. Must be 'owner/repo'."
+        )
 
-    for pattern in allowlist:
-        if fnmatch.fnmatchcase(repo, pattern):
-            return True
-    return False
+
+def validate_ref_name(ref: str) -> None:
+    """Strictly validate Git ref / branch / tag syntax."""
+    if not ref or not isinstance(ref, str):
+        raise ProjectStewardSecurityError("Ref must be a non-empty string.")
+    if ".." in ref or "/" in ref or "\\" in ref or "?" in ref or "#" in ref or "%" in ref or " " in ref:
+        raise ProjectStewardSecurityError(
+            f"Dangerous characters detected in Git ref '{ref}'."
+        )
+    if not REF_NAME_REGEX.match(ref):
+        raise ProjectStewardSecurityError(
+            f"Invalid ref format '{ref}'. Must match ^[A-Za-z0-9_.-]+$."
+        )
+
+
+def is_repo_allowed(repo: str, allowlist: List[str]) -> bool:
+    """Check if repository is explicitly in the allowlist."""
+    validate_repository_name(repo)
+    return repo in allowlist
 
 
 def validate_api_url(url: str) -> None:
@@ -93,7 +117,11 @@ def validate_api_url(url: str) -> None:
 class ReadOnlyGitHubCollector:
     """Hardened, read-only client for collecting GitHub project evidence."""
 
-    def __init__(self, settings: Optional[ProjectStewardSettings] = None, transport: Optional[httpx.AsyncBaseTransport] = None):
+    def __init__(
+        self,
+        settings: Optional[ProjectStewardSettings] = None,
+        transport: Optional[httpx.AsyncBaseTransport] = None,
+    ):
         self.settings = settings or get_steward_settings()
         self.transport = transport
 
@@ -104,7 +132,6 @@ class ReadOnlyGitHubCollector:
     def _get_headers(self) -> Dict[str, str]:
         if not self.is_enabled:
             raise GitHubCollectorDisabledError("GitHub collector is disabled: owner credentials missing.")
-        # Token is only passed in Authorization header, never serialized or logged
         return {
             "Authorization": f"Bearer {self.settings.github_token}",
             "Accept": "application/vnd.github+json",
@@ -122,7 +149,6 @@ class ReadOnlyGitHubCollector:
                 observed_at=now_iso,
             )
 
-        # Normalize path
         if not path.startswith("/"):
             path = "/" + path
         url = f"https://{self.settings.github_api_host}{path}"
@@ -144,13 +170,12 @@ class ReadOnlyGitHubCollector:
             ) as client:
                 response = await client.get(url, headers=headers, params=params)
 
-                # Check for redirects (301, 302, 303, 307, 308)
+                # Check for redirects
                 if response.status_code in (301, 302, 303, 307, 308):
                     raise ProjectStewardSecurityError(
                         f"Redirect response ({response.status_code}) rejected: redirects are forbidden."
                     )
 
-                # Extract rate limit headers safely
                 rl_remaining = response.headers.get("x-ratelimit-remaining")
                 rl_reset = response.headers.get("x-ratelimit-reset")
                 rem_int = int(rl_remaining) if rl_remaining and rl_remaining.isdigit() else None
@@ -166,7 +191,6 @@ class ReadOnlyGitHubCollector:
                         rate_limit_reset=reset_int,
                     )
 
-                # Verify content length
                 content_len = response.headers.get("content-length")
                 if content_len and content_len.isdigit():
                     if int(content_len) > self.settings.max_body_bytes:
@@ -174,7 +198,6 @@ class ReadOnlyGitHubCollector:
                             f"Response content length {content_len} exceeds max {self.settings.max_body_bytes} bytes."
                         )
 
-                # Read response bytes with bounding
                 content_bytes = response.content
                 if len(content_bytes) > self.settings.max_body_bytes:
                     raise PayloadTooLargeError(
@@ -212,7 +235,7 @@ class ReadOnlyGitHubCollector:
                     rate_limit_reset=reset_int,
                 )
 
-        except (httpx.ConnectTimeout, httpx.ReadTimeout, httpx.TimeoutException) as exc:
+        except (httpx.ConnectTimeout, httpx.ReadTimeout, httpx.TimeoutException):
             logger.warning("Timeout while contacting GitHub API (details redacted)")
             return CollectorResult(
                 status="timeout",
@@ -234,7 +257,6 @@ class ReadOnlyGitHubCollector:
                 observed_at=now_iso,
             )
         except Exception as exc:
-            # Redact any accidental credential leak
             msg = str(exc)
             if self.settings.github_token and self.settings.github_token in msg:
                 msg = msg.replace(self.settings.github_token, "***REDACTED***")
@@ -253,7 +275,7 @@ class ReadOnlyGitHubCollector:
         return await self._get(f"/repos/{repo}")
 
     async def fetch_pull_requests(
-        self, repo: str, state: str = "all", page: int = 1
+        self, repo: str, state: str = "open", page: int = 1
     ) -> CollectorResult:
         """Fetch bounded pull requests for an allowlisted repository."""
         if not is_repo_allowed(repo, self.settings.allowed_repositories):
@@ -280,4 +302,14 @@ class ReadOnlyGitHubCollector:
             raise ProjectStewardSecurityError(
                 f"Repository '{repo}' is not permitted by strict allowlist."
             )
+        validate_ref_name(ref)
         return await self._get(f"/repos/{repo}/commits/{ref}")
+
+    async def fetch_check_runs(self, repo: str, ref: str) -> CollectorResult:
+        """Fetch check runs (CI evidence) for a specific ref/SHA."""
+        if not is_repo_allowed(repo, self.settings.allowed_repositories):
+            raise ProjectStewardSecurityError(
+                f"Repository '{repo}' is not permitted by strict allowlist."
+            )
+        validate_ref_name(ref)
+        return await self._get(f"/repos/{repo}/commits/{ref}/check-runs")
