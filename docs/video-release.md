@@ -1,7 +1,6 @@
 # Short video: staged release (owner-run, each stage gated)
 
-**Status 2026-11-16: nothing below has been run in production.** BigLust still images are live (PR #52).
-Video, the migration, the worker and the video web app are not deployed, and video is off.
+**Status 2026-11-16: stages 1–6 applied by the owner; the first video canary failed (a still image, see Hotfix).** BigLust still images are live (PR #52).
 
 ## What is live, and why no `git pull`
 
@@ -147,7 +146,7 @@ for media, Public/Private and the live room, all pass.
 Canary: Gallery in Public reads nothing and says it is hidden. In Private it shows everything as before.
 Way back: `LUMEN_WEB_UPDATE_CONFIRM=rollback scripts/animated-web-update.sh rollback`.
 
-## Stage 6: enable video, then the live canary. ENABLED (owner, 2026-11-16); canary pending
+## Stage 6: enable video, then the live canary. ENABLED (owner, 2026-11-16); first canary FAILED (still image, see Hotfix)
 
 Before enabling, `check` showed every earlier stage in place. `enable` then reported "video on (clips up to the
 existing 10 s), worker running, render budget 14400s". Not yet accepted end to end. If the canary fails,
@@ -177,6 +176,81 @@ Live canary (owner, Private):
 Way back: `VIDEO_RELEASE_CONFIRM=enable-rollback scripts/video-release.sh enable-rollback` restores `.env`
 byte for byte. Unfinished jobs stay in the table, and nothing is cancelled on Heavy.
 
+## Hotfix: a video request made a still image (live canary, 2026-11-16 ~13:00 MST)
+
+**What happened.** In Private on desktop, "Make a 3-second video animating the image you just generated.
+Use gentle, natural movement." came back as a new BigLust still ("Here you go."). No video job was made.
+
+**Why.** The web app decides before the server whether a message is a picture request
+(`isImageRequest` in `lib/cognition.ts`). That check matched "make … image" and sent the message straight
+to `POST /v0.2/images/generate`, which makes a still. "Here you go." is that endpoint's fixed reply. The chat
+runtime and its video planner were never called. Practice or document context was not the cause: the image
+endpoint does not look at them. The server's own `video_request` matches this message, and its
+`image_request` excludes it.
+
+**Fix (PR #51 `a4c06b0`, frontend copy `672cfba`).**
+* Web: a video request (the same pattern as the server's) never takes the image shortcut. It goes to chat.
+  A "yes" to a video offer is never turned into an image prompt.
+* Server, `/v0.2/images/generate`: refuses a video request with 409 before any image work. An app that is
+  not yet reloaded gets "That sounds like a video request, so I haven't made an image…" and no still.
+* Server, chat: in a practice session or with a document selected, an explicit video request is answered
+  with why no video can be made there. The model is not asked, so it cannot answer with a still.
+* Tests use the exact live message:
+  * the detectors and the web routing;
+  * the image route guard;
+  * Private chat: exactly one i2v job from the image just made, with no image call, whether or not the
+    model replies with an image action;
+  * practice and document turns.
+
+**Read-only check before any more GPU jobs** (optional; it confirms the diagnosis and prints no prompts):
+```
+journalctl -u lumen-api --since "2026-11-16 12:50" --until "2026-11-16 13:15" | grep -E 'POST /v0\.(2|3)/(images/generate|respond)'
+```
+```sql
+-- Expect 0 rows: no video job was made.
+select id, status, mode, created_at from media_generation_jobs order by created_at desc limit 5;
+-- Expect the newest assistant row: content 'Here you go.', generated_image true, has_job false.
+select m.created_at, m.role, m.content = 'Here you go.' as fixed_reply,
+       m.metadata->>'generated_image' as generated_image, m.metadata ? 'media_job' as has_job,
+       c.goal_item_id is not null as practice
+from messages m join conversations c on c.id = m.conversation_id
+where m.created_at > '2026-11-16 19:45+00' order by m.created_at desc limit 6;
+```
+
+**Apply (owner, two parts, each with its own way back).** Video can stay on: the misroute made a still,
+nothing unsafe, and the worker is not changed.
+1. Backend, from a clean clone of `feat/local-media-generation-20261116`:
+   ```
+   scripts/video-routing-hotfix.sh check
+   VIDEO_HOTFIX_CONFIRM=hotfix:<patch id> scripts/video-routing-hotfix.sh apply
+   ```
+   * `check` STOPs unless the 3 target files (`lumen/main.py`, `lumen/runtime.py`,
+     `tests/test_media_generation.py`) still equal the live video backend `0b370fb` byte for byte. It also
+     runs the backend tests on a patched copy and prints the patch id.
+   * `apply` backs them up, patches the working files and restarts lumen-api only. It leaves HEAD, `.env`
+     and the worker alone, and restores the backup automatically on any failure.
+   * Way back: `VIDEO_HOTFIX_CONFIRM=hotfix-rollback scripts/video-routing-hotfix.sh rollback`.
+     `video-release.sh backend-rollback` refuses while the hotfix is applied.
+2. Web, from a clean clone of `release/video-frontend-20261116` (now `672cfba`, one frontend-only
+   fast-forward from the live `9ed4737`, 4 files under `lib/` and `tests/`):
+   ```
+   scripts/animated-web-update.sh check
+   LUMEN_WEB_UPDATE_CONFIRM=update:672cfba scripts/animated-web-update.sh update
+   ```
+   Way back: `LUMEN_WEB_UPDATE_CONFIRM=rollback scripts/animated-web-update.sh rollback`. Reload the app
+   (desktop and S22) afterwards so the browser loads the new code.
+
+Offline test: `scripts/test-video-routing-hotfix.sh`, 11 checks, with and without pytest.
+* Check READY, with backend tests on the patched copy.
+* Refusals: wrong token, an edited live file, lumen-api down, a second apply.
+* Automatic restore when lumen-api fails after the restart.
+* Apply leaves HEAD, `.env` and the other files alone.
+* `backend-rollback` refuses under the hotfix, and rollback restores the files.
+* The web commit is a frontend-only fast-forward.
+
+Then repeat the stage 6 canary from step 1. One request only. If it is not queued as a video, stop and paste
+`journalctl -u lumen-api -u lumen-media-worker`; do not retry.
+
 ## Order of ways back
-6 enable-rollback → 5 web rollback → 4 worker-rollback → 3 backend-rollback → 2 undo SQL → 1 remove the
+Hotfix rollback (if applied) → 6 enable-rollback → 5 web rollback → 4 worker-rollback → 3 backend-rollback → 2 undo SQL → 1 remove the
 forward. The images release stays as it is throughout.
