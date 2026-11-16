@@ -8,7 +8,9 @@
 #   VIDEO_LENGTH_CONFIRM=backend:<patch id> scripts/video-length-release.sh apply
 #       6 backend files a4c06b0 -> 648e8d0. Restarts lumen-api and the worker. The limit stays 10 s.
 #   VIDEO_LENGTH_CONFIRM=enable-120 scripts/video-length-release.sh enable
-#       Only after migration 20261116210000 is applied: sets VIDEO_MAX_SECONDS=120 in .env, restarts both.
+#       STOPs unless the database already allows 120 s (migration 20261116210000, read-only check through
+#       the local Supabase database container). Sets VIDEO_MAX_SECONDS=120 in .env, restarts both.
+#   scripts/video-length-release.sh migration-check   read-only: what the database and lumen-api allow now
 #   VIDEO_LENGTH_CONFIRM=enable-rollback scripts/video-length-release.sh enable-rollback   (.env byte for byte)
 #   VIDEO_LENGTH_CONFIRM=backend-rollback scripts/video-length-release.sh rollback
 #   scripts/video-length-release.sh status
@@ -67,6 +69,18 @@ fp_max_ok() {  # FP-Studio's own slider maximum, read-only, through the route lu
   (cd "$REPO/backend" && ${VIDEO_LENGTH_FP_CHECK:-"$PYTHON" "$REPO/scripts/check-framepack-endpoint.py"} --url "$url" \
      --api-name /handle_start_button --need-seconds "$NEED_SECONDS" > /dev/null 2>&1)
 }
+db_limit() {  # the database's own limit on duration_seconds: a number, or "unknown". READ ONLY.
+  [ -z "${VIDEO_LENGTH_FAKE_DB_LIMIT:-}" ] || { echo "$VIDEO_LENGTH_FAKE_DB_LIMIT"; return; }  # offline tests only
+  local box="${VIDEO_LENGTH_DB_CONTAINER:-}" def
+  if [ -z "$box" ]; then
+    box=$(docker ps --format '{{.Names}}' 2>/dev/null | grep '^supabase_db_' || true)
+    [ "$(grep -c . <<< "$box")" = 1 ] || { echo unknown; return; }   # none, or more than one: never guess
+  fi
+  def=$(docker exec "$box" psql -U postgres -d postgres -AtX -v ON_ERROR_STOP=1 -c "BEGIN TRANSACTION READ ONLY; select pg_get_constraintdef(oid) from pg_constraint where conrelid = 'public.media_generation_jobs'::regclass and contype = 'c' and pg_get_constraintdef(oid) ilike '%duration_seconds <=%'; COMMIT;" 2>/dev/null || true)
+  def=$(grep -oE 'duration_seconds <= \(?[0-9]+' <<< "$def" | grep -oE '[0-9]+$' | head -1 || true)
+  echo "${def:-unknown}"
+}
+db_allows() { local limit; limit=$(db_limit); [[ "$limit" =~ ^[0-9]+$ ]] && [ "$limit" -ge "$NEED_SECONDS" ]; }
 max_now() { (cd "$(dirname "$(env_file)")" && PYTHONPATH="$LIVE_DIR/backend" "$PYTHON" -B -c '
 from lumen.config import get_settings
 print("%g" % get_settings().video_max_seconds)'); }
@@ -125,7 +139,7 @@ check() {
     || bad "video jobs queued or running: $n. Wait for them to finish; nothing is restarted during a render"
   fp_max_ok && pass "FramePack-Studio's own length slider allows ${NEED_SECONDS} s (read-only, through the existing route)" \
     || bad "FramePack-Studio's maximum could not be confirmed as ${NEED_SECONDS} s through the existing route"
-  info "longest clip lumen-api allows now: $(max_now 2>/dev/null || echo unreadable) s"
+  info "longest clip lumen-api allows now: $(max_now 2>/dev/null || echo unreadable) s; the database: $(db_limit) s"
   local record; record=$(mktemp -d); the_patch > "$record/patch"
   if [ "$st" = before ] && test_copy "$record"; then
     pass "backend tests on a patched copy of the live backend: $(tail -1 "$record/tests.log")"
@@ -193,6 +207,7 @@ enable() {
   [ ! -f "$STATE_DIR/length-enable" ] || die "Already enabled. Use status or enable-rollback."
   no_render || die "A video job is queued or running (or the job table could not be read). Nothing was changed."
   fp_max_ok || die "FramePack-Studio's maximum could not be confirmed as ${NEED_SECONDS} s. Nothing was changed."
+  db_allows || die "The database allows clips of up to $(db_limit) s, not ${NEED_SECONDS}: migration 20261116210000 is not applied (or could not be read; set VIDEO_LENGTH_DB_CONTAINER). Nothing was changed. See: $0 migration-check"
   local ef record; ef=$(env_file); record="$STATE_DIR/length-enable-$(date +%Y%m%d-%H%M%S)"; mkdir -p "$record"; chmod 700 "$STATE_DIR" "$record"
   cp -p "$ef" "$record/env"; echo "$ef" > "$record/env-path"; sha256sum < "$ef" | cut -c1-64 > "$record/env-sha256"
   awk -v n="$NEED_SECONDS" '
@@ -225,10 +240,28 @@ enable_rollback() {
   echo "The limit is $(max_now) s again (.env exactly as before). Finished videos and job rows are kept."
 }
 
+migration_check() {  # read-only
+  echo "== Migration 20261116210000 (duration_seconds <= ${NEED_SECONDS}): read-only check =="
+  local limit app; limit=$(db_limit); app=$(max_now 2>/dev/null || echo unreadable)
+  info "database allows clips of up to: $limit s"
+  info "lumen-api allows clips of up to: $app s"
+  if [[ "$limit" =~ ^[0-9]+$ ]] && [ "$limit" -ge "$NEED_SECONDS" ]; then pass "the migration is applied"
+  elif [ "$limit" = unknown ]; then bad "the database limit could not be read (docker and one supabase_db_* container are needed, or set VIDEO_LENGTH_DB_CONTAINER)"
+  else bad "the migration is NOT applied: the database still refuses clips longer than $limit s"
+    [ "$app" = "$limit" ] || info "until it is applied, a request for more than $limit s is answered with \"couldn't start the video\"; no GPU job is made"
+    info "apply it (owner): supabase migration list --local must show only 20261116210000 pending, then supabase db push --local"
+    info "do not run enable again and restart nothing: the migration needs no restart"
+  fi
+}
+
 status() {
   info "120-second backend: $(state) $( [ -f "$STATE_DIR/length" ] && echo "(recorded $(cat "$STATE_DIR/length"))")"
   info "longest clip allowed now: $(max_now 2>/dev/null || echo unreadable) s $( [ -f "$STATE_DIR/length-enable" ] && echo "(enabled by this script)")"
   info "video jobs queued or running: $(active_jobs 2>/dev/null || echo unknown)"
+  local limit app; limit=$(db_limit); app=$(max_now 2>/dev/null || echo 0)
+  info "database allows clips of up to: $limit s"
+  if [[ "$limit" =~ ^[0-9]+$ ]] && [ "${app%.*}" -gt "$limit" ] 2>/dev/null; then
+    bad "WARNING: lumen-api allows $app s but the database only $limit s: migration 20261116210000 is missing. Run: $0 migration-check"; fi
   info "live HEAD $(git -C "$LIVE_DIR" rev-parse --short=12 HEAD 2>/dev/null || echo unknown)"
   health_ok && pass "lumen-api is healthy" || bad "lumen-api /health does not answer"
 }
@@ -238,7 +271,8 @@ case "$MODE" in
   apply) apply ;;
   rollback) rollback ;;
   enable) enable ;;
+  migration-check) migration_check; [ "$problems" = 0 ] ;;
   enable-rollback) enable_rollback ;;
   status) status ;;
-  *) die "usage: $0 check|apply|rollback|enable|enable-rollback|status" ;;
+  *) die "usage: $0 check|apply|rollback|migration-check|enable|enable-rollback|status" ;;
 esac

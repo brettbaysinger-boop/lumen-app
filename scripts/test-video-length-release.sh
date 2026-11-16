@@ -40,7 +40,7 @@ EOF
 printf '#!/bin/sh\n[ -f "%s/sys/fp-short" ] && exit 1; exit 0\n' "$T" > "$T/bin/fpcheck"
 chmod +x "$T/bin/"*
 export PATH="$T/bin:$PATH" LIVE_DIR="$T/live" XDG_STATE_HOME="$T/state" VIDEO_RELEASE_PYTHON="$PY" VIDEO_RELEASE_WAIT=2
-export VIDEO_LENGTH_FAKE_ACTIVE=0 VIDEO_LENGTH_FP_CHECK="$T/bin/fpcheck" VIDEO_LENGTH_SETTLE=0
+export VIDEO_LENGTH_FAKE_DB_LIMIT=10 VIDEO_LENGTH_FAKE_ACTIVE=0 VIDEO_LENGTH_FP_CHECK="$T/bin/fpcheck" VIDEO_LENGTH_SETTLE=0
 L="$T/repo/scripts/video-length-release.sh"
 FILES=$(git -C "$SRC" diff --name-only "$FROM" "$TO" -- backend)
 blobs() { for f in $FILES; do git hash-object --no-filters "$T/live/$f" 2>/dev/null || echo absent; done; }
@@ -96,11 +96,24 @@ ok "video-routing-hotfix.sh rollback refuses while the 120-second backend is app
 ! VIDEO_LENGTH_FAKE_ACTIVE=2 VIDEO_LENGTH_CONFIRM=enable-120 "$L" enable 2>/dev/null || fail "enabled during a render"
 [ "$(envsum)" = "$before_env" ] || fail ".env changed by a refused enable"; ok "enable refuses without its word and during a render"
 
+for limit in 10 unknown; do
+  ! VIDEO_LENGTH_FAKE_DB_LIMIT=$limit VIDEO_LENGTH_CONFIRM=enable-120 "$L" enable 2>/dev/null || fail "enabled with database limit $limit"
+done
+[ "$(envsum)" = "$before_env" ] && [ ! -f "$S/length-enable" ] || fail "a refused enable changed something"
+! VIDEO_LENGTH_FAKE_DB_LIMIT=10 "$L" migration-check > "$T/mig.log" 2>&1 || fail "migration-check passes at 10"
+grep -q "NOT applied" "$T/mig.log" || fail "migration-check does not say NOT applied"
+ok "enable STOPs while the database still limits clips to 10 s, or the limit cannot be read; migration-check says so"
+export VIDEO_LENGTH_FAKE_DB_LIMIT=120
+
 VIDEO_LENGTH_CONFIRM=enable-120 "$L" enable > "$T/enable.log" 2>&1 || { cat "$T/enable.log"; fail "enable"; }
 grep -qx 'VIDEO_MAX_SECONDS=120' "$T/live/backend/.env" || fail "VIDEO_MAX_SECONDS not set"
 diff <(printf "$ENV") <(grep -v '^VIDEO_MAX_SECONDS=' "$T/live/backend/.env") > /dev/null || fail "other .env lines changed"
 shown=$("$L" status); grep -q "longest clip allowed now: 120 s" <<< "$shown" || fail "status does not show 120"
 ok "enable: only VIDEO_MAX_SECONDS=120 added to .env; lumen-api now allows 120 s"
+shown=$(VIDEO_LENGTH_FAKE_DB_LIMIT=10 "$L" status || true)
+grep -q "WARNING: lumen-api allows 120 s but the database only 10 s" <<< "$shown" || { echo "$shown"; fail "status does not warn about a missing migration"; }
+"$L" migration-check > /dev/null || fail "migration-check fails at 120"
+ok "status warns when 120 s is enabled but the migration is missing; migration-check passes at 120"
 
 ! VIDEO_LENGTH_CONFIRM=backend-rollback "$L" rollback 2>/dev/null || fail "backend rollback while enabled"
 ok "backend rollback refuses while 120 s is enabled"

@@ -319,7 +319,7 @@ Tested:
 * 800 backend tests pass.
 * The migration was run on PostgreSQL 16: twice in a row, 120 accepted, 120.1 and 0 refused, RLS still on,
   and the undo refuses while a long row exists.
-* `scripts/test-video-length-release.sh`: 14 checks, with and without pytest.
+* `scripts/test-video-length-release.sh`: 16 checks, with and without pytest.
 
 Not tested: a real clip longer than 3 s on Heavy.
 
@@ -340,9 +340,21 @@ From a clean clone of `feat/local-media-generation-20261116`:
    where conrelid = 'public.media_generation_jobs'::regclass and conname like '%duration_seconds%';
    ```
    It should show `duration_seconds <= (120)::numeric`. The undo is in the migration file's header.
-4. `VIDEO_LENGTH_CONFIRM=enable-120 scripts/video-length-release.sh enable`. It sets only
+4. `VIDEO_LENGTH_CONFIRM=enable-120 scripts/video-length-release.sh enable`. It STOPs unless the database
+   already allows 120 s (read-only, through the local `supabase_db_*` container). It sets only
    `VIDEO_MAX_SECONDS=120` in `.env` and restarts both services.
    Way back: `VIDEO_LENGTH_CONFIRM=enable-rollback scripts/video-length-release.sh enable-rollback`.
+**Status (owner, 2026-11-16 ~14:27 MST): step 2 APPLIED** (backup `length-20261116-142718`) **and step 4 ENABLED
+straight after. Step 3, the migration, is not confirmed.** Do not rerun apply or enable. The first version
+of `enable` did not check the database; it does now (read-only), and `status` warns. To see where things are,
+with nothing changed and nothing restarted:
+```
+scripts/video-length-release.sh migration-check
+```
+If it says the migration is NOT applied, apply only step 3. It needs no restart. Until then a request for
+more than 10 s is answered with "couldn't start the video" and no GPU job is made. Clips up to 10 s work as
+before.
+
 5. Canary, one job at a time: 30 s, then 60 s, then 120 s. After each, note the file size and render time.
    If step 4 runs before step 3, a long request is answered with "couldn't start the video" and no GPU job.
 
