@@ -17,6 +17,7 @@ from .auth import AuthUser, require_user
 from .config import get_settings
 from .ollama import OllamaProvider
 from .runtime import CognitionRuntime
+from .privacy_mode import PublicCognitionRuntime
 from .memory_backend import memory_backend, supabase_memory_enabled
 from .schemas import (
     HealthResponse,
@@ -97,7 +98,7 @@ async def respond(request: RespondRequest, background_tasks: BackgroundTasks, us
     try:
         await prioritize_chat()
         async with model_lock:
-            instance = CognitionRuntime(settings, user.token, user.id)
+            instance = (PublicCognitionRuntime if request.privacy_mode == "public" else CognitionRuntime)(settings, user.token, user.id)
             instance.effort = request.effort
             instance.timezone = request.timezone
             instance.request_key = str(request.request_id)
@@ -183,6 +184,8 @@ async def generate_image(
     request: ImageGenerateRequest,
     user: AuthUser = Depends(require_user),
 ):
+    if request.privacy_mode != "private":
+        raise HTTPException(status_code=403, detail="Image creation is paused while Public mode is on. Switch to Private to create images.")
     db = SupabaseRepository(settings, user.token)
 
     companion = await db.get_companion(request.companion_id)
@@ -323,7 +326,7 @@ async def generate_image(
 @app.post("/v0.2/respond/stream")
 async def respond_stream(request: RespondRequest, background_tasks: BackgroundTasks,
                          user: AuthUser = Depends(require_user)):
-    instance = CognitionRuntime(settings, user.token, user.id)
+    instance = (PublicCognitionRuntime if request.privacy_mode == "public" else CognitionRuntime)(settings, user.token, user.id)
     instance.effort = request.effort
     instance.timezone = request.timezone
     instance.request_key = str(request.request_id)
