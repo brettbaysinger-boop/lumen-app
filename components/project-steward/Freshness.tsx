@@ -2,6 +2,7 @@ import { StyleSheet, Text, View } from 'react-native';
 import { Clock } from 'lucide-react-native';
 import { Colors, Spacing, Typography } from '@/lib/theme';
 import { absoluteUtc, freshness, relativeAge } from '@/lib/project-steward/status';
+import { useStaleAfterMs } from './StalePolicy';
 
 interface Props {
   observedAt: string | null;
@@ -12,7 +13,7 @@ interface Props {
 
 /** "Checked 3h ago", "STALE · checked 8d ago" or "UNKNOWN · never checked". */
 export function FreshnessLine({ observedAt, now, verbose, testID }: Props) {
-  const f = freshness(observedAt, now);
+  const f = freshness(observedAt, now, useStaleAfterMs());
   const color =
     f === 'fresh' ? Colors.neutral[400] : f === 'stale' ? Colors.warning[300] : Colors.error[300];
   const tag = f === 'stale' ? 'STALE · ' : f === 'unknown' ? 'UNKNOWN · ' : '';

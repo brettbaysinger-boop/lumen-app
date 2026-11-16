@@ -306,12 +306,88 @@ async function main() {
     await page.goto(`${baseLive}/project-steward/synthetic-live-a`);
     await check('live v1 detail: says PRs/CI/activity are not available, shows none', async () => {
       const m = await tid(page, 'ps-insights-missing').innerText({ timeout: 20000 });
-      assert(m.includes('not in the v1 snapshot contract'), m);
+      assert(m.includes('serves the v1.0 contract'), m);
       assert((await tid(page, 'ps-detail-prs').count()) === 0 && (await tid(page, 'ps-detail-links').count()) === 0, 'leak');
       assert((await page.locator('[data-testid="ps-demo-badge"]').count()) === 0, 'demo badge on live');
     });
     await ctx.close();
   }
+  // ---------- Proposed v1.1 from the "live" API (synthetic, intercepted) ----------
+  for (const [w, h, tag] of [[360, 800, '360'], [1280, 900, '1280']]) {
+    const { ctx, page, errors } = await newPage(w, h);
+    const body = liveSnapshot('2026-11-16T02:00:00Z');
+    body.version = '1.1';
+    body.stale_after_seconds = 3600 * 24;
+    body.projects[0].name = 'Synthetic live row A\u202E<b>x</b>';
+    body.projects[0].insights = {
+      observed_at: '2026-11-16T02:00:00Z',
+      open_prs: { observed_at: '2026-11-16T02:00:00Z', items: [
+        { ref: 'https://github.com/example/repo/pull/7', title: 'Synthetic PR awaiting review', review: 'review_required', opened_at: '2026-11-14T02:00:00Z', updated_at: '2026-11-16T01:00:00Z', head_sha: 'abcdef1' },
+      ] },
+      last_commit: { at: '2026-11-16T01:00:00Z', ref: null, commit_sha: 'abcdef1', branch: 'main', observed_at: '2026-11-16T02:00:00Z' },
+      last_deploy: null,
+      ci: { state: 'failing', branch: 'main', run_ref: null, commit_sha: 'abcdef1', observed_at: '2026-11-16T02:00:00Z' },
+      next: [{ kind: 'owner_decision', text: 'Synthetic decision', ref: null }],
+      activity: [{ at: '2026-11-16T01:00:00Z', kind: 'commit', text: 'Synthetic commit', ref: null }],
+      links: [{ kind: 'repo', label: 'Repository', url: 'https://github.com/example/repo' }],
+    };
+    body.projects.push({ ...liveSnapshot('2026-11-14T20:00:00Z').projects[0], id: 'synthetic-live-b', name: 'Synthetic live row B' });
+    await page.route(SNAPSHOT_URL, (r) => r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(body) }));
+    await page.goto(`${baseLive}/project-steward`);
+    await check(`live v1.1 @${tag}: overview shows real signals, server stale window, no DEMO`, async () => {
+      const banner = await tid(page, 'ps-origin-live').innerText({ timeout: 20000 });
+      assert(banner.includes('contract v1.1') && banner.includes('Stale after 24h'), banner);
+      const sig = await tid(page, 'ps-signals-synthetic-live-a').innerText();
+      assert(sig.includes('Your decision needed') && sig.includes('CI failing'), sig);
+      // Row B was checked 30h ago: stale under the server's 24h window (fresh under the 72h default).
+      assert((await tid(page, 'ps-card-synthetic-live-b').innerText()).includes('STALE'), 'server window not applied');
+      assert((await tid(page, 'ps-signals-synthetic-live-b').count()) === 0, 'B has no insights');
+      const name = await tid(page, 'ps-card-synthetic-live-a').innerText();
+      assert(name.includes('Synthetic live row A<b>x</b>') && !name.includes('\u202E'), 'name must render as literal text');
+      assert((await page.locator('[data-testid="ps-demo-badge"]').count()) === 0, 'DEMO on live');
+      assert((await tid(page, 'ps-origin-demo').count()) === 0, 'demo banner on live');
+      await noHorizontalScroll(page, w);
+    });
+    await check(`live v1.1 @${tag}: detail tabs show the API's PRs, CI and activity`, async () => {
+      await tid(page, 'ps-card-synthetic-live-a').click();
+      await tid(page, 'ps-detail-name').waitFor({ timeout: 5000 });
+      assert((await tid(page, 'ps-detail-prs').innerText()).match(/#7 Synthetic PR awaiting review[\s\S]*Awaiting review[\s\S]*open 2d/), 'pr row');
+      assert((await tid(page, 'ps-insights-missing').count()) === 0, 'should not claim unavailable');
+      await tid(page, 'ps-tab-activity').click();
+      assert((await tid(page, 'ps-last-deploy').innerText()).includes('None recorded'), 'deploy');
+      await tid(page, 'ps-tab-evidence').click();
+      assert((await tid(page, 'ps-detail-ci').innerText()).includes('Failing'), 'ci');
+      assert((await page.locator('[data-testid="ps-demo-badge"]').count()) === 0, 'DEMO on live detail');
+      await noHorizontalScroll(page, w);
+      assert(errors.length === 0, errors.join(' | '));
+    });
+    await page.screenshot({ path: path.join(SHOTS, `live-v11-synthetic-evidence-${tag}.png`), fullPage: true });
+    await check(`live v1.1 @${tag}: project without insights says "not collected"`, async () => {
+      await page.goto(`${baseLive}/project-steward/synthetic-live-b`);
+      const m = await tid(page, 'ps-insights-missing').innerText({ timeout: 20000 });
+      assert(m.includes('have not been collected'), m);
+    });
+    await ctx.close();
+  }
+
+  // ---------- PS-02's own offline fixture served as the API response (optional) ----------
+  if (process.env.PS02_FIXTURE) {
+    const { ctx, page, errors } = await newPage(360, 800);
+    const body = fs.readFileSync(process.env.PS02_FIXTURE, 'utf8');
+    await page.route(SNAPSHOT_URL, (r) => r.fulfill({ status: 200, contentType: 'application/json', body }));
+    await page.goto(`${baseLive}/project-steward`);
+    await check('PS-02 fixture (v1.0) renders as a live snapshot without DEMO labels', async () => {
+      await page.locator('[data-testid^="ps-origin-live"]').waitFor({ timeout: 20000 });
+      const n = JSON.parse(body).projects.length;
+      assert((await page.locator('[data-testid^="ps-card-"]').count()) === n, 'card count');
+      assert((await page.locator('[data-testid="ps-demo-badge"]').count()) === 0, 'DEMO on live');
+      assert(errors.length === 0, errors.join(' | '));
+    });
+    await ctx.close();
+  } else {
+    console.log('NOT_RUN  PS-02 fixture render (set PS02_FIXTURE=path/to/valid_snapshot.json)');
+  }
+
   {
     const { ctx, page } = await newPage(360, 800);
     // Never answer: the client's 10s timeout must fire. Fake clock does not move timers.

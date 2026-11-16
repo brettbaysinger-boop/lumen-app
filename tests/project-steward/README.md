@@ -15,7 +15,8 @@ Compiles with `tsc` to `$TMPDIR/project-steward-tests` and runs `node --test`.
 ## 2. Independent schema cross-check
 
 Validates the same contract cases with python-jsonschema (Draft 2020-12, date-time
-format on) against `contracts/project-steward/project-snapshot.v1.schema.json`.
+format on) against `contracts/project-steward/project-snapshot.v1.schema.json`, and the
+v1.1 cases against the proposal in `lib/project-steward/proposed/`.
 
 ```sh
 pip install jsonschema rfc3339-validator   # tooling only, not an app dependency
@@ -36,6 +37,10 @@ EXPO_PUBLIC_PROJECT_STEWARD_SNAPSHOT_URL=http://127.0.0.1:8765/project-steward/s
   npx expo export --clear --platform web --output-dir /tmp/ps-live
 DIST_NOLIVE=/tmp/ps-nolive DIST_LIVE=/tmp/ps-live node tests/project-steward/browser.cjs
 ```
+
+Optional: `PS02_FIXTURE=path/to/valid_snapshot.json` (from the PS-02 branch,
+`docs/project-steward/fixtures/`) also serves the backend's own offline fixture as the API
+response. Without it that one check prints NOT_RUN.
 
 The Supabase values are dummies so the shared app bundle loads; no request reaches them
 on the Projects route. Screenshots land in `tests/project-steward/screenshots/`.

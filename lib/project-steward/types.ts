@@ -69,7 +69,7 @@ export interface Project {
 }
 
 export interface ProjectSnapshot {
-  version: '1.0';
+  version: '1.0' | '1.1';
   generated_at: string;
   projects: Project[];
 }

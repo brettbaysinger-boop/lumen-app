@@ -10,15 +10,17 @@ import type {
   Source,
   SourceKind,
 } from './types';
+import { isSafeUrl } from './text';
 import type { InsightsMap, ProjectInsights } from './insights';
 
 export type Tone = 'good' | 'info' | 'warn' | 'bad' | 'muted';
 
 /**
- * A finding older than this is shown as STALE. The v1 contract does not define a
- * threshold, so this is a UI assumption (documented in the PR).
+ * Default staleness window: 72 hours, the same default the backend registry uses
+ * (PS-02 `stale_threshold_hours`). A v1.1 snapshot can state its own window in
+ * `stale_after_seconds`, which then wins, so the two sides cannot disagree.
  */
-export const STALE_AFTER_MS = 48 * 60 * 60 * 1000;
+export const STALE_AFTER_MS = 72 * 60 * 60 * 1000;
 
 export const PRIORITY_LABEL: Record<Priority, string> = {
   p0: 'P0',
@@ -156,7 +158,7 @@ export function latestSourceAt(project: Project): string | null {
  */
 export function sourceUrl(source: Source): string | null {
   const ref = source.ref.trim();
-  if (/^https:\/\/[^\s]+$/i.test(ref)) return ref;
+  if (/^https:/i.test(ref)) return isSafeUrl(ref) ? ref : null;
   const m = /^([A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+)(?:#(\d+))?$/.exec(ref);
   if (!m) return null;
   const [, repo, num] = m;
@@ -189,12 +191,13 @@ export function attentionReasons(
   project: Project,
   now: number,
   insights?: ProjectInsights | null,
+  staleAfterMs = STALE_AFTER_MS,
 ): AttentionReason[] {
   const reasons: AttentionReason[] = [];
   if (insights?.next.some((n) => n.kind === 'owner_decision')) reasons.push('owner_decision');
   if (insights?.ci?.state === 'failing') reasons.push('ci_failing');
   if (project.state === 'blocked' || project.blocked_by.length > 0) reasons.push('blocked');
-  const f = freshness(project.observed_at, now);
+  const f = freshness(project.observed_at, now, staleAfterMs);
   if (f === 'stale') reasons.push('stale');
   if (f === 'unknown') reasons.push('never_checked');
   if (project.sources.length === 0) reasons.push('no_sources');
@@ -212,11 +215,12 @@ export function attentionQueue(
   projects: Project[],
   now: number,
   insights?: InsightsMap | null,
+  staleAfterMs = STALE_AFTER_MS,
 ): AttentionItem[] {
   return projects
     .map((project) => ({
       project,
-      reasons: attentionReasons(project, now, insights?.[project.id]),
+      reasons: attentionReasons(project, now, insights?.[project.id], staleAfterMs),
     }))
     .filter((item) => item.reasons.length > 0 && item.project.priority !== 'on_hold')
     .sort((a, b) => {
@@ -272,6 +276,7 @@ export function filterProjects(
   query: ProjectQuery,
   now: number,
   insights?: InsightsMap | null,
+  staleAfterMs = STALE_AFTER_MS,
 ): Project[] {
   const terms = query.text.toLowerCase().split(/\s+/).filter(Boolean);
   return projects
@@ -282,7 +287,7 @@ export function filterProjects(
           // Same rule as attentionQueue(): on-hold projects do not ask for attention.
           if (
             p.priority === 'on_hold' ||
-            attentionReasons(p, now, insights?.[p.id]).length === 0
+            attentionReasons(p, now, insights?.[p.id], staleAfterMs).length === 0
           ) {
             return false;
           }
@@ -291,7 +296,7 @@ export function filterProjects(
           if (!(p.state === 'blocked' || p.blocked_by.length > 0)) return false;
           break;
         case 'stale':
-          if (freshness(p.observed_at, now) === 'fresh') return false;
+          if (freshness(p.observed_at, now, staleAfterMs) === 'fresh') return false;
           break;
         case 'deployed_evidence':
           if (!(p.deployment === 'verified_current' || p.deployment === 'historically_verified')) {
@@ -314,7 +319,7 @@ export interface FactSplit {
 }
 
 /** Separates what the snapshot actually establishes from what it leaves open. */
-export function knownAndUnknown(p: Project, now: number): FactSplit {
+export function knownAndUnknown(p: Project, now: number, staleAfterMs = STALE_AFTER_MS): FactSplit {
   const known: string[] = [];
   const unknown: string[] = [];
 
@@ -344,7 +349,7 @@ export function knownAndUnknown(p: Project, now: number): FactSplit {
     unknown.push('Evidence level is unverified; treat every status here as a placeholder.');
   }
 
-  const f = freshness(p.observed_at, now);
+  const f = freshness(p.observed_at, now, staleAfterMs);
   if (f === 'unknown') unknown.push('This project has never been checked.');
   else if (f === 'stale') unknown.push(`Last check is stale (${relativeAge(p.observed_at, now)}).`);
 
@@ -424,10 +429,16 @@ export function cardSignals(insights: ProjectInsights | null | undefined, now: n
   return out.slice(0, 2);
 }
 
+/** "#12" for "o/r#12" or ".../pull/12"; empty when the ref carries no number. */
+export function refNumber(ref: string): string {
+  const m = /(?:#|\/)(\d+)\/?$/.exec(ref);
+  return m ? `#${m[1]}` : '';
+}
+
 /** Link for an "owner/repo#n" ref when the kind says whether it is a PR or an issue. */
 export function refUrl(ref: string | null, kind: 'pr' | 'issue' | 'unknown'): string | null {
   if (!ref) return null;
-  if (/^https:\/\/[^\s]+$/i.test(ref)) return ref;
+  if (/^https:/i.test(ref)) return isSafeUrl(ref) ? ref : null;
   const m = /^([A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+)#(\d+)$/.exec(ref);
   if (!m) return null;
   // GitHub redirects /issues/n to the PR when n is a PR, so "unknown" is safe too.

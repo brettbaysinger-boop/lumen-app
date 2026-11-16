@@ -54,7 +54,7 @@ export function ActivityTab({ insights, insightsSupported, now, wide }: Props) {
       <Text style={styles.muted} testID="ps-activity-missing">
         {insightsSupported
           ? 'No activity has been collected for this project.'
-          : 'Activity is not available from this source yet (not in the v1 snapshot contract).'}
+          : 'Activity is not available from this source yet (it serves the v1.0 contract, which has no such fields).'}
       </Text>
     );
   }

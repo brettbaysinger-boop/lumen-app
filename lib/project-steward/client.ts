@@ -8,6 +8,7 @@
 import { demoSnapshot } from './fixtures';
 import { demoInsights } from './fixtures-insights';
 import { validateInsightsMap, type InsightsMap } from './insights';
+import { sanitizeDeep } from './text';
 import type { DataOrigin, ProjectSnapshot } from './types';
 import { validateSnapshot } from './validate';
 
@@ -19,10 +20,12 @@ export type SnapshotResult =
       origin: DataOrigin;
       snapshot: ProjectSnapshot;
       /**
-       * PRs, CI, activity, links per project id. Not in the v1 contract: null for a
-       * live v1 snapshot ("not available"), supplied only by the demo fixture today.
+       * PRs, CI, activity, links per project id. null when the source cannot supply
+       * them at all (a v1.0 snapshot). A v1.1 snapshot gives a map that may be sparse.
        */
       insights: InsightsMap | null;
+      /** Server-declared staleness window (v1.1), else null and the UI default applies. */
+      staleAfterMs: number | null;
       /** When this client received the data (not when the server checked sources). */
       receivedAt: string;
     }
@@ -102,13 +105,15 @@ export async function fetchSnapshot(opts: FetchSnapshotOptions): Promise<Snapsho
     } catch {
       return { status: 'invalid', errors: ['response is not valid JSON'] };
     }
-    const v = validateSnapshot(body);
+    // Strip control / bidi-override characters from every string before anything else.
+    const v = validateSnapshot(sanitizeDeep(body));
     if (!v.ok) return { status: 'invalid', errors: v.errors };
     return {
       status: 'ok',
       origin: 'live-api',
       snapshot: v.snapshot,
-      insights: null,
+      insights: v.insights,
+      staleAfterMs: v.staleAfterMs,
       receivedAt: now().toISOString(),
     };
   } finally {
@@ -128,6 +133,7 @@ export function loadDemoSnapshot(now: () => Date = () => new Date()): SnapshotRe
     origin: 'demo-fixture',
     snapshot: v.snapshot,
     insights: demoInsights,
+    staleAfterMs: null,
     receivedAt: now().toISOString(),
   };
 }

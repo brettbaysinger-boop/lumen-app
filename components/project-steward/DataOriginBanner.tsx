@@ -4,6 +4,7 @@ import { Colors, Radius, Spacing, Typography } from '@/lib/theme';
 import { absoluteUtc, freshness, relativeAge } from '@/lib/project-steward/status';
 import type { DataOrigin, ProjectSnapshot } from '@/lib/project-steward/types';
 import { DemoBadge } from './Badge';
+import { useStaleAfterMs } from './StalePolicy';
 
 interface Props {
   origin: DataOrigin;
@@ -14,7 +15,8 @@ interface Props {
 
 /** Always-visible statement of where the data came from and how old it is. */
 export function DataOriginBanner({ origin, snapshot, receivedAt, now }: Props) {
-  const stale = freshness(snapshot.generated_at, now) !== 'fresh';
+  const staleAfterMs = useStaleAfterMs();
+  const stale = freshness(snapshot.generated_at, now, staleAfterMs) !== 'fresh';
   if (origin === 'demo-fixture') {
     return (
       <View style={[styles.banner, styles.demo]} testID="ps-origin-demo" accessibilityRole="alert">
@@ -47,7 +49,8 @@ export function DataOriginBanner({ origin, snapshot, receivedAt, now }: Props) {
       </View>
       <Text style={styles.body}>
         Generated {absoluteUtc(snapshot.generated_at)} ({relativeAge(snapshot.generated_at, now)}).
-        Received {relativeAge(receivedAt, now)}. Read-only.
+        Received {relativeAge(receivedAt, now)}. Read-only, contract v{snapshot.version}. Stale after{' '}
+        {Math.round(staleAfterMs / 3_600_000)}h.
       </Text>
     </View>
   );

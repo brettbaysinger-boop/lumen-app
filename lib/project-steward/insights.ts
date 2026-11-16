@@ -1,16 +1,19 @@
-// PROPOSED extension to the v1 snapshot, NOT part of the contract yet.
+// PROPOSED Project Snapshot v1.1 extension (see proposed/ in this folder). Not an
+// approved contract yet; v1 stays fully supported.
 //
 // project-snapshot.v1 has no fields for pull requests, CI, commit/deploy times, next
 // steps, activity or links, and forbids extra properties. Rather than change the
-// contract from the UI lane, the UI carries these as a separate per-project
-// "insights" record. Today only the DEMO fixture supplies them; a live v1 snapshot
-// yields `null` and the UI says the data is not available. The shape below is offered
-// to the coordinator/PS-02 as a v1.1 proposal (see PR #32).
+// contract from the UI lane, v1.1 is a proposal: each project MAY carry an optional
+// `insights` object of the shape below. The client accepts "1.0" (no insights, UI
+// says "not available") and "1.1" (insights shown when present, "not collected"
+// per project or per group when absent/null).
 //
 // Convention: `null` means unknown / not collected. An empty array means "checked,
 // there are none". Every group carries its own observed_at so it can go stale alone.
 
-import { isDateTime } from './validate';
+import { isDateTime, isSafeUrl } from './text';
+
+export { isSafeUrl };
 
 export const PR_REVIEW_STATES = [
   'draft',
@@ -33,7 +36,7 @@ export const LINK_KINDS = ['repo', 'live', 'issues', 'docs'] as const;
 export type LinkKind = (typeof LINK_KINDS)[number];
 
 export interface OpenPr {
-  /** "owner/repo#123" */
+  /** "owner/repo#123" or the PR's https URL. */
   ref: string;
   title: string;
   review: PrReview;
@@ -129,11 +132,6 @@ function strOrNull(v: unknown, path: string, errors: string[]) {
   if (v !== null) str(v, path, errors, 512);
 }
 
-/** Only https links are allowed, so a bad payload cannot smuggle other schemes. */
-export function isSafeUrl(v: unknown): v is string {
-  return typeof v === 'string' && /^https:\/\/[^\s]+$/i.test(v) && v.length <= 512;
-}
-
 function moment(v: unknown, extra: string[], path: string, errors: string[]) {
   if (v === null) return;
   if (!obj(v)) {
@@ -164,7 +162,9 @@ export function validateInsights(v: unknown, path = 'insights'): string[] {
         const p = `${path}.open_prs.items[${i}]`;
         if (!obj(pr)) return errors.push(`${p}: must be an object`);
         keys(pr, ['ref', 'title', 'review', 'opened_at', 'updated_at', 'head_sha'], p, errors);
-        if (typeof pr.ref !== 'string' || !REF.test(pr.ref)) errors.push(`${p}.ref: must be owner/repo#n`);
+        if (typeof pr.ref !== 'string' || !(REF.test(pr.ref) || isSafeUrl(pr.ref))) {
+          errors.push(`${p}.ref: must be owner/repo#n or an https URL`);
+        }
         str(pr.title, `${p}.title`, errors);
         oneOf(pr.review, PR_REVIEW_STATES, `${p}.review`, errors);
         time(pr.opened_at, `${p}.opened_at`, errors);

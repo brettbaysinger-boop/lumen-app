@@ -11,6 +11,8 @@ import {
 } from '@/lib/project-steward/useProjectSnapshot';
 import { DataOriginBanner } from '@/components/project-steward/DataOriginBanner';
 import { ProjectDetailView } from '@/components/project-steward/ProjectDetailView';
+import { StalePolicyProvider } from '@/components/project-steward/StalePolicy';
+import { STALE_AFTER_MS } from '@/lib/project-steward/status';
 import { LoadingNotice, SourceStateNotice } from '@/components/project-steward/SourceStateNotice';
 
 export default function ProjectDetailScreen() {
@@ -54,7 +56,7 @@ export default function ProjectDetailScreen() {
           ) : null}
 
           {ok ? (
-            <>
+            <StalePolicyProvider value={ok.staleAfterMs ?? STALE_AFTER_MS}>
               <DataOriginBanner
                 origin={ok.origin}
                 snapshot={ok.snapshot}
@@ -79,7 +81,7 @@ export default function ProjectDetailScreen() {
                   </Text>
                 </View>
               )}
-            </>
+            </StalePolicyProvider>
           ) : null}
         </View>
       </ScrollView>

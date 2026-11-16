@@ -24,6 +24,8 @@ import { FilterBar } from '@/components/project-steward/FilterBar';
 import { ProjectCard } from '@/components/project-steward/ProjectCard';
 import { LoadingNotice, SourceStateNotice } from '@/components/project-steward/SourceStateNotice';
 import { StewardHeader } from '@/components/project-steward/StewardHeader';
+import { StalePolicyProvider } from '@/components/project-steward/StalePolicy';
+import { STALE_AFTER_MS } from '@/lib/project-steward/status';
 
 const WIDE = 900;
 const QUICKS: QuickFilter[] = ['all', 'attention', 'blocked', 'stale', 'deployed_evidence'];
@@ -42,22 +44,29 @@ export default function ProjectsOverviewScreen() {
   const ok = result?.status === 'ok' ? result : null;
   const projects = ok?.snapshot.projects ?? [];
   const insights = ok?.insights ?? null;
+  const staleAfterMs = ok?.staleAfterMs ?? STALE_AFTER_MS;
 
   const filtered = useMemo(
-    () => filterProjects(projects, query, now, insights),
-    [projects, query, now, insights],
+    () => filterProjects(projects, query, now, insights, staleAfterMs),
+    [projects, query, now, insights, staleAfterMs],
   );
   const attention = useMemo(
-    () => attentionQueue(projects, now, insights),
-    [projects, now, insights],
+    () => attentionQueue(projects, now, insights, staleAfterMs),
+    [projects, now, insights, staleAfterMs],
   );
   const counts = useMemo(() => {
     const c: Partial<Record<QuickFilter, number>> = {};
     for (const q of QUICKS) {
-      c[q] = filterProjects(projects, { ...EMPTY_QUERY, quick: q }, now, insights).length;
+      c[q] = filterProjects(
+        projects,
+        { ...EMPTY_QUERY, quick: q },
+        now,
+        insights,
+        staleAfterMs,
+      ).length;
     }
     return c;
-  }, [projects, now, insights]);
+  }, [projects, now, insights, staleAfterMs]);
 
   const open = (id: string) =>
     router.push({ pathname: '/project-steward/[id]', params: { id, source: mode } });
@@ -80,7 +89,7 @@ export default function ProjectsOverviewScreen() {
           ) : null}
 
           {ok ? (
-            <>
+            <StalePolicyProvider value={staleAfterMs}>
               <DataOriginBanner
                 origin={ok.origin}
                 snapshot={ok.snapshot}
@@ -119,7 +128,7 @@ export default function ProjectsOverviewScreen() {
                   <AttentionQueue items={attention} onOpen={open} />
                 </View>
               </View>
-            </>
+            </StalePolicyProvider>
           ) : null}
         </View>
       </ScrollView>

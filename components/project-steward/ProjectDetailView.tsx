@@ -22,6 +22,7 @@ import {
   PR_REVIEW_TONE,
   freshness,
   knownAndUnknown,
+  refNumber,
   refUrl,
   relativeAge,
   shortDuration,
@@ -35,6 +36,7 @@ import { FreshnessLine } from './Freshness';
 import { LinkChips } from './LinkChips';
 import { Section } from './Section';
 import { SourceList } from './SourceList';
+import { useStaleAfterMs } from './StalePolicy';
 
 interface Props {
   project: Project;
@@ -65,8 +67,9 @@ const DEPLOY_EXPLAIN: Record<Project['deployment'], string> = {
 export function ProjectDetailView({ project: p, insights, insightsSupported, isDemo, now, wide }: Props) {
   const [tab, setTab] = useState<Tab>('summary');
   const [allPrs, setAllPrs] = useState(false);
-  const f = freshness(p.observed_at, now);
-  const facts = knownAndUnknown(p, now);
+  const staleAfterMs = useStaleAfterMs();
+  const f = freshness(p.observed_at, now, staleAfterMs);
+  const facts = knownAndUnknown(p, now, staleAfterMs);
   const prs = insights?.open_prs?.items ?? null;
   const shownPrs = prs ? (allPrs ? prs : prs.slice(0, PR_PREVIEW)) : [];
 
@@ -200,7 +203,7 @@ export function ProjectDetailView({ project: p, insights, insightsSupported, isD
                     testID="ps-pr-row"
                   >
                     <Text style={styles.prTitle} numberOfLines={2}>
-                      <Text style={styles.prNum}>#{pr.ref.split('#')[1]} </Text>
+                      <Text style={styles.prNum}>{refNumber(pr.ref)} </Text>
                       {pr.title}
                     </Text>
                     <View style={styles.prMeta}>
@@ -234,7 +237,7 @@ export function ProjectDetailView({ project: p, insights, insightsSupported, isD
             <Text style={styles.notCollected} testID="ps-insights-missing">
               {insightsSupported
                 ? 'Pull requests, CI, activity and links have not been collected for this project.'
-                : 'Pull requests, CI, activity and links are not available from this source yet (not in the v1 snapshot contract).'}
+                : 'Pull requests, CI, activity and links are not available from this source yet (it serves the v1.0 contract, which has no such fields).'}
             </Text>
           ) : null}
         </View>

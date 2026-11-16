@@ -11,14 +11,25 @@ import {
   SOURCE_KINDS,
   type ProjectSnapshot,
 } from './types';
+import { validateInsights, type InsightsMap, type ProjectInsights } from './insights';
+import { isDateTime } from './text';
+
+export { isDateTime };
 
 export type ValidationResult =
-  | { ok: true; snapshot: ProjectSnapshot }
+  | {
+      ok: true;
+      snapshot: ProjectSnapshot;
+      /** null for v1.0 (contract has no insights). For v1.1: per-project, may be sparse. */
+      insights: InsightsMap | null;
+      /** v1.1 `stale_after_seconds` in ms, or null when the server did not say. */
+      staleAfterMs: number | null;
+    }
   | { ok: false; errors: string[] };
 
-// RFC 3339 date-time (JSON-schema "format": "date-time"), with mandatory offset.
-const DATE_TIME =
-  /^\d{4}-\d{2}-\d{2}[Tt]\d{2}:\d{2}:\d{2}(\.\d+)?([Zz]|[+-]\d{2}:\d{2})$/;
+// 1 hour .. 30 days.
+const STALE_MIN_S = 3600;
+const STALE_MAX_S = 2_592_000;
 const PROJECT_ID = /^[a-z0-9-]{2,64}$/;
 const REPO = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/;
 const COMMIT_SHA = /^[a-f0-9]{7,40}$/;
@@ -42,10 +53,6 @@ const SOURCE_KEYS = [...SOURCE_REQUIRED, 'commit_sha'];
 
 function isObject(v: unknown): v is Record<string, unknown> {
   return typeof v === 'object' && v !== null && !Array.isArray(v);
-}
-
-export function isDateTime(v: unknown): v is string {
-  return typeof v === 'string' && DATE_TIME.test(v) && !Number.isNaN(Date.parse(v));
 }
 
 function checkKeys(
@@ -107,12 +114,13 @@ function validateSource(v: unknown, path: string, errors: string[]) {
   }
 }
 
-function validateProject(v: unknown, path: string, errors: string[]) {
+function validateProject(v: unknown, path: string, errors: string[], v11: boolean) {
   if (!isObject(v)) {
     errors.push(`${path}: must be an object`);
     return;
   }
-  checkKeys(v, PROJECT_REQUIRED, PROJECT_KEYS, path, errors);
+  checkKeys(v, PROJECT_REQUIRED, v11 ? [...PROJECT_KEYS, 'insights'] : PROJECT_KEYS, path, errors);
+  if (v11 && 'insights' in v) errors.push(...validateInsights(v.insights, `${path}.insights`));
   if ('id' in v) checkString(v.id, `${path}.id`, errors, { pattern: PROJECT_ID });
   if ('name' in v) checkString(v.name, `${path}.name`, errors, { min: 1, max: 100 });
   if ('priority' in v) checkEnum(v.priority, PRIORITIES, `${path}.priority`, errors);
@@ -163,9 +171,25 @@ export function validateSnapshot(input: unknown): ValidationResult {
   if (!isObject(input)) {
     return { ok: false, errors: ['snapshot: must be a JSON object'] };
   }
-  checkKeys(input, SNAPSHOT_KEYS, SNAPSHOT_KEYS, 'snapshot', errors);
-  if ('version' in input && input.version !== '1.0') {
-    errors.push('snapshot.version: must be "1.0"');
+  const v11 = input.version === '1.1';
+  checkKeys(
+    input,
+    SNAPSHOT_KEYS,
+    v11 ? [...SNAPSHOT_KEYS, 'stale_after_seconds'] : SNAPSHOT_KEYS,
+    'snapshot',
+    errors,
+  );
+  if ('version' in input && input.version !== '1.0' && !v11) {
+    errors.push('snapshot.version: must be "1.0" or "1.1"');
+  }
+  let staleAfterMs: number | null = null;
+  if (v11 && 'stale_after_seconds' in input) {
+    const s = input.stale_after_seconds;
+    if (typeof s !== 'number' || !Number.isInteger(s) || s < STALE_MIN_S || s > STALE_MAX_S) {
+      errors.push(`snapshot.stale_after_seconds: must be an integer ${STALE_MIN_S}..${STALE_MAX_S}`);
+    } else {
+      staleAfterMs = s * 1000;
+    }
   }
   if ('generated_at' in input && !isDateTime(input.generated_at)) {
     errors.push('snapshot.generated_at: must be an RFC 3339 date-time');
@@ -174,7 +198,7 @@ export function validateSnapshot(input: unknown): ValidationResult {
     if (!Array.isArray(input.projects)) {
       errors.push('snapshot.projects: must be an array');
     } else {
-      input.projects.forEach((p, i) => validateProject(p, `projects[${i}]`, errors));
+      input.projects.forEach((p, i) => validateProject(p, `projects[${i}]`, errors, v11));
       // Not required by the schema, but duplicate ids would break detail routing.
       const ids = input.projects
         .filter(isObject)
@@ -187,5 +211,20 @@ export function validateSnapshot(input: unknown): ValidationResult {
     }
   }
   if (errors.length > 0) return { ok: false, errors };
-  return { ok: true, snapshot: input as unknown as ProjectSnapshot };
+  if (!v11) {
+    return { ok: true, snapshot: input as unknown as ProjectSnapshot, insights: null, staleAfterMs };
+  }
+  // Split v1.1 into the v1-shaped project list plus a per-project insights map.
+  const insights: InsightsMap = {};
+  const projects = (input.projects as Record<string, unknown>[]).map((p) => {
+    const { insights: ins, ...rest } = p;
+    if (ins !== undefined) insights[rest.id as string] = ins as ProjectInsights;
+    return rest;
+  });
+  return {
+    ok: true,
+    snapshot: { ...input, projects } as unknown as ProjectSnapshot,
+    insights,
+    staleAfterMs,
+  };
 }
