@@ -134,7 +134,8 @@ test('the browser check follows the protected updater\'s file naming, which is n
   assert.ok(!fs.existsSync('scripts/test-privacy-mode-browser.cjs'));
   const updater=read('scripts/animated-web-update.sh');
   const rule=updater.match(/^FRONTEND_ONLY='(.+)'$/m)[1];
-  assert.equal(rule,"^(app/|components/|lib/|hooks/|types/|tests/|docs/|scripts/(test-)?(animated[-_][A-Za-z0-9_.-]+|android-refresh\\.sh)$)");
+  // The live updater (97e032f) that the release ships; never PR #26's widened rule.
+  assert.equal(rule,"^(app/|components/|lib/|hooks/|types/|tests/|docs/|scripts/(test-)?animated[-_][A-Za-z0-9_.-]+$)");
   assert.match('scripts/test-animated-privacy-mode-browser.cjs',new RegExp(rule));
 });
 
