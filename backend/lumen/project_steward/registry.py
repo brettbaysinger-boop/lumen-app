@@ -669,7 +669,10 @@ class ProjectRegistry:
         for p in self.list_projects():
             p_dict = p.model_dump()
             insights = self.get_project_insights(p.id)
-            p_dict["insights"] = insights.model_dump() if insights else None
+            # `insights` is optional in canonical v1.1, but when present must
+            # be an object. Omit uncollected evidence; never serialize null.
+            if insights is not None:
+                p_dict["insights"] = insights.model_dump()
             projects_v11.append(p_dict)
 
         return {
