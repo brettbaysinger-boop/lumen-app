@@ -118,7 +118,10 @@ Keyword rules are a backstop and can misfire; each refusal names the rule so it 
   `/handle_start_button` only adds a job to FP-Studio's queue and returns its uuid at once.
   `/monitor_job` streams that job's video, progress text and bar until Completed, Error or
   cancelled, but it always switches to whichever job is running. Files are named
-  `<job id>_<frames>.mp4` in FP-Studio's output folder and served through Gradio's file route.
+  `<FP-Studio run stamp>_<frames>.mp4` (for example `261116_095453_817_1084_19.mp4`; the worker
+  names files after its own timestamp, not the queue uuid) in FP-Studio's output folder, served through
+  Gradio's file route. Ownership comes from `monitor_job(<our job id>)`, which reports that job's own
+  `job.result`; a switch to another job, or videos from two run stamps, fail the request.
   There is no per-job cancel in the API; `end_process`/`end_process_with_update` cancel the
   current job globally.
 * The adapter (`FramePackStudioProvider`, selected only by `FRAMEPACK_API_NAME=/handle_start_button`):
@@ -142,12 +145,12 @@ Keyword rules are a backstop and can misfire; each refusal names the rule so it 
 * Read-only check (no upload, no queue): `python3 scripts/check-framepack-endpoint.py --url
   http://127.0.0.1:7863 --api-name /handle_start_button` prints the 29 values Lumen would send.
 * Gated GPU canary (owner approval, video still off in Lumen). Run on Lumen, as the lumen-api user,
-  with the live backend venv and the adapter pinned at `e99360f`. FP-Studio stays on Heavy's loopback;
+  with the live backend venv and the adapter pinned at `34f10dd`. FP-Studio stays on Heavy's loopback;
   a temporary SSH forward is opened for the canary only and closed after (`<heavy>` = the SSH host you
   already use from Lumen to Heavy):
 
   ```
-  git clone https://github.com/brettbaysinger-boop/lumen-app.git ~/lumen-fps-canary && git -C ~/lumen-fps-canary checkout -q --detach e99360f
+  git clone https://github.com/brettbaysinger-boop/lumen-app.git ~/lumen-fps-canary && git -C ~/lumen-fps-canary checkout -q --detach 34f10dd
   ssh -f -N -o ExitOnForwardFailure=yes -L 127.0.0.1:17863:127.0.0.1:7863 <heavy>
   cd ~/lumen-fps-canary && /home/brett/lumen-push/backend/.venv/bin/python scripts/canary-framepack-studio.py --run-gpu \
     --url http://127.0.0.1:17863 --comfy-url http://127.0.0.1:18188 \
@@ -159,6 +162,19 @@ Keyword rules are a backstop and can misfire; each refusal names the rule so it 
   do), refuses if FP-Studio is busy, queues one 3-second Original job, follows only that job, writes
   `/tmp/lumen-fps-canary/lumen-fps-canary.mp4` and prints JSON (result, FP-Studio job id, latency, bytes,
   sha256). It never calls a stop/clear/cancel endpoint; if it times out, the job stays in FP-Studio's queue.
+* Recover the clip from hardware canary 3 (758c2b3), no GPU: FP-Studio already wrote
+  `outputs/261116_095453_817_1084_19.mp4`. This read-only check takes FP-Studio's own record
+  (`queue.json[<job id>].result`) for the canary's job id, and copies the file only if the entry is a
+  clean completion, the name is FP-Studio's output naming, the file is an MP4 in `outputs/`, and it was
+  written during that job's run. It never lists the folder to guess. From the Lumen canary checkout:
+
+  ```
+  scp ~/lumen-fps-canary/scripts/framepack-studio-job-output.py <heavy>:/tmp/
+  ssh <heavy> 'cd /data/ai-media-studio/FP-Studio && python3 /tmp/framepack-studio-job-output.py --queue-json queue.json --job-id <canary job id> --copy-to /tmp/lumen-fps-canary'
+  ```
+
+  `<canary job id>` is `fp_studio_job_id` from the canary's FAIL line (likely `0bb4dd05-…`, the newest
+  entry). MATCH prints the file, bytes and sha256; REFUSED prints why and copies nothing.
 * Still open: the private route from lumen-api to FP-Studio; the canary itself; Chat/Gallery
   delivery and playback. `VIDEO_GENERATION_ENABLED` stays false until a real canary passes and the
   owner approves.
