@@ -167,12 +167,20 @@ export function AppearanceControls() {
     resetAppearance,
     importDeviceAppearance,
     hasDeviceAppearance,
+    accountSync,
   } = useTheme();
   const [importMessage, setImportMessage] = useState<string | null>(null);
   const chip = (label: string, active: boolean, onPress: () => void) => <Pressable key={label} accessibilityRole="button" accessibilityState={{ selected: active }} onPress={onPress}
     style={{ padding: 12, borderRadius: 10, borderWidth: 1, borderColor: active ? c.primary[400] : c.neutral[700], backgroundColor: c.neutral[900] }}><Text style={{ color: active ? c.primary[300] : c.neutral[300], fontSize: 12 }}>{label}</Text></Pressable>;
   return <View style={{ gap: 18, marginTop: 20 }}>
     <Text style={{ color: c.neutral[400], fontSize: 12, lineHeight: 20 }}>Make it yours. Your appearance preferences sync with your account across devices.</Text>
+    {/* Says plainly whether the account holds what is on screen. Other devices, the website and the
+        Live Room read the account, so "not saved" here explains different colors there. */}
+    <Text accessibilityLiveRegion="polite" style={{ color: accountSync === 'failed' ? c.warning[300] : c.neutral[400], fontSize: 12, lineHeight: 20 }}>{
+      accountSync === 'synced' ? 'Saved to your account. The website and the Live Room use these colors when signed in to this same account.'
+      : accountSync === 'pending' ? 'Saving to your account…'
+      : accountSync === 'failed' ? 'Not saved to your account: it could not be reached from this device. This device shows its own saved copy; the website and the Live Room may show other colors until this succeeds. It is retried every 15 seconds.'
+      : 'Checking your account…'}</Text>
     {hasDeviceAppearance && (
       <View style={{ gap: 8 }}>
         <Pressable

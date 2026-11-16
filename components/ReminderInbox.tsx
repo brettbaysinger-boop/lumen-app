@@ -5,9 +5,12 @@ import { useAuth } from '@/lib/auth';
 import { supabase } from '@/lib/supabase';
 import { dueReminders, dayRequest, type DayAlert } from '@/lib/my-day';
 import { useTheme } from '@/lib/theme-context';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 export function ReminderInbox() {
  const { session } = useAuth(); const { colors: c } = useTheme();
+ // The banner is the first thing on the screen, so it must start below the phone's status bar.
+ const insets = useSafeAreaInsets();
  const [alerts, setAlerts] = useState<DayAlert[]>([]), [companionId, setCompanionId] = useState(''), [error, setError] = useState('');
  const notified = useRef(new Set<string>());
  useEffect(() => {
@@ -34,7 +37,7 @@ export function ReminderInbox() {
   return () => { alive = false; controller.abort(); clearInterval(timer); if (Platform.OS === 'web') window.removeEventListener('focus', poll); };
  }, [session?.user.id]);
  if (!alerts.length && !error) return null;
- return <View style={{ backgroundColor: c.neutral[900], paddingVertical: 10, paddingHorizontal: 16, borderBottomWidth: 1, borderColor: c.neutral[700], gap: 8 }}>
+ return <View style={{ backgroundColor: c.neutral[900], paddingTop: insets.top + 10, paddingBottom: 10, paddingHorizontal: 16, borderBottomWidth: 1, borderColor: c.neutral[700], gap: 8 }}>
   {!!error && <Pressable onPress={() => router.push('/my-day')}><Text style={{ color: c.neutral[300], fontSize: 12 }}>{error}</Text></Pressable>}
   {alerts.slice(0, 3).map(alert => <View key={alert.id} style={{ flexDirection: 'row', alignItems: 'center', gap: 14 }}>
    <Pressable accessibilityRole="button" onPress={() => router.push({ pathname: '/my-day', params: { item: alert.item_id } })} style={{ flex: 1 }}><Text style={{ color: c.primary[300], fontSize: 13 }}>Reminder · {alert.title}</Text></Pressable>
