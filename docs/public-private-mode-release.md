@@ -107,8 +107,11 @@ mismatch is `missing` and is under `backend/tests/`, `docs/` or `tests/`, it pri
 PRIVACY_RELEASE_CONFIRM=fill:<12 printed> scripts/animated-privacy-release.sh baseline-fill
 ```
 
-It writes exactly those files from `a2148d8`, refuses to replace any existing file, checks each one's blob and
-mode afterwards, and touches nothing else (no Git command that writes, no restart). The word is a hash of the
+It writes exactly those files from `a2148d8`. Before writing anything it refuses if any target exists in any
+form (file, directory, link, even a dangling link) or a directory on the way is a link. Each file is written
+to a temporary file in the same directory, checked (blob and mode), then hard-linked to its name with `ln`,
+which fails if anything appeared there meanwhile, so nothing is ever overwritten. Only files actually created
+are recorded; if one fails, exactly those are removed again. It checks each one's blob and mode afterwards, and touches nothing else (no Git command that writes, no restart). The word is a hash of the
 exact file list and blobs, so any change voids it. A `changed` file is never written: that is hand review.
 **Undo:** `PRIVACY_RELEASE_CONFIRM=fill-undo scripts/animated-privacy-release.sh baseline-fill-undo` deletes only
 the files it wrote, and only while they are still the reviewed ones; it refuses while a baseline is recorded.
