@@ -440,6 +440,8 @@ class CognitionRuntime:
         # Internal-only scheduling handle. Do not repurpose the Supabase
         # observation_message_id response field: it drives old UI workflows.
         self.rmc_auto_message_id = str(user_row["id"]) if rmc_auto_eligible else None
+        self.rmc_auto_companion_id = companion_id if rmc_auto_eligible else None
+        self.rmc_auto_assistant_text = result["content"] if rmc_auto_eligible else ""
         observation_message_id = None
         if (rmc_memory is None and not practice and not attachments and not action and memory_status == "none"
                 and getattr(self.settings, "memory_observations_enabled", False) is True):
