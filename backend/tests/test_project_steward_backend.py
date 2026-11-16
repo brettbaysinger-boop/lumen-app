@@ -33,6 +33,8 @@ Covers:
 
 import json
 from pathlib import Path
+from contextlib import contextmanager
+from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 
@@ -86,14 +88,25 @@ SECRET_TOKEN = "ghp_super_secret_test_token_1234567890abcdef"
 _ORIGINAL_ASYNC_CLIENT = httpx.AsyncClient
 
 
+@contextmanager
 def mock_supabase_client(handler):
-    return patch(
-        "lumen.project_steward.handler.httpx.AsyncClient",
+    """Use only synthetic auth settings and an in-memory HTTP transport.
+
+    Keep lumen.auth.require_user real: exercise its actual bearer validation,
+    but never reach host Supabase or rely on host .env during Forge canaries.
+    """
+    synthetic_auth = SimpleNamespace(
+        supabase_url="https://supabase.local",
+        supabase_service_role_key="synthetic-test-key",
+    )
+    with patch("lumen.auth.get_settings", return_value=synthetic_auth), patch(
+        "lumen.auth.httpx.AsyncClient",
         side_effect=lambda **kw: _ORIGINAL_ASYNC_CLIENT(
             transport=httpx.MockTransport(handler),
             **{k: v for k, v in kw.items() if k != "transport"},
         ),
-    )
+    ):
+        yield
 
 
 class TestP0Authentication(unittest.TestCase):
