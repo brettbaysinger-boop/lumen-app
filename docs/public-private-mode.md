@@ -63,5 +63,5 @@ need a new column and is an owner decision. Ordinary chat is not interrupted wit
 Push notification / reminder previews, the Memories, Documents and My Day tabs themselves, the
 "Continue together" picker, saved message drafts, and scene selection (PR #18) do not follow the mode.
 
-Integration and the read-only preflight: `docs/public-private-mode-integration.md`.
+Integration and the read-only preflight: `docs/public-private-mode-integration.md`. Release: `docs/public-private-mode-release.md`.
 Browser check: `scripts/test-animated-privacy-mode-browser.cjs`.

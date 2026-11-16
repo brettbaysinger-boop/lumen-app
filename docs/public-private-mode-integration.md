@@ -59,8 +59,8 @@ scoped files (#35/#38 Memories and RMC backend). The range `f23d112..candidate` 
 backend files (from #38 and this PR) and touches locally edited files, so `check` must say NOT READY.
 That is correct behaviour: the updater is not changed, widened or bypassed.
 
-**STOP here.** No existing tool can release this safely. Proposed minimal path, for owner review
-(nothing below is built or run yet):
+**Superseded:** the prepared, tested release is `docs/public-private-mode-release.md` (gates 1, 2a, 2b and 3,
+`scripts/animated-privacy-release.sh`). The proposal below is kept as the record of how it was reached.
 
 * **Step 1, backend (new owner-gated script, backend lane, not the web updater).** Confirm token
   `apply:<patch sha256>`; sha256 backup of the 5 backend files; refuse unless each live file still
