@@ -42,6 +42,17 @@ ssh <heavy> 'cd /data/ai-media-studio/FP-Studio && <FP-Studio python> /tmp/frame
 
 `MISMATCH` or `REFUSED` means stop here: no GPU job and no release step.
 
+**Result (owner, 2026-11-16): `MATCH` at `0b370fb`, run without `--expect-image`.** Verified for job
+`0bb4dd05-…`:
+* status completed;
+* the prompt and the 3 s length match the canary (seed 3101, Original);
+* `outputs/261116_095453_817_1084_19.mp4`, 836,627 bytes, sha256 `84e686f8…288e0`;
+* written 510.9 s after the job started, within its run.
+
+The start frame's RGB pixels were **not** compared. Optional follow-up: the same command with
+`--expect-image /tmp/lumen-canary.png`. The render took about 8.5 minutes for a 3 s clip, which is why
+rendering runs in the worker, not in the request.
+
 ## Stage 1: the private route for FP-Studio (read-only check, then an owner change)
 
 `scripts/video-release.sh route` shows how `127.0.0.1:18188` (ComfyUI) reaches Heavy today:
