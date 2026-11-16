@@ -22,6 +22,8 @@ class ContinuityEvidenceTests(unittest.TestCase):
             "I'm currently working on a medieval game world.",
             "My long-term goal is to publish a novel.",
             "Our weekly ritual is chatting over coffee.",
+            "Our inside joke is calling Mondays Dragon Day.",
+            "You and I often joke about the flying penguin.",
             "Whenever we chat, we always begin with a joke.",
         ):
             with self.subTest(statement=statement):
