@@ -7,19 +7,18 @@ the live database or a phone. Not deployed.
 
 | Capability | Service on Heavy | How Lumen reaches it | State |
 |---|---|---|---|
-| Still images (default) | ComfyUI + **BigLust SDXL v1.6** (`backend/workflows/biglust-sdxl-v16-api.json`, `COMFYUI_CHECKPOINT`) | `images.py`, `companion_images.py` | Owner requirement 2026-11-16; checkpoint not yet confirmed on Heavy |
+| Still images (default) | ComfyUI + **BigLust SDXL v1.6** (`backend/workflows/biglust-sdxl-v16-api.json`, `COMFYUI_CHECKPOINT`) | `images.py`, `companion_images.py` | `bigLust_v16.safetensors` on Heavy; GPU canary PASSED 2026-11-16; images-only release in PR #52 |
 | Still images (previous) | ComfyUI + FLUX.2 Klein (`flux2-klein-4b-fp8.json`) | same | Worked live 2026-10-09 |
-| Image to video | FramePack-Studio (Gradio) on Heavy `127.0.0.1:7863` (owner discovery 2026-11-16) | none yet: needs a dedicated adapter | NOT READY |
+| Image to video | FramePack-Studio (Gradio) on Heavy `127.0.0.1:7863` (owner discovery 2026-11-16) | `video_providers.FramePackStudioProvider` (`FRAMEPACK_API_NAME=/handle_start_button`) | Adapter written and fake-tested; no GPU run |
 | Text to video | Wan2.2 ComfyUI workflow, if exported | `video_providers.run_comfy_video_workflow` | New; no Wan2.2 workflow found in any repo |
 | Text to video without Wan2.2 | BigLust SDXL still, then FramePack | `media_jobs.run_video_job` (`t2i2v`) | New, not run on Heavy |
 
 Local Media Studio is retired (owner, 2026-11-16) and is not a dependency or integration target.
 Lumen talks only to ComfyUI and FramePack directly, from the backend.
 
-FramePack's port, Gradio API name and input labels are **not verified**. The client matches inputs
-by label (image, prompt, negative prompt, seed, length) and keeps every other input at the
-install's own default; `scripts/check-framepack-endpoint.py` shows whether that mapping fits the
-real install before anything is enabled.
+FramePack-Studio's API labels, Generation Type choices and defaults are owner-verified (see
+Readiness). The adapter checks that exact contract before every use; `scripts/check-framepack-endpoint.py
+--api-name /handle_start_button` shows whether it fits the real install before anything is enabled.
 
 ## Flow
 
@@ -77,19 +76,47 @@ Keyword checks are a backstop, not a classifier.
   playback and Public lock) has run only in a desktop browser against fakes. It is not in the images
   release and must be tested independently before it ships.
 
-### FramePack video: NOT READY
-* Verified: a FramePack-Studio Gradio app on Heavy `127.0.0.1:7863`. It has no `/process`; its
-  generation endpoints are `/handle_start_button` (generation type, optional start frame, video
-  input, end frame, prompt, negative prompt, seed, length and many more) and `/partial`, plus
-  queue, monitoring and cancel endpoints.
-* Lumen's client only fits the simple FramePack demo (one image input, `/process`, video in the
-  call result). It now refuses FramePack-Studio's shape (`FramePackNeedsAdapter`) instead of
-  guessing. Video stays off (`VIDEO_GENERATION_ENABLED=false`).
-* Next, read-only: `python3 scripts/check-framepack-endpoint.py --url http://127.0.0.1:7863
-  --api-name /handle_start_button --dump /tmp/fp-studio-api.json` on Heavy, then share the JSON.
-  The adapter (generation mode, required fields, job id, queue polling, output file, cancel) is
-  written against that file, then tested with one short canary.
-* UNTESTED: everything about video generation, delivery and playback.
+### FramePack-Studio video: adapter written, contract-tested with fakes, NO GPU run yet
+* Verified by the owner (read-only `/gradio_api/info` and `/config` on Heavy `127.0.0.1:7863`):
+  `/handle_start_button` has 29 inputs in a fixed order; Generation Type choices are Original,
+  Original with Endframe, F1, Video, Video with Endframe, Video F1 (default Original); Caching
+  strategy MagCache/TeaCache/None (default MagCache); Latent Image default Noise. Outputs start
+  with Finished Frames Video and Current Job ID. `/monitor_job` takes the job id.
+* Job lifecycle, from FramePack-Studio's source (`modules/interface.py`, `studio.py`,
+  `modules/video_queue.py`, upstream commit b07b77a; Heavy's exact version not yet confirmed):
+  `/handle_start_button` only adds a job to FP-Studio's queue and returns its uuid at once.
+  `/monitor_job` streams that job's video, progress text and bar until Completed, Error or
+  cancelled, but it always switches to whichever job is running. Files are named
+  `<job id>_<frames>.mp4` in FP-Studio's output folder and served through Gradio's file route.
+  There is no per-job cancel in the API; `end_process`/`end_process_with_update` cancel the
+  current job globally.
+* The adapter (`FramePackStudioProvider`, selected only by `FRAMEPACK_API_NAME=/handle_start_button`):
+  1. Checks the exact contract from `/info` first (29 labels in order, Original offered, monitor
+     and current-job endpoints present). Any difference refuses before anything is uploaded.
+  2. Refuses if FP-Studio is already running a job (`/check_for_current_job_and_monitor`).
+  3. Uploads the start frame and queues one job: Original, start frame only (no video input, no
+     end frame), prompt, negative, fixed seed, randomize off, the requested length, no LoRAs; every
+     other input keeps FP-Studio's own default (640x640, 25 steps, MagCache...).
+  4. Requires a uuid job id, then follows only that job. A video is accepted only if its file name
+     starts with that job id; a switch to another job, an error or a cancel fails the request.
+  5. Never calls `end_process`, `end_process_with_update`, `/partial` or any clear/cancel endpoint.
+     A Lumen timeout leaves the job in FP-Studio's queue (the owner can cancel it in its UI) and
+     names its job id in the failure. The old `/process` client's global stop on timeout is removed.
+* Privacy and concurrency: unchanged Lumen rules. Video jobs are Private-only, backend-only and
+  service-role scoped to the owner; one Lumen GPU job at a time (`GPU_LOCK`); a per-user limit on
+  queued/running jobs. FP-Studio's URL never leaves the backend.
+* Known limit: if someone queues another FP-Studio job by hand while Lumen's is running, the
+  monitor can switch to it before Lumen sees "Completed"; Lumen then fails closed instead of
+  returning the wrong video.
+* Read-only check (no upload, no queue): `python3 scripts/check-framepack-endpoint.py --url
+  http://127.0.0.1:7863 --api-name /handle_start_button` prints the 29 values Lumen would send.
+* Gated GPU canary (owner approval, video still off in Lumen):
+  `python scripts/canary-framepack-studio.py --run-gpu --url http://127.0.0.1:7863 --image
+  /tmp/lumen-canary/lumen-canary.png --seconds 3 --out /tmp/lumen-fps-canary`. One job, 3 seconds,
+  writes only `/tmp/lumen-fps-canary/lumen-fps-canary.mp4` and prints the FP-Studio job id.
+* Still open: the private route from lumen-api to FP-Studio; the canary itself; Chat/Gallery
+  delivery and playback. `VIDEO_GENERATION_ENABLED` stays false until a real canary passes and the
+  owner approves.
 
 ### Private route to FramePack-Studio (decision needed later)
 ComfyUI already has a working private route (above). FramePack-Studio listens on Heavy's loopback
@@ -135,12 +162,12 @@ checkpoint and every node exist.
 
 1. Apply `supabase/migrations/20261116100000_media_generation_jobs.sql` (new table; `chat-media`
    accepts MP4/WebM up to 50 MB).
-2. On Heavy, read-only: find the FramePack install that is actually running (its service or process
-   and port), then run `python3 scripts/check-framepack-endpoint.py --url http://127.0.0.1:<port>`.
-   It lists the named endpoints and inputs and says whether Lumen can fill them. Set
-   `FRAMEPACK_API_NAME` if the endpoint is not `/process`.
+2. On Heavy, read-only: `python3 scripts/check-framepack-endpoint.py --url http://127.0.0.1:7863
+   --api-name /handle_start_button`. It must say the adapter contract is OK. Then the gated GPU
+   canary in Readiness. Set `FRAMEPACK_API_NAME=/handle_start_button`.
 3. Backend `.env`: `COMFYUI_WORKFLOW=<repo>/backend/workflows/biglust-sdxl-v16-api.json`,
-   `COMFYUI_CHECKPOINT=<exact name from the check>`, `VIDEO_GENERATION_ENABLED=true`, `FRAMEPACK_URL=<verified FramePack URL>`.
+   `COMFYUI_CHECKPOINT=<exact name from the check>`, `VIDEO_GENERATION_ENABLED=true` (only after the FramePack-Studio canary and owner approval),
+   `FRAMEPACK_URL=<private route to FramePack-Studio, still to be decided>`.
    Optional: `COMFYUI_T2V_WORKFLOW=/path/wan22_t2v_api.json` exported with "Save (API)" and these
    exact string values: `{{LUMEN_PROMPT}}`, optionally `{{LUMEN_NEGATIVE}}`, `{{LUMEN_SEED}}`,
    `{{LUMEN_FRAMES}}` (4n+1), `{{LUMEN_FPS}}`; output through VideoHelperSuite or SaveVideo as MP4/WebM.
@@ -172,5 +199,5 @@ Not production-ready until the S22 tests in step 5 pass.
 * Five-minute video (segmentation, continuity, stitching): separate capability.
 * Cancelling a running job from the app.
 * Jobs do not survive an API restart; unfinished ones are marked failed on next use.
-* BigLust filename and a generated image are verified on Heavy. The FramePack-Studio adapter, its
-  API labels and a video canary are not; FramePack-Studio stays a separate later step.
+* BigLust filename and a generated image are verified on Heavy. The FramePack-Studio adapter is
+  written against the owner's verified API labels and FP-Studio's source, but has not run on the GPU.

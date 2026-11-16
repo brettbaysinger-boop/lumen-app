@@ -7,6 +7,8 @@ call, so the label mapping in backend/lumen/video_providers.py can be checked ag
 install. Run it on Heavy against whichever FramePack install is actually operational:
 
   python3 scripts/check-framepack-endpoint.py --url http://127.0.0.1:<port> [--api-name /process]
+  python3 scripts/check-framepack-endpoint.py --url http://127.0.0.1:7863 --api-name /handle_start_button
+                                                                  (FramePack-Studio adapter contract)
 Exit status 0 only when the endpoint exists and Lumen can fill its inputs.
 """
 import argparse
@@ -22,6 +24,26 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "backend"))
 def get(url: str):
     with urlopen(url, timeout=10) as response:  # noqa: S310 - operator-supplied local URL
         return json.load(response)
+
+
+def check_studio(endpoints) -> int:
+    """FramePack-Studio: check the exact contract Lumen's adapter was written for. Read-only."""
+    from lumen.video_providers import STUDIO_INPUTS, studio_arguments, studio_contract
+    try:
+        parameters = studio_contract(endpoints)
+    except Exception as exc:  # report, never guess
+        print(f"FramePack-Studio adapter contract: FAILS ({exc})")
+        return 1
+    image = {"path": "check", "meta": {"_type": "gradio.FileData"}}
+    data = studio_arguments(parameters, image=image, prompt="check", negative="", seed=1, seconds=3.0)
+    print("FramePack-Studio adapter contract: OK (29 inputs in the expected order; Original mode offered;")
+    print("  /monitor_job takes the job id; /check_for_current_job_and_monitor reports the running job)")
+    for position, (label, value) in enumerate(zip(STUDIO_INPUTS, data)):
+        shown = "<start frame>" if value is image else value
+        print(f"  {position:2d} {label}: {shown!r}")
+    print("Lumen never calls /end_process_with_update, /partial or any clear/cancel endpoint.")
+    print("RESULT: READY (contract only; nothing was uploaded or queued and no video was generated)")
+    return 0
 
 
 def main() -> int:
@@ -60,6 +82,8 @@ def main() -> int:
         default = p.get("parameter_default") if p.get("parameter_has_default") else "(required)"
         print(f"  input: label={p.get('label')!r} name={p.get('parameter_name')!r} "
               f"component={p.get('component')!r} default={default!r}")
+    if args.api_name == "/handle_start_button":
+        return check_studio(endpoints)
     try:
         from lumen.video_providers import framepack_arguments
         image = {"path": "check", "meta": {"_type": "gradio.FileData"}}

@@ -38,7 +38,7 @@ from .config import get_settings
 from .db import SupabaseRepository
 from .images import ImageProviderError, ImageProviderNotConfigured, compose_image_prompt, create_image_provider
 from .media_safety import ADULT_NEGATIVE, adult_prompt, check_media_prompt, refusal_text
-from .video_providers import FramePackProvider, free_comfy_memory, run_comfy_video_workflow, video_mime
+from .video_providers import framepack_provider, free_comfy_memory, run_comfy_video_workflow, video_mime
 
 log = logging.getLogger(__name__)
 
@@ -349,7 +349,7 @@ async def run_video_job(settings, plan: VideoJobPlan, message_id: str) -> None:
             elif source is not None:
                 # FramePack shares Heavy's GPU with ComfyUI: release ComfyUI's models first.
                 await free_comfy_memory(settings.comfyui_url)
-                result = await FramePackProvider(settings).generate(
+                result = await framepack_provider(settings).generate(
                     source[0], source[1], plan.prompt, seconds=plan.seconds, negative=negative,
                     on_progress=reporter.progress)
             else:

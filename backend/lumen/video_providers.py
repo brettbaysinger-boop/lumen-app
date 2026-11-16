@@ -4,6 +4,9 @@
   Gradio's documented HTTP API: upload, call, stream events, download.
   Inputs are matched by their labels from ``/gradio_api/info`` so a minor UI
   difference between FramePack builds does not silently shift arguments.
+* ``FramePackStudioProvider`` is a narrow adapter for FramePack-Studio's queue API
+  (``/handle_start_button`` enqueues, ``/monitor_job`` follows one job). Its exact
+  input contract is checked against ``/gradio_api/info`` before anything is uploaded.
 * ``run_comfy_video_workflow`` runs an owner-exported ComfyUI API workflow
   (Wan2.2 text-to-video, or an image-to-video graph) with ``{{LUMEN_*}}``
   placeholders, and returns the first video file it produces.
@@ -359,9 +362,264 @@ class FramePackProvider:
                             raise ImageProviderError("FramePack finished without a video.")
                         return path
         except (asyncio.TimeoutError, httpx.ReadTimeout):
-            try:
-                await client.post(f"{root}/call/end_process", json={"data": []})
-            except httpx.HTTPError:
-                pass
+            # No stop call: FramePack's end_process is global and could end someone else's job.
             raise ImageProviderError("FramePack timed out while making the video.")
         raise ImageProviderError("FramePack stopped before the video was finished.")
+
+
+# --------------------------------------------------------------------------- FramePack-Studio
+#
+# Contract taken from the owner's read-only /gradio_api/info and /config on Heavy (2026-11-16)
+# and from FramePack-Studio's source (modules/interface.py, studio.py, modules/video_queue.py):
+# * /handle_start_button only ADDS a job to FP-Studio's queue and returns at once; output 1 is
+#   the new job's id (a uuid4). Output 0 (the video) is empty at that point.
+# * /monitor_job(job_id) streams (video, preview, top preview, desc, html, ...) until the job is
+#   Completed / Error / cancelled. It ALWAYS switches to whichever job is running, so a video is
+#   only accepted when its file name starts with "<our job id>_" (FP-Studio's own naming), and a
+#   switch to another job fails the request instead of reporting someone else's output.
+# * There is no per-job cancel in the API. end_process / end_process_with_update cancel the
+#   CURRENT job globally, so Lumen never calls them. A Lumen timeout leaves the job in FP-Studio.
+
+STUDIO_START = "/handle_start_button"
+STUDIO_MONITOR = "/monitor_job"
+STUDIO_CURRENT = "/check_for_current_job_and_monitor"
+STUDIO_MODE = "Original"  # Heavy has the original FramePackI2V_HY weights, not F1.
+STUDIO_INPUTS = (
+    "Generation Type", "Start Frame (optional)", "Video Input", "End Frame (Optional)",
+    "End Frame Influence", "Prompt", "Negative Prompt", "Seed", "Randomize", "Video Length (Seconds)",
+    "Latent Window Size", "Steps", "CFG Scale", "Distilled CFG Scale", "CFG Re-Scale",
+    "Caching strategy", "TeaCache steps", "TeaCache rel_l1_thresh", "MagCache Threshold",
+    "MagCache Max Consecutive Skips", "MagCache Retention Ratio",
+    "Number of sections to blend between prompts", "Latent Image", "Clean up video files",
+    "Select LoRAs to Load", "Width", "Height", "Combine with source video",
+    "Number of Context Frames (Adherence to Video)",
+)
+_UUID = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")
+
+
+def _label(item: dict[str, Any]) -> str:
+    return str(item.get("label") or "").strip().lower()
+
+
+def _choices(parameter: dict[str, Any]) -> list[Any] | None:
+    kind = parameter.get("type")
+    if isinstance(kind, dict) and isinstance(kind.get("enum"), list):
+        return kind["enum"]
+    return None
+
+
+def studio_contract(endpoints: dict[str, Any]) -> list[dict[str, Any]]:
+    """Check FramePack-Studio's API against the exact contract this adapter was written for.
+
+    Returns the /handle_start_button parameters. Any difference (a new or moved input, a LoRA
+    slider, a missing monitor endpoint, no "Original" mode) raises FramePackNeedsAdapter.
+    """
+    start = endpoints.get(STUDIO_START)
+    parameters = start.get("parameters") if isinstance(start, dict) else None
+    if not isinstance(parameters, list):
+        raise FramePackNeedsAdapter(f"FramePack-Studio has no {STUDIO_START} endpoint.")
+    if len(parameters) != len(STUDIO_INPUTS):
+        raise FramePackNeedsAdapter(
+            f"{STUDIO_START} has {len(parameters)} inputs; this adapter was written for exactly "
+            f"{len(STUDIO_INPUTS)} (LoRA sliders or a newer FramePack-Studio change the order).")
+    for position, (parameter, expected) in enumerate(zip(parameters, STUDIO_INPUTS)):
+        if _label(parameter) != expected.lower():
+            raise FramePackNeedsAdapter(
+                f"{STUDIO_START} input {position} is '{parameter.get('label')}', expected '{expected}'.")
+    mode = parameters[0]
+    choices = _choices(mode)
+    if not (STUDIO_MODE in (choices or []) or (choices is None and mode.get("parameter_default") == STUDIO_MODE)):
+        raise FramePackNeedsAdapter(f"FramePack-Studio does not offer the '{STUDIO_MODE}' generation type.")
+    returns = start.get("returns") or []
+    if len(returns) < 2 or _label(returns[0]) != "finished frames video" or _label(returns[1]) != "current job id":
+        raise FramePackNeedsAdapter(f"{STUDIO_START} does not return (video, job id) first.")
+    monitor = endpoints.get(STUDIO_MONITOR)
+    monitor_in = monitor.get("parameters") if isinstance(monitor, dict) else None
+    monitor_out = (monitor or {}).get("returns") or [] if isinstance(monitor, dict) else []
+    if not isinstance(monitor_in, list) or len(monitor_in) != 1 or _label(monitor_in[0]) != "current job id":
+        raise FramePackNeedsAdapter(f"{STUDIO_MONITOR} does not take exactly the job id.")
+    if len(monitor_out) < 5 or _label(monitor_out[0]) != "finished frames video":
+        raise FramePackNeedsAdapter(f"{STUDIO_MONITOR} does not return the video first.")
+    current = endpoints.get(STUDIO_CURRENT)
+    current_out = current.get("returns") or [] if isinstance(current, dict) else []
+    if not isinstance(current, dict) or (current.get("parameters") or []) or not current_out \
+            or _label(current_out[0]) != "current job id":
+        raise FramePackNeedsAdapter(f"{STUDIO_CURRENT} is missing or changed; Lumen cannot see if FP-Studio is busy.")
+    return parameters
+
+
+def studio_arguments(parameters: list[dict[str, Any]], *, image: dict[str, Any], prompt: str,
+                     negative: str, seed: int, seconds: float) -> list[Any]:
+    """The 29 /handle_start_button values: Original image-to-video, one start frame, no video input,
+    no end frame, no LoRAs, a fixed seed. Every other input keeps FP-Studio's own default."""
+    ours: dict[int, Any] = {0: STUDIO_MODE, 1: image, 2: None, 3: None, 5: prompt, 6: negative,
+                            7: seed, 8: False, 9: seconds, 24: []}
+    data: list[Any] = []
+    for position, parameter in enumerate(parameters):
+        if position in ours:
+            data.append(ours[position])
+        elif parameter.get("parameter_has_default"):
+            data.append(parameter.get("parameter_default"))
+        else:
+            raise FramePackNeedsAdapter(f"{STUDIO_START} input '{parameter.get('label')}' has no default.")
+    return data
+
+
+def _value(item: Any) -> Any:
+    """A Gradio output value, unwrapping {"__type__": "update", "value": ...}."""
+    if isinstance(item, dict) and item.get("__type__") == "update":
+        return item.get("value")
+    return item
+
+
+def studio_job_id(values: Any) -> str | None:
+    if not isinstance(values, list) or len(values) < 2:
+        return None
+    job_id = _value(values[1])
+    job_id = job_id.strip() if isinstance(job_id, str) else ""
+    return job_id if _UUID.match(job_id) else None
+
+
+def studio_video_for(values: Any, job_id: str) -> str | None:
+    """The video path from a monitor update, only if FP-Studio named it after this job."""
+    if not isinstance(values, list) or not values:
+        return None
+    path = framepack_video_path([_value(values[0])])
+    if not path:
+        return None
+    name = path.replace("\\", "/").rsplit("/", 1)[-1]
+    return path if name.startswith(f"{job_id}_") and name.endswith(".mp4") else None
+
+
+def studio_desc(values: Any) -> str:
+    if not isinstance(values, list) or len(values) < 4:
+        return ""
+    desc = _value(values[3])
+    return desc.strip() if isinstance(desc, str) else ""
+
+
+class FramePackStudioProvider(FramePackProvider):
+    """FramePack-Studio on Heavy: enqueue one Original image-to-video job, follow only that job."""
+
+    name = "framepack-studio"
+
+    async def _info(self, client: httpx.AsyncClient) -> tuple[str, dict[str, Any]]:
+        for prefix in ("/gradio_api", ""):
+            try:
+                response = await client.get(f"{self.base_url}{prefix}/info")
+            except httpx.HTTPError:
+                continue
+            if response.is_success:
+                return prefix, (response.json() or {}).get("named_endpoints") or {}
+        raise ImageProviderError("FramePack-Studio is not reachable.")
+
+    async def _endpoint(self, client: httpx.AsyncClient) -> tuple[str, list[dict[str, Any]]]:
+        prefix, endpoints = await self._info(client)
+        return prefix, studio_contract(endpoints)
+
+    async def _events(self, client: httpx.AsyncClient, root: str, api: str, data: list[Any],
+                      deadline: float):
+        call = await client.post(f"{root}/call{api}", json={"data": data})
+        call.raise_for_status()
+        event_id = (call.json() or {}).get("event_id")
+        if not isinstance(event_id, str) or not event_id:
+            raise ImageProviderError("FramePack-Studio did not accept the request.")
+        event = ""
+        remaining = max(1.0, deadline - time.monotonic())
+        async with client.stream("GET", f"{root}/call{api}/{event_id}",
+                                 timeout=httpx.Timeout(30, read=remaining)) as stream:
+            async for line in stream.aiter_lines():
+                if time.monotonic() > deadline:
+                    raise asyncio.TimeoutError
+                if line.startswith("event:"):
+                    event = line[6:].strip()
+                elif line.startswith("data:"):
+                    payload = line[5:].strip()
+                    try:
+                        values = json.loads(payload) if payload else None
+                    except json.JSONDecodeError:
+                        values = None
+                    if event == "error":
+                        raise ImageProviderError("FramePack-Studio reported an error.")
+                    yield event, values
+                    if event == "complete":
+                        return
+
+    async def _last(self, client, root, api, data, deadline) -> Any:
+        last = None
+        async for event, values in self._events(client, root, api, data, deadline):
+            if event in ("generating", "complete"):
+                last = values
+        return last
+
+    async def generate(self, image: bytes, mime_type: str, prompt: str, *, seconds: float,
+                       negative: str = "", on_progress: Progress = _no_progress) -> dict[str, Any]:
+        if not self.base_url:
+            raise ImageProviderNotConfigured("FramePack-Studio is not configured.")
+        started = time.perf_counter()
+        deadline = time.monotonic() + self.timeout
+        seed = secrets.randbelow(21474)
+        job_id = None
+        async with httpx.AsyncClient(timeout=httpx.Timeout(60, read=120)) as client:
+            prefix, parameters = await self._endpoint(client)
+            root = f"{self.base_url}{prefix}"
+            try:
+                current = await self._last(client, root, STUDIO_CURRENT, [], deadline)
+                if isinstance(current, list) and current and _value(current[0]):
+                    raise ImageProviderError("FramePack-Studio is busy with another job. Try again when it is free.")
+                ext = {"image/png": "png", "image/jpeg": "jpg", "image/webp": "webp"}.get(mime_type, "png")
+                uploaded = await client.post(f"{root}/upload",
+                                             files=[("files", (f"lumen-source.{ext}", image, mime_type))])
+                uploaded.raise_for_status()
+                paths = uploaded.json()
+                if not isinstance(paths, list) or not paths or not isinstance(paths[0], str):
+                    raise ImageProviderError("FramePack-Studio did not accept the source image.")
+                file_data = {"path": paths[0], "meta": {"_type": "gradio.FileData"}}
+                data = studio_arguments(parameters, image=file_data, prompt=prompt, negative=negative,
+                                        seed=seed, seconds=seconds)
+                job_id = studio_job_id(await self._last(client, root, STUDIO_START, data, deadline))
+                if not job_id:
+                    raise ImageProviderError("FramePack-Studio did not return a job id.")
+                await on_progress(5, "Animating…")
+                result_path = await self._follow_job(client, root, job_id, seconds, on_progress, deadline)
+            except (asyncio.TimeoutError, httpx.ReadTimeout):
+                # Never a stop call: FP-Studio has no per-job cancel, and end_process is global.
+                left = f" Its job {job_id} was left in FramePack-Studio's queue." if job_id else ""
+                raise ImageProviderError(f"FramePack-Studio did not finish in time.{left}")
+            await on_progress(97, "Saving the video…")
+            video = await client.get(f"{root}/file={result_path}")
+            video.raise_for_status()
+        return {"bytes": video.content, "mime_type": "video/mp4", "provider": self.name,
+                "model": f"framepack-studio:{STUDIO_MODE}", "job_id": job_id,
+                "latency_ms": round((time.perf_counter() - started) * 1000)}
+
+    async def _follow_job(self, client, root: str, job_id: str, seconds: float, on_progress: Progress,
+                          deadline: float) -> str:
+        video = None
+        async for event, values in self._events(client, root, STUDIO_MONITOR, [job_id], deadline):
+            if event not in ("generating", "complete"):
+                continue
+            video = studio_video_for(values, job_id) or video
+            desc = studio_desc(values)
+            if desc.startswith("Switching to current job"):
+                raise ImageProviderError("FramePack-Studio switched to another job before this one finished.")
+            if desc.startswith("Error"):
+                raise ImageProviderError("FramePack-Studio could not finish the video.")
+            if desc in ("Job cancelled", "No job ID provided"):
+                raise ImageProviderError("FramePack-Studio stopped this job.")
+            if desc == "Completed":
+                if not video:
+                    raise ImageProviderError("FramePack-Studio finished without this job's video.")
+                return video
+            percent = framepack_progress(values if isinstance(values, list) else [], seconds)
+            if percent is not None:
+                await on_progress(percent, "Animating…")
+        raise ImageProviderError("FramePack-Studio stopped reporting before the video was finished.")
+
+
+def framepack_provider(settings) -> FramePackProvider:
+    """FRAMEPACK_API_NAME=/handle_start_button selects the FramePack-Studio adapter explicitly."""
+    api = settings.framepack_api_name.strip()
+    if api in (STUDIO_START, STUDIO_START.lstrip("/")):
+        return FramePackStudioProvider(settings)
+    return FramePackProvider(settings)

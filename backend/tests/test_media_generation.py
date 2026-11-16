@@ -356,7 +356,7 @@ class DeliveryTests(unittest.IsolatedAsyncioTestCase):
             "bytes": b"MP4", "mime_type": "video/mp4", "provider": "framepack", "model": "framepack", "latency_ms": 9}))
         with patch.object(mj, "_service_db", return_value=db), \
                 patch.object(mj, "create_image_provider", return_value=image_provider), \
-                patch.object(mj, "FramePackProvider", return_value=framepack), \
+                patch.object(mj, "framepack_provider", return_value=framepack), \
                 patch.object(mj, "free_comfy_memory", AsyncMock()) as free:
             await mj.run_video_job(video_settings(), self.plan(), "msg-1")
         free.assert_awaited()                                   # VRAM released before FramePack
@@ -376,7 +376,7 @@ class DeliveryTests(unittest.IsolatedAsyncioTestCase):
         framepack = SimpleNamespace(generate=AsyncMock(side_effect=ImageProviderError("FramePack is not reachable.")))
         with patch.object(mj, "_service_db", return_value=db), \
                 patch.object(mj, "download_storage", AsyncMock(return_value=b"JPG")), \
-                patch.object(mj, "FramePackProvider", return_value=framepack), \
+                patch.object(mj, "framepack_provider", return_value=framepack), \
                 patch.object(mj, "free_comfy_memory", AsyncMock()):
             await mj.run_video_job(video_settings(), self.plan("i2v", source_path=f"{USER_ID}/p.jpg",
                                                                source_mime="image/jpeg"), "msg-1")
@@ -391,7 +391,7 @@ class DeliveryTests(unittest.IsolatedAsyncioTestCase):
             "bytes": b"x" * 2048, "mime_type": "video/mp4", "provider": "framepack", "model": "f", "latency_ms": 1}))
         with patch.object(mj, "_service_db", return_value=db), \
                 patch.object(mj, "download_storage", AsyncMock(return_value=b"JPG")), \
-                patch.object(mj, "FramePackProvider", return_value=framepack), \
+                patch.object(mj, "framepack_provider", return_value=framepack), \
                 patch.object(mj, "free_comfy_memory", AsyncMock()):
             await mj.run_video_job(video_settings(video_max_bytes=1024),
                                    self.plan("i2v", source_path=f"{USER_ID}/p.jpg", source_mime="image/jpeg"), "m")
@@ -508,7 +508,7 @@ class JobRouteTests(unittest.IsolatedAsyncioTestCase):
 class FramePackCheckScriptTests(unittest.TestCase):
     """scripts/check-framepack-endpoint.py is read-only and reports the real install's inputs."""
 
-    def run_check(self, endpoints):
+    def run_check(self, endpoints, api_name=None):
         import subprocess, sys, threading
         from http.server import BaseHTTPRequestHandler, HTTPServer
         from pathlib import Path
@@ -531,7 +531,8 @@ class FramePackCheckScriptTests(unittest.TestCase):
         threading.Thread(target=server.serve_forever, daemon=True).start()
         script = Path(__file__).resolve().parents[2] / "scripts" / "check-framepack-endpoint.py"
         try:
-            return subprocess.run([sys.executable, str(script), "--url", f"http://127.0.0.1:{server.server_port}"],
+            extra = ["--api-name", api_name] if api_name else []
+            return subprocess.run([sys.executable, str(script), "--url", f"http://127.0.0.1:{server.server_port}", *extra],
                                   capture_output=True, text=True, timeout=30)
         finally:
             server.shutdown()
