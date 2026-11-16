@@ -35,6 +35,7 @@ from .images import (
     compose_image_prompt,
     create_image_provider,
 )
+from .media_safety import adult_prompt, check_media_prompt, refusal_text
 from .portrait_creation import router as portrait_router
 from .push import router as push_router
 from .voice import router as voice_router
@@ -218,6 +219,10 @@ async def generate_image(
         if not conversation:
             raise HTTPException(status_code=404, detail="Conversation not found")
 
+    verdict = check_media_prompt(request.prompt)
+    if not verdict.allowed:
+        raise HTTPException(status_code=422, detail=refusal_text(verdict))
+
     resolved_prompt, image_subject = compose_image_prompt(
         request.prompt,
         companion.get("name", ""),
@@ -226,7 +231,7 @@ async def generate_image(
 
     try:
         provider = create_image_provider(settings)
-        result = await provider.generate(resolved_prompt)
+        result = await provider.generate(adult_prompt(resolved_prompt, verdict))
     except ImageProviderNotConfigured as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
     except ImageProviderError as exc:

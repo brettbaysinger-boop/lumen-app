@@ -49,6 +49,14 @@ class Settings(BaseSettings):
     comfyui_url: str = ""
     comfyui_workflow: str = ""
     image_generation_timeout: int = Field(default=300, ge=30, le=1800)
+    # Checkpoint for workflows that use {{LUMEN_CHECKPOINT}} (e.g. the BigLust SDXL v1.6
+    # workflow). Exact filename as ComfyUI lists it; never guessed by Lumen.
+    comfyui_checkpoint: str = ""
+    # Used where a workflow has {{LUMEN_NEGATIVE}}. Always keeps the anti-minor terms.
+    comfyui_negative_prompt: str = (
+        "lowres, bad anatomy, bad hands, extra fingers, deformed, blurry, watermark, text, "
+        "child, minor, underage, teen, childlike body"
+    )
 
     # Memory backend selector. "supabase" (default) keeps the existing Lumen
     # memory tables as the only store. "rmc" routes chat memory reads and
