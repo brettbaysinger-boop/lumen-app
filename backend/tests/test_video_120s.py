@@ -195,6 +195,9 @@ class CheckScriptMaximumTests(unittest.TestCase):
         self.assertIn("not readable", unknown.stdout)
 
 
+@unittest.skipUnless((REPO / "supabase/migrations/20261116210000_media_generation_jobs_120s.sql").is_file()
+                     and (REPO / "supabase/migrations/20261116100000_media_generation_jobs.sql").is_file(),
+                     "this copy has no supabase/migrations (a backend-only copy)")
 class MigrationTests(unittest.TestCase):
     def test_new_forward_only_migration_and_the_applied_one_is_untouched(self):
         first = (REPO / "supabase/migrations/20261116100000_media_generation_jobs.sql").read_text()
