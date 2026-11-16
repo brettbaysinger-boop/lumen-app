@@ -1,27 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useAuth } from '@/lib/auth';
 import { supabase } from '@/lib/supabase';
+import { projectSnapshotUrl } from './snapshot-url';
 import { fetchSnapshot, loadDemoSnapshot, type SnapshotResult } from './client';
 
 export type SourceMode = 'demo' | 'live';
-
-/**
- * Build the ONLY approved Projects API URL from the same Lumen API origin
- * already used by the RMC Memories panel. The GitHub credential is NEVER
- * provided to the client. No arbitrary snapshot URL may receive bearer auth.
- */
-export function projectSnapshotUrl(base: string | undefined): string | undefined {
-  if (!base?.trim()) return undefined;
-  try {
-    const raw = base.trim().replace(/\/+$/, '');
-    const url = new URL(raw);
-    const loopback = ['127.0.0.1', 'localhost', '[::1]'].includes(url.hostname);
-    if ((url.protocol !== 'https:' && !(url.protocol === 'http:' && loopback)) ||
-        url.username || url.password || url.search || url.hash ||
-        (url.pathname !== '/' && url.pathname !== '')) return undefined;
-    return raw + '/v0.1/project-steward/snapshot/v1.1';
-  } catch { return undefined; }
-}
 
 export const LIVE_SNAPSHOT_URL = projectSnapshotUrl(process.env.EXPO_PUBLIC_LUMEN_API_URL);
 
