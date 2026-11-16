@@ -125,7 +125,10 @@ It is enabled and started; with video off it logs "nothing to do" and exits 0. T
 sets `SUPABASE_*`/`VIDEO_*`/`FRAMEPACK_*`/`COMFYUI_*` inline, because the worker would not see them.
 Way back: `VIDEO_RELEASE_CONFIRM=worker-rollback scripts/video-release.sh worker-rollback`.
 
-## Stage 5: web app (Gallery Public lock, chat video, progress). Preflight READY (owner, 2026-11-16); update pending
+## Stage 5: web app (Gallery Public lock, chat video, progress). APPLIED (owner, 2026-11-16); privacy check pending
+
+Updated: `/home/brett/lumen-push @ 9ed473748740`, with no service restarted. Do not redeploy. Pending: in Public,
+Gallery is hidden; in Private, Gallery and a BigLust image work as before.
 
 `check` from a clean worktree at `9ed4737` gave:
 * one fast-forward from `7f63d520f561`;
