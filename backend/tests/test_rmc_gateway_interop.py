@@ -168,6 +168,55 @@ class GatewayInterop(unittest.IsolatedAsyncioTestCase):
     def companion(self, cid=ADA_COMPANION, owner=ADA):
         return {"id": cid, "owner_user_id": owner, "name": "Lumen"}
 
+    async def test_private_transcript_cross_session_roundtrip_at_gateway(self):
+        """Synthetic full dialogue survives the real Unix/HMAC gateway boundary.
+
+        Engine is an isolated in-process stand-in: does NOT prove Hindsight
+        extraction relevance, but DOES prove the payload, source scoping and
+        round-trip into an unrelated new session.
+        """
+        import json
+        from lumen.rmc_transcript import transcript_parts
+
+        old_session = CHAT
+        new_session = "00000000-0000-4000-8000-00000000d123"
+        user = {
+            "id": "00000000-0000-4000-8000-00000000f031",
+            "role": "user", "content": "I think I'll call you Sunny.",
+            "created_at": "2026-11-18T10:00:00Z",
+        }
+        assistant = {
+            "id": "00000000-0000-4000-8000-00000000f032",
+            "role": "assistant", "content": "You got it, Sunny sounds lovely!",
+            "created_at": "2026-11-18T10:00:01Z",
+        }
+        memory = self.memory()
+        for row in (user, assistant):
+            parts = transcript_parts(row)
+            for index, fragment in enumerate(parts):
+                key = "transcript:" + row["id"] + ":" + str(index)
+                self.assertEqual(
+                    await memory.remember(self.companion(), old_session, key, fragment),
+                    "saved",
+                )
+                self.assertEqual(
+                    await memory.remember(self.companion(), old_session, key, fragment),
+                    "existing",
+                )
+
+        status, rows = await memory.relevant(
+            self.companion(), new_session,
+            "What did we agree to call each other?",
+        )
+        self.assertEqual(status, "ok")
+        recovered = [json.loads(row["content"].split("\n", 1)[1]) for row in rows]
+        self.assertEqual(
+            [item["text"] for item in recovered],
+            [user["content"], assistant["content"]],
+        )
+        self.assertEqual([item["role"] for item in recovered], ["USER", "ASSISTANT"])
+        self.assertEqual(len(self.engine.saved), 2)
+
     async def test_save_retry_and_recall_through_real_boundary(self):
         memory = self.memory()
         self.assertEqual(await memory.remember(self.companion(), CHAT, "req-1", FACT), "saved")
