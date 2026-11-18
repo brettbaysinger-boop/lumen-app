@@ -13,7 +13,8 @@ import re
 # Positive consent must be unambiguous and brief. A negative or hypothetical
 # statement cannot be laundered into an accepted shared memory.
 _ACCEPT = re.compile(
-    r"(?:\b(?:yes|yeah|yep|absolutely|definitely|perfect|agreed)\b|"
+    r"(?:\b(?:yes|yeah|yep|absolutely|definitely|perfect|agreed|sure|ok|okay)\b|"
+    r"\b(?:you got it|sounds good|works for me|of course|i'?m in)\b|"
     r"\b(?:i|we) (?:love|like|adore) (?:it|that|those|the name|that name|"
     r"these names|those names|that nickname|the nickname|our nickname|them all)\b|"
     r"\b(?:let'?s|we should) (?:use|keep|go with|stick with) (?:it|that|"
@@ -32,6 +33,7 @@ _VETO = re.compile(
 _NAME_PROPOSAL = re.compile(
     r"(?:\b(?:call (?:you|me|us|ourselves)|"
     r"you can call me|i(?:'ll| will) call you|"
+    r"i(?:'m| am) going to call you|"
     r"let'?s call (?:you|me|us|ourselves)|"
     r"we(?:'ll| will| could| should) call ourselves|"
     r"we(?:'ll| will| could) be known as|"

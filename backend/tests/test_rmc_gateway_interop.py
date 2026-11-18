@@ -168,6 +168,48 @@ class GatewayInterop(unittest.IsolatedAsyncioTestCase):
     def companion(self, cid=ADA_COMPANION, owner=ADA):
         return {"id": cid, "owner_user_id": owner, "name": "Lumen"}
 
+    async def test_private_transcript_cross_session_roundtrip_at_gateway(self):
+        """Combined fictional dialogue crosses the real authenticated Unix gateway.
+
+        This test isolates gateway transport, identity and replay. Actual Hindsight
+        extraction/semantic quality is separately covered by the owner-run D01-68I.
+        """
+        from lumen.rmc_transcript import exchange_parts
+
+        new_session = "00000000-0000-4000-8000-00000000d123"
+        user = {
+            "id": "00000000-0000-4000-8000-00000000f031",
+            "role": "user", "content": "I think I'll call you Marigold.",
+            "created_at": "2026-11-18T10:00:00Z",
+        }
+        assistant = {
+            "id": "00000000-0000-4000-8000-00000000f032",
+            "role": "assistant", "content": "Marigold it is. I like that!",
+            "created_at": "2026-11-18T10:00:01Z",
+        }
+        parts = exchange_parts(user, assistant)
+        self.assertEqual(len(parts), 1)
+        memory = self.memory()
+        key = f"exchange:{user['id']}:0"
+        self.assertEqual(
+            await memory.remember(self.companion(), CHAT, key, parts[0]),
+            "saved",
+        )
+        self.assertEqual(
+            await memory.remember(self.companion(), CHAT, key, parts[0]),
+            "existing",
+        )
+        status, rows = await memory.relevant(
+            self.companion(), new_session,
+            "What nickname did the user and companion agree to use?",
+        )
+        self.assertEqual(status, "ok")
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["content"], parts[0])
+        self.assertIn(user["content"], rows[0]["content"])
+        self.assertIn(assistant["content"], rows[0]["content"])
+        self.assertEqual(len(self.engine.saved), 1)
+
     async def test_save_retry_and_recall_through_real_boundary(self):
         memory = self.memory()
         self.assertEqual(await memory.remember(self.companion(), CHAT, "req-1", FACT), "saved")

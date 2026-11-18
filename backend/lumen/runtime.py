@@ -367,12 +367,19 @@ class CognitionRuntime:
             and ((12 <= len(user_message.strip()) <= 2000)
                  or accepted_name is not None)
         )
+        rmc_transcript_eligible = (
+            rmc_memory is not None
+            and getattr(self.settings, "rmc_auto_ingest_enabled", False) is True
+            and companion.get("auto_memory_enabled") is not False
+            and getattr(self, "privacy_mode", "private") == "private"
+        )
         user_row = await self.db.create_message({
             "conversation_id": conversation_id,
             "companion_id": companion_id,
             "role": "user",
             "content": user_message,
             "metadata": {**({"rmc_auto_state": "pending"} if rmc_auto_eligible else {}),
+                         **({"rmc_transcript_state": "pending"} if rmc_transcript_eligible else {}),
                          **({"attachments": [a.model_dump() for a in attachments]} if attachments else {}),
                          **({"document_id": document_id, "document_title": action.get("document_title")} if document_id else {})},
         })
@@ -463,6 +470,10 @@ class CognitionRuntime:
 
         await self.db.touch_conversation(conversation_id, 2)
 
+        # Private dialogue archive is independent of the selective fact gate.
+        # Both rows already exist before either ID becomes eligible for transfer.
+        self.rmc_transcript_user_id = str(user_row["id"]) if rmc_transcript_eligible else None
+        self.rmc_transcript_assistant_id = str(assistant_row["id"]) if rmc_transcript_eligible else None
         # Internal-only scheduling handle. Do not repurpose the Supabase
         # observation_message_id response field: it drives old UI workflows.
         self.rmc_auto_message_id = str(user_row["id"]) if rmc_auto_eligible else None

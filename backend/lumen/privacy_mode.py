@@ -37,7 +37,7 @@ MESSAGE_TAG = "privacy_mode"   # messages.metadata key written on every Public-m
 # older Supabase observations). Forced off for the Public runtime's own settings view.
 PUBLIC_DISABLED_SETTINGS = {"rmc_auto_ingest_enabled": False, "memory_observations_enabled": False}
 # Message metadata keys that would queue background learning. Never written from Public.
-LEARNING_METADATA_PREFIXES = ("rmc_auto_",)
+LEARNING_METADATA_PREFIXES = ("rmc_auto_", "rmc_transcript_")
 
 # Tables a Public-mode turn may touch, by HTTP method. Everything else is denied.
 PUBLIC_ACCESS: dict[str, frozenset[str]] = {
