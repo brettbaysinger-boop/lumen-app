@@ -110,6 +110,12 @@ class PublicModeRmcAutoIngestTests(unittest.TestCase):
             len([key for key, _ in FakeRmc.writes if key.startswith("auto:")]), 1
         )
 
+    def test_private_blocking_turn_also_archives_and_extracts(self):
+        self.send("/v0.1/respond", "private")
+        self.assertEqual(len(self.scheduled), 1)
+        self.assertEqual(len(self.transcript_scheduled), 1)
+        self.assertEqual(len(FakeRmc.writes), 3)
+
     def test_public_stream_turn_schedules_nothing_and_writes_nothing(self):
         self.send("/v0.2/respond/stream", "public")
         self.assertEqual(self.scheduled, [])
