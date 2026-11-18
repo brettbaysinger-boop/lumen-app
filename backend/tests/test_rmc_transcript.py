@@ -4,7 +4,7 @@ import unittest
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
-from lumen.rmc_transcript import transcript_parts, ingest_private_exchange
+from lumen.rmc_transcript import transcript_parts, exchange_parts, ingest_private_exchange
 from lumen.rmc_shared_nicknames import agreed_nicknames
 
 USER = "00000000-0000-4000-8000-00000000ada1"
@@ -44,6 +44,53 @@ class TranscriptFormatTests(unittest.TestCase):
     def test_bad_roles_refused(self):
         with self.assertRaises(ValueError):
             transcript_parts({"id": USER_ID, "role": "system", "content": "hi"})
+
+
+class CombinedExchangeFormatTests(unittest.TestCase):
+    def _rows(self, user_text, assistant_text):
+        user = {"id": USER_ID, "role": "user", "content": user_text,
+                "created_at": "2026-11-18T12:00:00Z"}
+        assistant = {"id": ASSISTANT_ID, "role": "assistant", "content": assistant_text,
+                     "created_at": "2026-11-18T12:00:01Z"}
+        return user, assistant
+
+    def test_small_exchange_matches_real_hindsight_accepted_format(self):
+        user, assistant = self._rows(
+            "I was thinking, I would like to call you Marigold from now on.",
+            "I like that! Marigold it is. That can be our nickname.",
+        )
+        values = exchange_parts(user, assistant)
+        self.assertEqual(values, [
+            "USER (2026-11-18T12:00:00Z): " + user["content"] + "\n"
+            "ASSISTANT (2026-11-18T12:00:01Z): " + assistant["content"]
+        ])
+        self.assertEqual(len(values), 1)
+
+    def test_long_exchange_is_lossless_and_bounded(self):
+        user, assistant = self._rows("A" * 17000 + "\n" + "B" * 2800,
+                                      "C" * 9500 + "\n" + "D" * 4500)
+        parts = exchange_parts(user, assistant)
+        self.assertGreater(len(parts), 2)
+        self.assertTrue(all(len(part) < 10000 for part in parts))
+        user_payloads, assistant_payloads = [], []
+        for index, part in enumerate(parts):
+            self.assertTrue(part.startswith(
+                f"Conversation exchange part {index+1}/{len(parts)}:\n"))
+            speaker_line = part.split("\n", 1)[1]
+            if speaker_line.startswith("USER (2026-11-18T12:00:00Z): "):
+                user_payloads.append(speaker_line.partition("): ")[2])
+            elif speaker_line.startswith("ASSISTANT (2026-11-18T12:00:01Z): "):
+                assistant_payloads.append(speaker_line.partition("): ")[2])
+            else:
+                self.fail("speaker attribution lost")
+        self.assertEqual("".join(user_payloads), user["content"])
+        self.assertEqual("".join(assistant_payloads), assistant["content"])
+
+    def test_invalid_roles_or_content_refused(self):
+        user, assistant = self._rows("Hi.", "Hello.")
+        assistant["role"] = "system"
+        with self.assertRaises(ValueError):
+            exchange_parts(user, assistant)
 
 
 class PrivateExchangeTests(unittest.IsolatedAsyncioTestCase):
@@ -100,21 +147,20 @@ class PrivateExchangeTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_both_roles_saved_without_extractor_and_confirmed(self):
         await self._run()
-        self.assertEqual(self.engine.remember.await_count, 2)
+        self.assertEqual(self.engine.remember.await_count, 1)
         calls = self.engine.remember.await_args_list
-        self.assertEqual(calls[0].args[2], f"transcript:{USER_ID}:0")
-        self.assertEqual(calls[1].args[2], f"transcript:{ASSISTANT_ID}:0")
-        self.assertIn("Sure, that works for me.", calls[0].args[3])
-        self.assertIn("You got it!", calls[1].args[3])
+        self.assertEqual(calls[0].args[2], f"exchange:{USER_ID}:0")
+        self.assertIn("USER (2026-11-18T00:00:00Z): Sure, that works for me.", calls[0].args[3])
+        self.assertIn("ASSISTANT (2026-11-18T00:00:01Z): You got it!", calls[0].args[3])
         self.assertEqual(self.patches[0]["rmc_transcript_state"], "saved")
-        self.assertEqual(self.patches[0]["rmc_transcript_confirmed_parts"], 2)
-        self.assertEqual(self.patches[0]["rmc_transcript_total_parts"], 2)
+        self.assertEqual(self.patches[0]["rmc_transcript_confirmed_parts"], 1)
+        self.assertEqual(self.patches[0]["rmc_transcript_total_parts"], 1)
         self.assertEqual(self.patches[0]["original"], "retain")
 
     async def test_second_execution_never_duplicate_writes(self):
         await self._run()
         await self._run()
-        self.assertEqual(self.engine.remember.await_count, 2)
+        self.assertEqual(self.engine.remember.await_count, 1)
 
     async def test_uncertain_does_not_claim_save(self):
         self.engine.remember.return_value = "unconfirmed"
