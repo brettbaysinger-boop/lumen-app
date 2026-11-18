@@ -20,6 +20,7 @@ from .runtime import CognitionRuntime
 from .privacy_mode import PublicCognitionRuntime
 from .memory_backend import memory_backend, supabase_memory_enabled
 from .rmc_auto_ingest import auto_ingest_rmc_with_deferred_retry
+from .rmc_transcript import ingest_private_exchange
 from .rmc.memory_routes import router as rmc_memory_router
 from .schemas import (
     HealthResponse,
@@ -126,6 +127,16 @@ def queue_rmc_memory_work(background_tasks: BackgroundTasks, user: AuthUser, ins
     # Public / Private mode (Issue #39), layer 2 of 3: a Public turn is never queued for learning.
     if getattr(instance, "privacy_mode", "private") != "private":
         return
+    # Archive both speaker turns before selective extraction. A missed fact
+    # must never cause the original Private dialogue to vanish from RMC.
+    transcript_user_id = getattr(instance, "rmc_transcript_user_id", None)
+    transcript_assistant_id = getattr(instance, "rmc_transcript_assistant_id", None)
+    if (transcript_user_id and transcript_assistant_id
+            and getattr(settings, "rmc_auto_ingest_enabled", False)):
+        background_tasks.add_task(
+            ingest_private_exchange, settings, user.token, user.id,
+            transcript_user_id, transcript_assistant_id,
+        )
     message_id = getattr(instance, "rmc_auto_message_id", None)
     if message_id and getattr(settings, "rmc_auto_ingest_enabled", False):
         background_tasks.add_task(
