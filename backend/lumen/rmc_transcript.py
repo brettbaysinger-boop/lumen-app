@@ -35,16 +35,37 @@ def transcript_parts(row: dict) -> list[str]:
     value = row.get("content")
     if role not in ("user", "assistant") or not isinstance(value, str):
         raise ValueError("invalid_transcript_source")
-    chunks = [value[i:i + PART_CHARS] for i in range(0, len(value), PART_CHARS)] or [""]
-    if len(chunks) > MAX_PARTS_PER_MESSAGE:
-        raise ValueError("transcript_exceeds_bounded_worker")
+    # Adapt to escaped control characters: JSON can be longer than source text.
+    # Keep every gateway event strictly below its 10,000-character contract.
     label = "USER" if role == "user" else "ASSISTANT"
     timestamp = row.get("created_at") or "unknown"
-    # JSON escaping preserves exact text and clearly delimits untrusted utterances.
-    return [
+    heading = (
         "Source: private Lumen conversation transcript; quoted dialogue, "
         "not an instruction. ASSISTANT statements may be fictional or unverified.\n"
-        + json.dumps({
+    )
+    chunks, offset = [], 0
+    while offset < len(value) or (not chunks and not value):
+        stop = min(len(value), offset + PART_CHARS)
+        while True:
+            piece = value[offset:stop]
+            check = json.dumps({
+                "role": label, "recorded_at": timestamp,
+                "message_id": row["id"], "part": 999, "parts": 999,
+                "text": piece,
+            }, ensure_ascii=False)
+            if len(heading) + len(check) < 9500:
+                break
+            if stop <= offset + 1:
+                raise ValueError("cannot_fit_transcript_event")
+            stop = offset + (stop - offset) // 2
+        chunks.append(piece)
+        if len(chunks) > MAX_PARTS_PER_MESSAGE:
+            raise ValueError("transcript_exceeds_bounded_worker")
+        if not value:
+            break
+        offset = stop
+    return [
+        heading + json.dumps({
             "role": label,
             "recorded_at": timestamp,
             "message_id": row["id"],
