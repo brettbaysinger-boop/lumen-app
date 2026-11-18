@@ -1,7 +1,7 @@
 """D01-67: preserve complete Private text exchanges in RMC independently of fact extraction.
 
 Lumen's original message rows remain the source of truth. This worker sends
-verbatim, speaker-attributed text segments to the existing authenticated RMC
+verbatim, speaker-attributed conversation exchanges to the existing authenticated RMC
 gateway, never to a cloud service or Supabase memory table. It runs only after
 BOTH chat rows are durably created. Public-tagged rows are always refused.
 
@@ -77,6 +77,50 @@ def transcript_parts(row: dict) -> list[str]:
     ]
 
 
+def exchange_parts(user: dict, assistant: dict) -> list[str]:
+    """Archive a complete, speaker-attributed exchange as one RMC source when it fits.
+
+    D01-68I real Hindsight validated this plain-text format. The common case
+    carries BOTH speakers in one document; a long exchange is broken into
+    attributed, ordered source fragments without losing or summarizing text.
+    """
+    if (user.get("role") != "user" or assistant.get("role") != "assistant"
+            or not isinstance(user.get("content"), str)
+            or not isinstance(assistant.get("content"), str)):
+        raise ValueError("invalid_exchange")
+    # Attribution and timestamps are source metadata, never instructions.
+    sources = [
+        ("USER", str(user.get("created_at") or "unknown"), user["content"]),
+        ("ASSISTANT", str(assistant.get("created_at") or "unknown"), assistant["content"]),
+    ]
+    # This exact format passed against the real local Hindsight/Ollama engine.
+    joined = "\n".join(f"{role} ({timestamp}): {value}" for role, timestamp, value in sources)
+    if len(joined) <= 8500:
+        return [joined]
+
+    # Large exchanges use a sequence of complete, attributed pieces. Each
+    # event stays under RMC's gateway limit; replay keys are index-stable.
+    # Preserve every character; never infer facts from a detached fragment.
+    parts = []
+    for role, stamp, value in sources:
+        prefix = f"{role} ({stamp}): "
+        available = 8500 - len(prefix) - 45  # reserve room for part header
+        if available < 1:
+            raise ValueError("invalid_timestamp")
+        for offset in range(0, len(value), available):
+            segment = value[offset:offset + available]
+            parts.append((role, stamp, segment))
+        if not value:
+            parts.append((role, stamp, ""))
+    if len(parts) > 128:
+        raise ValueError("exchange_exceeds_bounded_worker")
+    return [
+        f"Conversation exchange part {index + 1}/{len(parts)}:\n"
+        f"{role} ({stamp}): {segment}"
+        for index, (role, stamp, segment) in enumerate(parts)
+    ]
+
+
 async def ingest_private_exchange(
     settings, token: str, user_id: str,
     user_message_id: str, assistant_message_id: str,
@@ -126,10 +170,12 @@ async def ingest_private_exchange(
             return
 
         try:
+            # Important: one source document for a normal conversational pair,
+            # rather than independent speaker documents. Both voices provide
+            # essential context for agreements and shared memories.
             source_parts = [
-                (row["id"], index, fragment)
-                for row in rows
-                for index, fragment in enumerate(transcript_parts(row))
+                (user["id"], index, fragment)
+                for index, fragment in enumerate(exchange_parts(user, assistant))
             ]
         except (ValueError, KeyError, TypeError):
             state, confirmed, total = "source_unavailable", 0, 0
@@ -147,7 +193,7 @@ async def ingest_private_exchange(
                 try:
                     result = await memory.remember(
                         companion, user["conversation_id"],
-                        f"transcript:{message_id}:{index}", fragment,
+                        f"exchange:{message_id}:{index}", fragment,
                     )
                 except Exception:
                     result = "unconfirmed"
