@@ -102,9 +102,9 @@ class PublicModeRmcAutoIngestTests(unittest.TestCase):
         self.send("/v0.2/respond/stream", "private")
         self.assertEqual(len(self.scheduled), 1)
         self.assertEqual(len(self.transcript_scheduled), 1)
-        self.assertEqual(len(FakeRmc.writes), 3)  # both raw speaker turns plus vetted preference
+        self.assertEqual(len(FakeRmc.writes), 2)  # combined exchange plus vetted preference
         self.assertEqual(
-            len([key for key, _ in FakeRmc.writes if key.startswith("transcript:")]), 2
+            len([key for key, _ in FakeRmc.writes if key.startswith("exchange:")]), 1
         )
         self.assertEqual(
             len([key for key, _ in FakeRmc.writes if key.startswith("auto:")]), 1
@@ -114,7 +114,7 @@ class PublicModeRmcAutoIngestTests(unittest.TestCase):
         self.send("/v0.1/respond", "private")
         self.assertEqual(len(self.scheduled), 1)
         self.assertEqual(len(self.transcript_scheduled), 1)
-        self.assertEqual(len(FakeRmc.writes), 3)
+        self.assertEqual(len(FakeRmc.writes), 2)
 
     def test_public_stream_turn_schedules_nothing_and_writes_nothing(self):
         self.send("/v0.2/respond/stream", "public")
