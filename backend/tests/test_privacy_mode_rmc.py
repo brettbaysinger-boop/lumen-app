@@ -12,7 +12,7 @@ from unittest.mock import patch
 
 import httpx
 
-from lumen import rmc_auto_ingest
+from lumen import rmc_auto_ingest, rmc_transcript
 from tests.test_privacy_mode import COMPANION_ID, CONVERSATION_ID, USER_ID, FakeModel, FakeSupabase
 
 STATEMENT = "My favorite fruit is golden kiwi."   # passes the deterministic safe-preference gate
@@ -57,20 +57,28 @@ class PublicModeRmcAutoIngestTests(unittest.TestCase):
         self.supabase = OwnedSupabase()
         FakeRmc.writes = []
         self.scheduled = []
-        real_worker = rmc_auto_ingest.auto_ingest_rmc_user_message
+        self.transcript_scheduled = []
+        real_worker = rmc_auto_ingest.auto_ingest_rmc_with_deferred_retry
+        real_transcript = rmc_transcript.ingest_private_exchange
 
         async def spy(*args):
-            self.scheduled.append(args[-1])
+            self.scheduled.append(args[3])
             await real_worker(*args)
+
+        async def spy_transcript(*args):
+            self.transcript_scheduled.append((args[3], args[4]))
+            await real_transcript(*args)
         original = httpx.AsyncClient
         self.patches = [
             patch("lumen.db.httpx.AsyncClient",
                   side_effect=lambda **kw: original(transport=httpx.MockTransport(self.supabase.handler), **kw)),
             patch.object(main, "settings", rmc_settings()),
-            patch.object(main, "auto_ingest_rmc_user_message", side_effect=spy),
+            patch.object(main, "auto_ingest_rmc_with_deferred_retry", side_effect=spy),
+            patch.object(main, "ingest_private_exchange", side_effect=spy_transcript),
             patch("lumen.runtime.OllamaProvider", side_effect=lambda s: FakeModel()),
             patch("lumen.runtime.LumenRmcMemory", FakeRmc),
             patch("lumen.rmc_auto_ingest.LumenRmcMemory", FakeRmc),
+            patch("lumen.rmc_transcript.LumenRmcMemory", FakeRmc),
         ]
         for item in self.patches:
             item.start()
@@ -93,11 +101,19 @@ class PublicModeRmcAutoIngestTests(unittest.TestCase):
     def test_private_control_still_learns_automatically(self):
         self.send("/v0.2/respond/stream", "private")
         self.assertEqual(len(self.scheduled), 1)
-        self.assertEqual(len(FakeRmc.writes), 1)          # proves the path is live in this test
+        self.assertEqual(len(self.transcript_scheduled), 1)
+        self.assertEqual(len(FakeRmc.writes), 3)  # both raw speaker turns plus vetted preference
+        self.assertEqual(
+            len([key for key, _ in FakeRmc.writes if key.startswith("transcript:")]), 2
+        )
+        self.assertEqual(
+            len([key for key, _ in FakeRmc.writes if key.startswith("auto:")]), 1
+        )
 
     def test_public_stream_turn_schedules_nothing_and_writes_nothing(self):
         self.send("/v0.2/respond/stream", "public")
         self.assertEqual(self.scheduled, [])
+        self.assertEqual(self.transcript_scheduled, [])
         self.assertEqual(FakeRmc.writes, [])
         [row] = self.user_rows()
         self.assertEqual(row["metadata"].get("privacy_mode"), "public")
@@ -106,6 +122,7 @@ class PublicModeRmcAutoIngestTests(unittest.TestCase):
     def test_public_blocking_turn_schedules_nothing_and_writes_nothing(self):
         self.send("/v0.1/respond", "public")
         self.assertEqual(self.scheduled, [])
+        self.assertEqual(self.transcript_scheduled, [])
         self.assertEqual(FakeRmc.writes, [])
 
     def test_public_runtime_never_offers_a_message_for_learning(self):
@@ -120,17 +137,31 @@ class PublicModeRmcAutoIngestTests(unittest.TestCase):
         runtime.rmc_auto_message_id = "forced"                           # even if something sets it later
         self.assertIsNone(runtime.rmc_auto_message_id)
         self.assertEqual(self.scheduled, [])
+        self.assertEqual(self.transcript_scheduled, [])
 
     def test_queue_refuses_a_public_runtime_even_if_it_carries_a_message_id(self):
         from fastapi import BackgroundTasks
         # A stand-in that does carry a message id, so only the queue's own check is tested here.
-        instance = SimpleNamespace(privacy_mode="public", rmc_auto_message_id="new-1")
+        instance = SimpleNamespace(
+            privacy_mode="public", rmc_auto_message_id="new-1",
+            rmc_transcript_user_id="user-1",
+            rmc_transcript_assistant_id="assistant-1",
+        )
         tasks = BackgroundTasks()
         self.main.queue_rmc_memory_work(tasks, SimpleNamespace(id=USER_ID, token="t"), instance)
         self.assertEqual(tasks.tasks, [])
         self.main.queue_rmc_memory_work(tasks, SimpleNamespace(id=USER_ID, token="t"),
                                         SimpleNamespace(privacy_mode="private", rmc_auto_message_id="new-1"))
-        self.assertEqual(len(tasks.tasks), 1)                         # Private is queued as before
+        self.assertEqual(len(tasks.tasks), 1)                         # Private fact extraction is queued
+        tasks = BackgroundTasks()
+        self.main.queue_rmc_memory_work(tasks, SimpleNamespace(id=USER_ID, token="t"),
+                                        SimpleNamespace(
+                                            privacy_mode="private",
+                                            rmc_auto_message_id="new-1",
+                                            rmc_transcript_user_id="user-1",
+                                            rmc_transcript_assistant_id="assistant-1",
+                                        ))
+        self.assertEqual(len(tasks.tasks), 2)  # transcript + automatic fact
 
 
 class WorkerRefusesPublicRowsTests(unittest.IsolatedAsyncioTestCase):
